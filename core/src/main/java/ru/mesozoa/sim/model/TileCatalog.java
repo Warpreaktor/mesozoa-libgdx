@@ -81,14 +81,17 @@ public final class TileCatalog {
                 TileBlueprint.tile(Biome.MEADOW, 1, SOUTH, SOUTH_WEST, WEST),
 
                 // Горы
-                TileBlueprint.tile(Biome.MOUNTAIN, 6),
+                TileBlueprint.tile(Biome.MOUNTAIN, 3),
+
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH),
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, EAST),
-                TileBlueprint.tile(Biome.MOUNTAIN, 1, SOUTH_WEST),
-                TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH_WEST),
-                TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH, WEST),
-                TileBlueprint.tile(Biome.MOUNTAIN, 1, SOUTH_EAST, EAST),
-                TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH, NORTH_EAST, EAST),
+                TileBlueprint.tile(Biome.MOUNTAIN, 1, SOUTH),
+                TileBlueprint.tile(Biome.MOUNTAIN, 1, WEST),
+
+                TileBlueprint.tile(Biome.MOUNTAIN, 1, WEST, NORTH),
+                TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH, SOUTH),
+
+                TileBlueprint.tile(Biome.MOUNTAIN, 1, SOUTH_WEST, WEST, NORTH),
 
                 // Река
                 TileBlueprint.tile(Biome.RIVER, 7),
