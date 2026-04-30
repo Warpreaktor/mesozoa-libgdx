@@ -1,6 +1,6 @@
 package ru.mesozoa.sim.model;
 
-import ru.mesozoa.sim.rules.SimulationConfig;
+import ru.mesozoa.sim.config.GameConfig;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,7 +23,7 @@ public final class TileBag {
         this.random = random;
     }
 
-    public static TileBag createDefault(SimulationConfig config, Random random) {
+    public static TileBag createDefault(GameConfig config, Random random) {
         TileBag bag = new TileBag(random);
 
         bag.addMain(TileCatalog.mainTileBlueprints());

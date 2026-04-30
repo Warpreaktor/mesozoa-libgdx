@@ -10,9 +10,11 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Matrix4;
+import ru.mesozoa.sim.config.InventoryConfig;
+import ru.mesozoa.sim.config.MechanicConfig;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.rules.GameSimulation;
-import ru.mesozoa.sim.rules.SimulationConfig;
+import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.view.AssetCatalog;
 import ru.mesozoa.sim.view.BoardOccupancy;
 import ru.mesozoa.sim.view.BoardPiece;
@@ -97,9 +99,11 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void restart() {
-        SimulationConfig config = new SimulationConfig();
+        GameConfig config = new GameConfig();
+        InventoryConfig inventoryConfig = new InventoryConfig();
+        MechanicConfig mechanicConfig = new MechanicConfig();
         currentSeed = nextSimulationSeed();
-        simulation = new GameSimulation(config, currentSeed);
+        simulation = new GameSimulation(config, inventoryConfig, mechanicConfig, currentSeed);
         paused = true;
         timer = 0f;
         zoom = BASE_ZOOM;
@@ -145,7 +149,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             timer += Gdx.graphics.getDeltaTime();
             if (timer >= stepDelay) {
                 timer = 0f;
-                simulation.phaseSwitcher();
+                simulation.stepOneTurn();
             }
         }
     }
@@ -169,7 +173,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             if (isCtrlPressed()) {
                 simulation.stepRound();
             } else {
-                simulation.phaseSwitcher();
+                simulation.stepOneTurn();
             }
         }
 

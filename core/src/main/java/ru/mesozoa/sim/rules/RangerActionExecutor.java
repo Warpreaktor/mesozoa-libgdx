@@ -2,7 +2,6 @@ package ru.mesozoa.sim.rules;
 
 import ru.mesozoa.sim.model.*;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -233,7 +232,7 @@ public final class RangerActionExecutor {
     }
 
     private boolean placeTrapForNeededTarget(PlayerState player) {
-        if (player.traps.stream().filter(t -> t.active).count() >= simulation.config.maxTrapsPerPlayer) {
+        if (player.traps.stream().filter(t -> t.active).count() >= simulation.inventoryConfig.maxTrapsPerPlayer) {
             return false;
         }
 
@@ -277,9 +276,9 @@ public final class RangerActionExecutor {
         for (Dinosaur dinosaur : needed) {
             if (dinosaur.species.captureMethod == CaptureMethod.TRACKING) {
                 if (player.hunter.manhattan(dinosaur.position) <= 1) {
-                    double chance = simulation.config.trackingBaseSuccess
-                            + simulation.config.trackingStepBonus
-                            * simulation.random.nextInt(simulation.config.trackingMaxSteps);
+                    double chance = simulation.mechanicConfig.trackingBaseSuccess
+                            + simulation.mechanicConfig.trackingStepBonus
+                            * simulation.random.nextInt(simulation.mechanicConfig.trackingMaxSteps);
 
                     if (simulation.random.nextDouble() < chance) {
                         capture(player, dinosaur, "выслеживание");
@@ -297,8 +296,8 @@ public final class RangerActionExecutor {
 
                 if (player.hunter.manhattan(dinosaur.position) <= 2) {
                     double chance = simulation.random.nextBoolean()
-                            ? simulation.config.huntBaseSuccess
-                            : simulation.config.huntPreparedSuccess;
+                            ? simulation.mechanicConfig.huntBaseSuccess
+                            : simulation.mechanicConfig.huntPreparedSuccess;
 
                     if (simulation.random.nextDouble() < chance) {
                         capture(player, dinosaur, "охота");

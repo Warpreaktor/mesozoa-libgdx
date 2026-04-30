@@ -1,7 +1,6 @@
 package ru.mesozoa.sim.rules;
 
 import ru.mesozoa.sim.model.CaptureMethod;
-import ru.mesozoa.sim.model.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.RangerRole;
 
@@ -87,7 +86,7 @@ public final class RangerTurnPlanner {
     }
 
     private boolean hasUsefulEngineerAction(PlayerState player) {
-        if (player.traps.stream().filter(t -> t.active).count() >= simulation.config.maxTrapsPerPlayer) {
+        if (player.traps.stream().filter(t -> t.active).count() >= simulation.inventoryConfig.maxTrapsPerPlayer) {
             return false;
         }
 

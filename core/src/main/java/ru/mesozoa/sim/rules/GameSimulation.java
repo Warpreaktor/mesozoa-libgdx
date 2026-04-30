@@ -1,5 +1,8 @@
 package ru.mesozoa.sim.rules;
 
+import ru.mesozoa.sim.config.GameConfig;
+import ru.mesozoa.sim.config.InventoryConfig;
+import ru.mesozoa.sim.config.MechanicConfig;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.report.GameResult;
 
@@ -11,7 +14,9 @@ import java.util.Random;
 
 public final class GameSimulation {
 
-    public final SimulationConfig config;
+    public final GameConfig gameConfig;
+    public final InventoryConfig inventoryConfig;
+    public final MechanicConfig mechanicConfig;
     public final Random random;
     public GameMap map;
     public TileBag tileBag;
@@ -30,8 +35,14 @@ public final class GameSimulation {
     private boolean roundStarted = false;
     private int activeRangerIndex = 0;
 
-    public GameSimulation(SimulationConfig config, long seed) {
-        this.config = config;
+    public GameSimulation(GameConfig gameConfig,
+                          InventoryConfig inventoryConfig,
+                          MechanicConfig mechanicConfig,
+                          long seed) {
+
+        this.gameConfig = gameConfig;
+        this.inventoryConfig = inventoryConfig;
+        this.mechanicConfig = mechanicConfig;
         this.random = new Random(seed);
         reset();
     }
@@ -47,12 +58,12 @@ public final class GameSimulation {
         nextDinoId = 1;
 
         map = GameMap.createWithLanding();
-        tileBag = TileBag.createDefault(config, random);
+        tileBag = TileBag.createDefault(gameConfig, random);
 
         RangerTurnPlanner rangerTurnPlanner = new RangerTurnPlanner(this);
         rangerActionExecutor = new RangerActionExecutor(this, rangerTurnPlanner);
 
-        for (int i = 0; i < config.players; i++) {
+        for (int i = 0; i < gameConfig.players; i++) {
             int playerId = i + 1;
             PlayerState player = new PlayerState(playerId, RangerColor.forPlayerId(playerId), map.base);
             assignTask(player);
@@ -135,7 +146,7 @@ public final class GameSimulation {
     }
 
     private void finishRound() {
-        if (round >= config.maxRounds
+        if (round >= gameConfig.maxRounds
                 || players.stream().allMatch(PlayerState::isComplete)
                 || tileBag.isEmpty()) {
             gameOver = true;
