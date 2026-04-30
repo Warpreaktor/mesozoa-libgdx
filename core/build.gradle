@@ -1,0 +1,12 @@
+plugins {
+    id 'java-library'
+}
+
+ext {
+    gdxVersion = '1.13.1'
+}
+
+dependencies {
+    api "com.badlogicgames.gdx:gdx:$gdxVersion"
+    api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
+}

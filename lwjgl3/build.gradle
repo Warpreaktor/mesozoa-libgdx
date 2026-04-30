@@ -1,0 +1,18 @@
+plugins {
+    id 'application'
+}
+
+ext {
+    gdxVersion = '1.13.1'
+}
+
+dependencies {
+    implementation project(':core')
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+    implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+    implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
+}
+
+application {
+    mainClass = 'ru.mesozoa.sim.lwjgl3.Lwjgl3Launcher'
+}
