@@ -24,25 +24,11 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private static final int HUD_WIDTH = 390;
     private static final int TILE_SIZE = 48;
 
-    /*
-     * TILE_SIZE = внутренняя базовая логическая величина.
-     * BASE_ZOOM = то, что пользователь видит как 100%.
-     *
-     * Раньше тайл был 48px. Теперь стартовый размер 48 * 1.25 = 60px,
-     * и именно эти 60px считаем UI-масштабом 100%.
-     */
     private static final float BASE_ZOOM = 1.25f;
     private static final float MIN_ZOOM = BASE_ZOOM * 0.40f;
     private static final float MAX_ZOOM = BASE_ZOOM * 3.00f;
     private static final float MOUSE_WHEEL_ZOOM_STEP = 1.12f;
 
-    /*
-     * Важно:
-     * - прямое направление рисуем полосой по центру края;
-     * - диагональ рисуем только в самом углу + короткие плечи по двум соседним краям.
-     *
-     * CORNER_ARM_RATIO = 0.20 означает примерно 20% длины стороны тайла.
-     */
     private static final float TRANSITION_STRIP = 10f;
     private static final float TRANSITION_INSET = 12f;
     private static final float CORNER_ARM_RATIO = 0.20f;
@@ -66,7 +52,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     private float cameraX = 0f;
     private float cameraY = 0f;
-
     private float zoom = BASE_ZOOM;
 
     public MesozoaVisualApp(long seed, float stepDelay) {
@@ -123,7 +108,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             timer += Gdx.graphics.getDeltaTime();
             if (timer >= stepDelay) {
                 timer = 0f;
-                simulation.stepRound();
+                simulation.stepOneTurn();
             }
         }
     }
@@ -143,7 +128,15 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     private void handleInput() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) paused = !paused;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.N)) simulation.stepRound();
+
+        if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
+            if (isCtrlPressed()) {
+                simulation.stepRound();
+            } else {
+                simulation.stepOneTurn();
+            }
+        }
+
         if (Gdx.input.isKeyJustPressed(Input.Keys.R)) restart();
         if (Gdx.input.isKeyJustPressed(Input.Keys.C)) centerCameraOnBase();
 
@@ -162,6 +155,11 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         updateCameraFromMouse();
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
+    }
+
+    private boolean isCtrlPressed() {
+        return Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT)
+                || Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT);
     }
 
     private void updateCameraFromKeyboard() {
@@ -205,10 +203,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         float mouseX = Gdx.input.getX();
         float mouseY = Gdx.graphics.getHeight() - Gdx.input.getY();
 
-        /*
-         * Держим точку под курсором на месте при зуме.
-         * Иначе карта будет прыгать, как бухгалтерия перед релизом.
-         */
         float worldXBefore = cameraX + (mouseX - boardCenterX()) / tilePixelSize();
         float worldYBefore = cameraY + (mouseY - boardCenterY()) / tilePixelSize();
 
@@ -304,7 +298,24 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
             Texture texture = assets.get(tile.imagePath);
             if (texture != null) {
-                batch.draw(texture, sx, sy, size - 2f, size - 2f);
+                batch.draw(
+                        texture,
+                        sx,
+                        sy,
+                        (size - 2f) / 2f,
+                        (size - 2f) / 2f,
+                        size - 2f,
+                        size - 2f,
+                        1f,
+                        1f,
+                        tile.rotationDegreesForRendering(),
+                        0,
+                        0,
+                        texture.getWidth(),
+                        texture.getHeight(),
+                        false,
+                        false
+                );
             }
 
             font.draw(batch, shortBiome(tile.biome), sx + 4f * pixelScale(), sy + 16f * pixelScale());
@@ -579,21 +590,53 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void drawRangers() {
+        batch.begin();
+        for (PlayerState player : simulation.players) {
+            drawRangerFigure(player, RangerRole.SCOUT, 0);
+            drawRangerFigure(player, RangerRole.DRIVER, 1);
+            drawRangerFigure(player, RangerRole.ENGINEER, 2);
+            drawRangerFigure(player, RangerRole.HUNTER, 3);
+        }
+        batch.end();
+
         shapes.begin(ShapeRenderer.ShapeType.Filled);
         for (PlayerState player : simulation.players) {
-            drawRangerSquare(player.scout, 0, 0.2f, 0.8f, 1f);
-            drawRangerSquare(player.hunter, 1, 0.9f, 0.2f, 0.2f);
-            drawRangerSquare(player.engineer, 2, 0.8f, 0.8f, 0.15f);
+            drawRangerFallback(player, RangerRole.SCOUT, 0, 0.2f, 0.8f, 1f);
+            drawRangerFallback(player, RangerRole.DRIVER, 1, 0.70f, 0.70f, 0.70f);
+            drawRangerFallback(player, RangerRole.ENGINEER, 2, 0.8f, 0.8f, 0.15f);
+            drawRangerFallback(player, RangerRole.HUNTER, 3, 0.9f, 0.2f, 0.2f);
         }
         shapes.end();
     }
 
-    private void drawRangerSquare(Point p, int offsetIndex, float r, float g, float b) {
+    private void drawRangerFigure(PlayerState player, RangerRole role, int offsetIndex) {
+        Point p = player.positionOf(role);
         if (!isVisibleOnBoard(p)) return;
 
+        Texture texture = assets.get(role.imagePath(player.color));
+        if (texture == null) return;
+
         float size = tilePixelSize();
-        float marker = Math.max(8f, size * 0.20f);
-        float sx = screenX(p) + size * 0.08f + offsetIndex * marker * 1.1f;
+        float figureSize = size * 0.32f;
+        float gap = size * 0.035f;
+
+        float sx = screenX(p) + size * 0.045f + offsetIndex * (figureSize + gap);
+        float sy = screenY(p) + size * 0.06f;
+
+        batch.draw(texture, sx, sy, figureSize, figureSize);
+    }
+
+    private void drawRangerFallback(PlayerState player, RangerRole role, int offsetIndex, float r, float g, float b) {
+        Point p = player.positionOf(role);
+        if (!isVisibleOnBoard(p)) return;
+
+        if (assets.get(role.imagePath(player.color)) != null) {
+            return;
+        }
+
+        float size = tilePixelSize();
+        float marker = Math.max(8f, size * 0.17f);
+        float sx = screenX(p) + size * 0.055f + offsetIndex * marker * 1.13f;
         float sy = screenY(p) + size * 0.08f;
 
         shapes.setColor(r, g, b, 1f);
@@ -612,6 +655,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 22;
         font.draw(batch, "Раунд: " + simulation.round + (paused ? " [PAUSE]" : ""), x, y);
         y -= 18;
+        font.draw(batch, "Следующий ход: " + simulation.nextStepLabel(), x, y);
+        y -= 18;
         font.draw(batch, "Выложено тайлов: " + simulation.map.openedCount(), x, y);
         y -= 18;
         font.draw(batch, "Основных тайлов: " + simulation.tileBag.remainingMain(), x, y);
@@ -622,10 +667,12 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 18;
         font.draw(batch, "Масштаб: " + Math.round(zoomPercent()) + "%", x, y);
         y -= 18;
-        font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/раунд", x, y);
+        font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/ход", x, y);
         y -= 24;
 
-        font.draw(batch, "SPACE пауза, N шаг, R рестарт", x, y);
+        font.draw(batch, "N ход, Ctrl+N полный раунд", x, y);
+        y -= 18;
+        font.draw(batch, "SPACE пауза, R рестарт", x, y);
         y -= 18;
         font.draw(batch, "Колесо мыши — масштаб", x, y);
         y -= 18;

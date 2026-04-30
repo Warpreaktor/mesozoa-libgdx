@@ -94,31 +94,41 @@ public final class TileCatalog {
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, SOUTH_WEST, WEST, NORTH),
 
                 // Река
-                TileBlueprint.tile(Biome.RIVER, 7),
                 TileBlueprint.tile(Biome.RIVER, 1, NORTH),
-                TileBlueprint.tile(Biome.RIVER, 1, SOUTH),
-                TileBlueprint.tile(Biome.RIVER, 1, NORTH_EAST),
+                TileBlueprint.tile(Biome.RIVER, 1, WEST),
+                TileBlueprint.tile(Biome.RIVER, 2, EAST),
+                TileBlueprint.tile(Biome.RIVER, 1, SOUTH_WEST),
+
+                TileBlueprint.tile(Biome.RIVER, 1, SOUTH_WEST, NORTH_WEST),
+                TileBlueprint.tile(Biome.RIVER, 1, SOUTH_WEST, NORTH_EAST),
                 TileBlueprint.tile(Biome.RIVER, 1, NORTH, SOUTH),
+                TileBlueprint.tile(Biome.RIVER, 1, SOUTH, WEST),
+
+                TileBlueprint.tile(Biome.RIVER, 1, EAST, SOUTH, WEST),
+                TileBlueprint.tile(Biome.RIVER, 1, NORTH, SOUTH_EAST, WEST),
+                TileBlueprint.tile(Biome.RIVER, 1, WEST, NORTH_WEST, SOUTH_EAST),
+                TileBlueprint.tile(Biome.RIVER, 1, NORTH, SOUTH_EAST, SOUTH_WEST),
 
                 // Болото
-                TileBlueprint.tile(Biome.SWAMP, 7),
-                TileBlueprint.tile(Biome.SWAMP, 1, WEST),
+                TileBlueprint.tile(Biome.SWAMP, 6),
                 TileBlueprint.tile(Biome.SWAMP, 1, EAST),
+                TileBlueprint.tile(Biome.SWAMP, 1, SOUTH),
                 TileBlueprint.tile(Biome.SWAMP, 1, SOUTH_WEST),
-                TileBlueprint.tile(Biome.SWAMP, 1, NORTH_WEST, SOUTH_EAST),
+
+                TileBlueprint.tile(Biome.SWAMP, 1, NORTH, SOUTH),
 
                 // Озеро
-                TileBlueprint.tile(Biome.LAKE, 6),
-                TileBlueprint.tile(Biome.LAKE, 1, NORTH),
+                TileBlueprint.tile(Biome.LAKE, 4),
+                TileBlueprint.tile(Biome.LAKE, 1, SOUTH),
                 TileBlueprint.tile(Biome.LAKE, 1, EAST),
-                TileBlueprint.tile(Biome.LAKE, 1, SOUTH_WEST, NORTH_EAST),
+                TileBlueprint.tile(Biome.LAKE, 1, NORTH_EAST, EAST),
 
                 // Пойма
-                TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH, SOUTH),
-                TileBlueprint.tile(Biome.FLOODPLAIN, 1, EAST, WEST),
+                TileBlueprint.tile(Biome.FLOODPLAIN, 1, WEST, NORTH_EAST),
+                TileBlueprint.tile(Biome.FLOODPLAIN, 1, SOUTH_WEST, NORTH_EAST),
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH_WEST, SOUTH_EAST),
-                TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH, EAST, SOUTH),
-                TileBlueprint.tile(Biome.FLOODPLAIN, 1, WEST, NORTH_WEST, SOUTH_WEST)
+                TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH_WEST, SOUTH_EAST, WEST),
+                TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH, SOUTH_EAST, SOUTH_WEST)
         );
     }
 

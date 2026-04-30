@@ -20,6 +20,9 @@ public final class GameSimulation {
     public boolean gameOver = false;
     public final GameResult result = new GameResult();
 
+    private boolean roundStarted = false;
+    private int activeRangerIndex = 0;
+
     public GameSimulation(SimulationConfig config, long seed) {
         this.config = config;
         this.random = new Random(seed);
@@ -28,6 +31,8 @@ public final class GameSimulation {
 
     public void reset() {
         round = 0;
+        roundStarted = false;
+        activeRangerIndex = 0;
         gameOver = false;
         dinosaurs.clear();
         players.clear();
@@ -38,26 +43,102 @@ public final class GameSimulation {
         tileBag = TileBag.createDefault(config, random);
 
         for (int i = 0; i < config.players; i++) {
-            PlayerState player = new PlayerState(i + 1, map.base);
+            int playerId = i + 1;
+            PlayerState player = new PlayerState(playerId, RangerColor.forPlayerId(playerId), map.base);
             assignTask(player);
             players.add(player);
-            log("Игрок " + player.id + " задание: " + taskToText(player));
+            log("Игрок " + player.id + " (" + player.color.assetSuffix + ") задание: " + taskToText(player));
         }
 
+        updateResult();
         log("Партия создана. На столе только точка высадки " + map.base);
     }
 
+    /**
+     * Один микрошаг симуляции:
+     * - ход одного игрока;
+     * - или общая фаза динозавров.
+     *
+     * Именно это вызывается по N.
+     */
+    public void stepOneTurn() {
+        if (gameOver) return;
+
+        startRoundIfNeeded();
+
+        if (activeRangerIndex < players.size()) {
+            PlayerState player = players.get(activeRangerIndex);
+            activeRangerIndex++;
+
+            rangerTurn(player);
+            updateResult();
+            checkGameOverAfterPartialStep();
+            return;
+        }
+
+        log("Ход динозавров");
+        dinosaurPhase();
+        updateResult();
+        finishRound();
+    }
+
+    /**
+     * Полный раунд:
+     * все игроки по очереди + фаза динозавров.
+     *
+     * Это вызывается по Ctrl+N.
+     */
     public void stepRound() {
         if (gameOver) return;
 
+        startRoundIfNeeded();
+
+        while (!gameOver && roundStarted) {
+            stepOneTurn();
+        }
+    }
+
+    public String nextStepLabel() {
+        if (gameOver) {
+            return "игра завершена";
+        }
+
+        if (!roundStarted) {
+            return "новый раунд";
+        }
+
+        if (activeRangerIndex < players.size()) {
+            PlayerState player = players.get(activeRangerIndex);
+            return "игрок " + player.id + " (" + player.color.assetSuffix + ")";
+        }
+
+        return "динозавры";
+    }
+
+    private void startRoundIfNeeded() {
+        if (roundStarted) return;
+
         round++;
+        activeRangerIndex = 0;
+        roundStarted = true;
         log("Раунд " + round);
+    }
 
-        rangerPhase();
-        dinosaurPhase();
-        updateResult();
+    private void finishRound() {
+        if (round >= config.maxRounds
+                || players.stream().allMatch(PlayerState::isComplete)
+                || tileBag.isEmpty()) {
+            gameOver = true;
+            log("Партия завершена.");
+            return;
+        }
 
-        if (round >= config.maxRounds || players.stream().allMatch(PlayerState::isComplete) || tileBag.isEmpty()) {
+        roundStarted = false;
+        activeRangerIndex = 0;
+    }
+
+    private void checkGameOverAfterPartialStep() {
+        if (players.stream().allMatch(PlayerState::isComplete)) {
             gameOver = true;
             log("Партия завершена.");
         }
@@ -78,22 +159,26 @@ public final class GameSimulation {
         return String.join(", ", names);
     }
 
-    private void rangerPhase() {
-        for (PlayerState player : players) {
-            if (player.isComplete()) continue;
-
-            if (player.turnsSkipped > 0) {
-                player.turnsSkipped--;
-                continue;
-            }
-
-            for (int i = 0; i < config.scoutOpenActions; i++) {
-                exploreOneTile(player);
-            }
-
-            placeTrapsForNeededS(player);
-            attemptCapture(player);
+    private void rangerTurn(PlayerState player) {
+        if (player.isComplete()) {
+            log("Игрок " + player.id + " уже выполнил задание.");
+            return;
         }
+
+        if (player.turnsSkipped > 0) {
+            player.turnsSkipped--;
+            log("Игрок " + player.id + " пропускает ход.");
+            return;
+        }
+
+        log("Ход игрока " + player.id + " (" + player.color.assetSuffix + ")");
+
+        for (int i = 0; i < config.scoutOpenActions; i++) {
+            exploreOneTile(player);
+        }
+
+        placeTrapsForNeededS(player);
+        attemptCapture(player);
     }
 
     private void exploreOneTile(PlayerState player) {
@@ -106,6 +191,9 @@ public final class GameSimulation {
         Tile placedTile = placeDrawnTile(player, drawn, placement, false);
         if (placedTile == null) return;
 
+        /*
+         * Достройка идёт по направлениям уже повёрнутого тайла.
+         */
         for (Direction direction : placedTile.expansionDirections) {
             Point extraPoint = direction.from(placement);
 
@@ -362,8 +450,7 @@ public final class GameSimulation {
 
             if ((hunterNearby || engineerNearby) && random.nextDouble() < 0.20) {
                 player.turnsSkipped = 1;
-                player.hunter = map.base;
-                player.engineer = map.base;
+                player.returnTeamToBase(map.base);
                 log("Велоцитаурус напал на команду игрока " + player.id);
             }
         }
