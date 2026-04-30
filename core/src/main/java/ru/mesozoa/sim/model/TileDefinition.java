@@ -5,9 +5,9 @@ import java.util.List;
 /**
  * Тайл в мешочке до размещения на столе.
  *
- * Картинка определяется только биомом: river.png, meadow.png, lake.png и т.д.
- * Переходы не требуют отдельных PNG. Они хранятся в expansionDirections
- * и рисуются поверх тайла кодом.
+ * expansionDirections описывает направления на физическом тайле
+ * в его базовой ориентации. Когда игрок выкладывает тайл случайно
+ * повёрнутым, направления поворачиваются вместе с тайлом.
  */
 public final class TileDefinition {
     public final Biome biome;
@@ -25,10 +25,26 @@ public final class TileDefinition {
     }
 
     public Tile toPlacedTile() {
-        return new Tile(biome, spawnSpecies, true, expansionDirections);
+        return toPlacedTile(0);
+    }
+
+    public Tile toPlacedTile(int rotationQuarterTurns) {
+        return new Tile(
+                biome,
+                spawnSpecies,
+                true,
+                rotatedDirections(rotationQuarterTurns),
+                rotationQuarterTurns
+        );
     }
 
     public boolean hasExpansion() {
         return !expansionDirections.isEmpty();
+    }
+
+    private List<Direction> rotatedDirections(int rotationQuarterTurns) {
+        return expansionDirections.stream()
+                .map(direction -> direction.rotateClockwiseQuarterTurns(rotationQuarterTurns))
+                .toList();
     }
 }

@@ -23,15 +23,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private static final int HUD_WIDTH = 390;
     private static final int TILE_SIZE = 48;
 
-    /*
-     * Важно:
-     * - прямое направление рисуем полосой по центру края;
-     * - диагональ рисуем только в самом углу + короткие плечи по двум соседним краям.
-     *
-     * CORNER_ARM_RATIO = 0.20 означает примерно 20% длины стороны тайла.
-     * Так NW больше не выглядит как "поставь тайлы на запад, юго-запад, юг,
-     * юго-восток и восток", а честно говорит: "ставь по диагонали в угол".
-     */
     private static final float TRANSITION_STRIP = 10f;
     private static final float TRANSITION_INSET = 12f;
     private static final float CORNER_ARM_RATIO = 0.20f;
@@ -120,8 +111,12 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         if (Gdx.input.isKeyJustPressed(Input.Keys.C)) centerCameraOnBase();
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.G)) showGrid = !showGrid;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) showSpawnDebug = !showSpawnDebug;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.J)) showDebug = !showDebug;
+        if (Gdx.input.isKeyJustPressed(Input.Keys.K) || Gdx.input.isKeyJustPressed(Input.Keys.S)) {
+            showSpawnDebug = !showSpawnDebug;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.J) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+            showDebug = !showDebug;
+        }
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.PLUS) || Gdx.input.isKeyJustPressed(Input.Keys.EQUALS)) {
             stepDelay = Math.max(0.05f, stepDelay * 0.75f);
@@ -232,7 +227,24 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
             Texture texture = assets.get(tile.imagePath);
             if (texture != null) {
-                batch.draw(texture, sx, sy, TILE_SIZE - 2, TILE_SIZE - 2);
+                batch.draw(
+                        texture,
+                        sx,
+                        sy,
+                        TILE_SIZE / 2f,
+                        TILE_SIZE / 2f,
+                        TILE_SIZE - 2,
+                        TILE_SIZE - 2,
+                        1f,
+                        1f,
+                        tile.rotationDegreesForRendering(),
+                        0,
+                        0,
+                        texture.getWidth(),
+                        texture.getHeight(),
+                        false,
+                        false
+                );
             }
 
             font.draw(batch, shortBiome(tile.biome), sx + 4, sy + 16);
@@ -315,30 +327,10 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         float size = TILE_SIZE - 2f;
 
         switch (direction) {
-            case NORTH -> shapes.rect(
-                    sx + TRANSITION_INSET,
-                    sy + size - TRANSITION_STRIP,
-                    size - TRANSITION_INSET * 2f,
-                    TRANSITION_STRIP
-            );
-            case SOUTH -> shapes.rect(
-                    sx + TRANSITION_INSET,
-                    sy,
-                    size - TRANSITION_INSET * 2f,
-                    TRANSITION_STRIP
-            );
-            case EAST -> shapes.rect(
-                    sx + size - TRANSITION_STRIP,
-                    sy + TRANSITION_INSET,
-                    TRANSITION_STRIP,
-                    size - TRANSITION_INSET * 2f
-            );
-            case WEST -> shapes.rect(
-                    sx,
-                    sy + TRANSITION_INSET,
-                    TRANSITION_STRIP,
-                    size - TRANSITION_INSET * 2f
-            );
+            case NORTH -> shapes.rect(sx + TRANSITION_INSET, sy + size - TRANSITION_STRIP, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
+            case SOUTH -> shapes.rect(sx + TRANSITION_INSET, sy, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
+            case EAST -> shapes.rect(sx + size - TRANSITION_STRIP, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
+            case WEST -> shapes.rect(sx, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
             default -> {
             }
         }
@@ -348,30 +340,10 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         float size = TILE_SIZE - 2f;
 
         switch (direction) {
-            case NORTH -> drawHatchedRect(
-                    sx + TRANSITION_INSET,
-                    sy + size - TRANSITION_STRIP,
-                    size - TRANSITION_INSET * 2f,
-                    TRANSITION_STRIP
-            );
-            case SOUTH -> drawHatchedRect(
-                    sx + TRANSITION_INSET,
-                    sy,
-                    size - TRANSITION_INSET * 2f,
-                    TRANSITION_STRIP
-            );
-            case EAST -> drawHatchedRect(
-                    sx + size - TRANSITION_STRIP,
-                    sy + TRANSITION_INSET,
-                    TRANSITION_STRIP,
-                    size - TRANSITION_INSET * 2f
-            );
-            case WEST -> drawHatchedRect(
-                    sx,
-                    sy + TRANSITION_INSET,
-                    TRANSITION_STRIP,
-                    size - TRANSITION_INSET * 2f
-            );
+            case NORTH -> drawHatchedRect(sx + TRANSITION_INSET, sy + size - TRANSITION_STRIP, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
+            case SOUTH -> drawHatchedRect(sx + TRANSITION_INSET, sy, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
+            case EAST -> drawHatchedRect(sx + size - TRANSITION_STRIP, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
+            case WEST -> drawHatchedRect(sx, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
             default -> {
             }
         }
@@ -382,26 +354,10 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         float arm = size * CORNER_ARM_RATIO;
 
         switch (direction) {
-            case NORTH_WEST -> shapes.triangle(
-                    sx, sy + size,
-                    sx + arm, sy + size,
-                    sx, sy + size - arm
-            );
-            case NORTH_EAST -> shapes.triangle(
-                    sx + size, sy + size,
-                    sx + size - arm, sy + size,
-                    sx + size, sy + size - arm
-            );
-            case SOUTH_WEST -> shapes.triangle(
-                    sx, sy,
-                    sx + arm, sy,
-                    sx, sy + arm
-            );
-            case SOUTH_EAST -> shapes.triangle(
-                    sx + size, sy,
-                    sx + size - arm, sy,
-                    sx + size, sy + arm
-            );
+            case NORTH_WEST -> shapes.triangle(sx, sy + size, sx + arm, sy + size, sx, sy + size - arm);
+            case NORTH_EAST -> shapes.triangle(sx + size, sy + size, sx + size - arm, sy + size, sx + size, sy + size - arm);
+            case SOUTH_WEST -> shapes.triangle(sx, sy, sx + arm, sy, sx, sy + arm);
+            case SOUTH_EAST -> shapes.triangle(sx + size, sy, sx + size - arm, sy, sx + size, sy + arm);
             default -> {
             }
         }
@@ -585,7 +541,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 18;
         font.draw(batch, "ПКМ/СКМ — тащить карту", x, y);
         y -= 18;
-        font.draw(batch, "C база, G сетка, K спауны, J лог", x, y);
+        font.draw(batch, "C база, G сетка, K/S спауны, J/D лог", x, y);
         y -= 28;
 
         if (showDebug) {

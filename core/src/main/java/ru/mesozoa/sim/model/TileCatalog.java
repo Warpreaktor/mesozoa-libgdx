@@ -18,10 +18,7 @@ import static ru.mesozoa.sim.model.Direction.WEST;
  *
  * Здесь описывается "физический" состав мешочка:
  * какие биомы есть, сколько экземпляров каждого варианта,
- * и в какие направления эти варианты достраивают доп. тайлы.
- *
- * TileBag ничего не придумывает. Он только разворачивает этот каталог
- * в реальные TileDefinition и перемешивает их перед стартом партии.
+ * и в какие стороны эти варианты достраивают доп. тайлы.
  */
 public final class TileCatalog {
     private TileCatalog() {
@@ -29,7 +26,6 @@ public final class TileCatalog {
 
     public static List<TileBlueprint> mainTileBlueprints() {
         return List.of(
-
                 // Лиственный лес
                 TileBlueprint.tile(Biome.BROADLEAF_FOREST, 7),
 
@@ -47,67 +43,79 @@ public final class TileCatalog {
                 TileBlueprint.tile(Biome.BROADLEAF_FOREST, 1, SOUTH_WEST, SOUTH, SOUTH_EAST),
                 TileBlueprint.tile(Biome.BROADLEAF_FOREST, 1, NORTH_EAST, EAST, SOUTH),
 
-                // Хвойный лес
-                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 4),
+                // Хвойный лес.
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 7),
+
                 TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, WEST),
-                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, Direction.NORTH_EAST),
-                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, SOUTH_EAST),
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, EAST),
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, NORTH),
                 TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, SOUTH),
-                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, NORTH, WEST),
-                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, SOUTH_EAST, EAST),
-                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, NORTH, WEST, Direction.SOUTH_WEST),
+
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, SOUTH, NORTH),
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, WEST, EAST),
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, WEST, SOUTH),
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, SOUTH, EAST),
+
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, NORTH_WEST, EAST, SOUTH_EAST),
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, SOUTH_WEST, SOUTH, SOUTH_EAST),
+                TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 1, NORTH_EAST, EAST, SOUTH),
 
                 // Луг
-                TileBlueprint.tile(Biome.MEADOW, 8),
-                TileBlueprint.tile(Biome.MEADOW, 1, NORTH),
-                TileBlueprint.tile(Biome.MEADOW, 1, EAST),
+                TileBlueprint.tile(Biome.MEADOW, 7),
+
                 TileBlueprint.tile(Biome.MEADOW, 1, SOUTH),
                 TileBlueprint.tile(Biome.MEADOW, 1, WEST),
-                TileBlueprint.tile(Biome.MEADOW, 1, Direction.NORTH_EAST),
-                TileBlueprint.tile(Biome.MEADOW, 1, Direction.SOUTH_WEST),
+                TileBlueprint.tile(Biome.MEADOW, 1, NORTH),
+                TileBlueprint.tile(Biome.MEADOW, 1, EAST),
+                TileBlueprint.tile(Biome.MEADOW, 1, SOUTH_EAST),
+                TileBlueprint.tile(Biome.MEADOW, 1, SOUTH_WEST),
+
+
                 TileBlueprint.tile(Biome.MEADOW, 1, NORTH, SOUTH),
-                TileBlueprint.tile(Biome.MEADOW, 1, EAST, WEST),
-                TileBlueprint.tile(Biome.MEADOW, 1, Direction.NORTH_EAST, Direction.SOUTH_WEST),
-                TileBlueprint.tile(Biome.MEADOW, 1, NORTH_WEST, SOUTH_EAST),
-                TileBlueprint.tile(Biome.MEADOW, 1, NORTH, EAST, SOUTH),
-                TileBlueprint.tile(Biome.MEADOW, 1, WEST, NORTH_WEST, Direction.SOUTH_WEST),
+                TileBlueprint.tile(Biome.MEADOW, 1, SOUTH_WEST, SOUTH),
+                TileBlueprint.tile(Biome.MEADOW, 1, WEST, NORTH_WEST),
+                TileBlueprint.tile(Biome.MEADOW, 1, EAST, SOUTH_EAST),
+
+                TileBlueprint.tile(Biome.MEADOW, 1, WEST, NORTH_WEST, NORTH),
+                TileBlueprint.tile(Biome.MEADOW, 1, NORTH, NORTH_EAST, EAST),
+                TileBlueprint.tile(Biome.MEADOW, 1, SOUTH, SOUTH_WEST, WEST),
 
                 // Горы
                 TileBlueprint.tile(Biome.MOUNTAIN, 6),
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH),
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, EAST),
-                TileBlueprint.tile(Biome.MOUNTAIN, 1, Direction.SOUTH_WEST),
+                TileBlueprint.tile(Biome.MOUNTAIN, 1, SOUTH_WEST),
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH_WEST),
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH, WEST),
                 TileBlueprint.tile(Biome.MOUNTAIN, 1, SOUTH_EAST, EAST),
-                TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH, Direction.NORTH_EAST, EAST),
+                TileBlueprint.tile(Biome.MOUNTAIN, 1, NORTH, NORTH_EAST, EAST),
 
                 // Река
                 TileBlueprint.tile(Biome.RIVER, 7),
                 TileBlueprint.tile(Biome.RIVER, 1, NORTH),
                 TileBlueprint.tile(Biome.RIVER, 1, SOUTH),
-                TileBlueprint.tile(Biome.RIVER, 1, Direction.NORTH_EAST),
+                TileBlueprint.tile(Biome.RIVER, 1, NORTH_EAST),
                 TileBlueprint.tile(Biome.RIVER, 1, NORTH, SOUTH),
 
                 // Болото
                 TileBlueprint.tile(Biome.SWAMP, 7),
                 TileBlueprint.tile(Biome.SWAMP, 1, WEST),
                 TileBlueprint.tile(Biome.SWAMP, 1, EAST),
-                TileBlueprint.tile(Biome.SWAMP, 1, Direction.SOUTH_WEST),
+                TileBlueprint.tile(Biome.SWAMP, 1, SOUTH_WEST),
                 TileBlueprint.tile(Biome.SWAMP, 1, NORTH_WEST, SOUTH_EAST),
 
                 // Озеро
                 TileBlueprint.tile(Biome.LAKE, 6),
                 TileBlueprint.tile(Biome.LAKE, 1, NORTH),
                 TileBlueprint.tile(Biome.LAKE, 1, EAST),
-                TileBlueprint.tile(Biome.LAKE, 1, Direction.SOUTH_WEST, Direction.NORTH_EAST),
+                TileBlueprint.tile(Biome.LAKE, 1, SOUTH_WEST, NORTH_EAST),
 
                 // Пойма
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH, SOUTH),
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, EAST, WEST),
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH_WEST, SOUTH_EAST),
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH, EAST, SOUTH),
-                TileBlueprint.tile(Biome.FLOODPLAIN, 1, WEST, NORTH_WEST, Direction.SOUTH_WEST)
+                TileBlueprint.tile(Biome.FLOODPLAIN, 1, WEST, NORTH_WEST, SOUTH_WEST)
         );
     }
 

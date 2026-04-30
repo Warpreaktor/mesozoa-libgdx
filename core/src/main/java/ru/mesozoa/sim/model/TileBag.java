@@ -11,9 +11,8 @@ import java.util.Random;
  * - mainTiles — основная колода/мешочек исследования;
  * - extraTiles — дополнительная колода для автоматической достройки биомов.
  *
- * Состав мешочков берётся из TileCatalog. TileBag ничего не генерирует
- * на своё усмотрение, а только разворачивает статические TileBlueprint в
- * конкретные TileDefinition и перемешивает их перед партией.
+ * TileBag не придумывает состав тайлов. Он разворачивает статический TileCatalog
+ * в конкретные TileDefinition и перемешивает их перед партией.
  */
 public final class TileBag {
     private final ArrayList<TileDefinition> mainTiles = new ArrayList<>();
@@ -77,9 +76,6 @@ public final class TileBag {
         return null;
     }
 
-    /**
-     * Старое имя оставлено как алиас, чтобы соседний код не падал лицом в луг.
-     */
     public TileDefinition drawBiome(Biome biome) {
         return drawExtraBiome(biome);
     }

@@ -103,9 +103,10 @@ public final class GameSimulation {
         Point placement = choosePlacementPoint(player);
         if (placement == null) return;
 
-        placeDrawnTile(player, drawn, placement, false);
+        Tile placedTile = placeDrawnTile(player, drawn, placement, false);
+        if (placedTile == null) return;
 
-        for (Direction direction : drawn.expansionDirections) {
+        for (Direction direction : placedTile.expansionDirections) {
             Point extraPoint = direction.from(placement);
 
             if (!map.canPlace(extraPoint)) {
@@ -113,9 +114,9 @@ public final class GameSimulation {
                 continue;
             }
 
-            TileDefinition extra = tileBag.drawExtraBiome(drawn.biome);
+            TileDefinition extra = tileBag.drawExtraBiome(placedTile.biome);
             if (extra == null) {
-                log("Нет доп. тайла для биома " + drawn.biome.displayName);
+                log("Нет доп. тайла для биома " + placedTile.biome.displayName);
                 continue;
             }
 
@@ -132,22 +133,25 @@ public final class GameSimulation {
                 .orElse(candidates.get(random.nextInt(candidates.size())));
     }
 
-    private void placeDrawnTile(PlayerState player, TileDefinition drawn, Point placement, boolean automaticExpansion) {
-        Tile tile = drawn.toPlacedTile();
+    private Tile placeDrawnTile(PlayerState player, TileDefinition drawn, Point placement, boolean automaticExpansion) {
+        int rotationQuarterTurns = random.nextInt(4);
+        Tile tile = drawn.toPlacedTile(rotationQuarterTurns);
         boolean placed = map.placeTile(placement, tile);
-        if (!placed) return;
+        if (!placed) return null;
 
         if (!automaticExpansion) {
             player.scout = placement;
         }
 
         String prefix = automaticExpansion ? "Автодостройка" : "Игрок " + player.id + " выложил";
-        log(prefix + ": " + tile.biome.displayName + " " + placement);
+        log(prefix + ": " + tile.biome.displayName + " " + placement + ", поворот " + (rotationQuarterTurns * 90) + "°");
 
         if (tile.hasSpawn() && !tile.spawnUsed) {
             spawnDinosaur(tile.spawnSpecies, placement);
             tile.spawnUsed = true;
         }
+
+        return tile;
     }
 
     private void spawnDinosaur(Species species, Point position) {

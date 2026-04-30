@@ -21,4 +21,37 @@ public enum Direction {
     public Point from(Point origin) {
         return new Point(origin.x + dx, origin.y + dy);
     }
+
+    /**
+     * Поворачивает направление вместе с физическим тайлом.
+     *
+     * turns:
+     * 0 — без поворота;
+     * 1 — 90 градусов по часовой;
+     * 2 — 180 градусов;
+     * 3 — 270 градусов по часовой.
+     */
+    public Direction rotateClockwiseQuarterTurns(int turns) {
+        int normalized = Math.floorMod(turns, 4);
+
+        Direction result = this;
+        for (int i = 0; i < normalized; i++) {
+            result = result.rotateClockwiseOnce();
+        }
+
+        return result;
+    }
+
+    private Direction rotateClockwiseOnce() {
+        return switch (this) {
+            case NORTH -> EAST;
+            case NORTH_EAST -> SOUTH_EAST;
+            case EAST -> SOUTH;
+            case SOUTH_EAST -> SOUTH_WEST;
+            case SOUTH -> WEST;
+            case SOUTH_WEST -> NORTH_WEST;
+            case WEST -> NORTH;
+            case NORTH_WEST -> NORTH_EAST;
+        };
+    }
 }
