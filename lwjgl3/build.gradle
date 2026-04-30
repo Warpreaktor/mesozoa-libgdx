@@ -16,3 +16,7 @@ dependencies {
 application {
     mainClass = 'ru.mesozoa.sim.lwjgl3.Lwjgl3Launcher'
 }
+
+tasks.named('run') {
+    workingDir = rootProject.file('assets')
+}

@@ -5,9 +5,9 @@ import java.util.List;
 /**
  * Тайл в мешочке до размещения на столе.
  *
- * Важно: это не клетка заранее созданной карты.
- * Игрок вытягивает TileDefinition из мешочка, выбирает место на границе уже
- * выложенного поля, и только после этого тайл становится Tile на Board.
+ * Картинка определяется только биомом: river.png, meadow.png, lake.png и т.д.
+ * Переходы не требуют отдельных PNG. Они хранятся в expansionDirections
+ * и рисуются поверх тайла кодом.
  */
 public final class TileDefinition {
     public final Biome biome;
@@ -25,7 +25,7 @@ public final class TileDefinition {
     }
 
     public Tile toPlacedTile() {
-        return new Tile(biome, spawnSpecies, true);
+        return new Tile(biome, spawnSpecies, true, expansionDirections);
     }
 
     public boolean hasExpansion() {

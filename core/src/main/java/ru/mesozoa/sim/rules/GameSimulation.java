@@ -87,9 +87,6 @@ public final class GameSimulation {
                 continue;
             }
 
-            // В настольной версии каждый игрок сам выбирает, кем походить.
-            // Бот пока использует простую стратегию: сначала расширить карту,
-            // потом поставить ловушки/поохотиться, если цель уже появилась.
             for (int i = 0; i < config.scoutOpenActions; i++) {
                 exploreOneTile(player);
             }
@@ -99,13 +96,6 @@ public final class GameSimulation {
         }
     }
 
-    /**
-     * Разведчик берёт случайный тайл из мешочка и кладёт его на свободную клетку
-     * рядом с уже выложенной картой.
-     *
-     * Важно: место выбирается не из заранее скрытой сетки, а из реальных свободных
-     * позиций на границе карты.
-     */
     private void exploreOneTile(PlayerState player) {
         TileDefinition drawn = tileBag.draw();
         if (drawn == null) return;
@@ -115,16 +105,21 @@ public final class GameSimulation {
 
         placeDrawnTile(player, drawn, placement, false);
 
-        // Для будущих тайлов-генераторов биома: лес/река/болото может автоматически
-        // докладывать соседние тайлы. Если expansionDirections пустой — ничего не произойдёт.
         for (Direction direction : drawn.expansionDirections) {
             Point extraPoint = direction.from(placement);
-            if (!map.canPlace(extraPoint)) continue;
 
-            TileDefinition extra = tileBag.drawBiome(drawn.biome);
-            if (extra != null) {
-                placeDrawnTile(player, extra, extraPoint, true);
+            if (!map.canPlace(extraPoint)) {
+                log("Переход " + direction + " заблокирован: клетка занята " + extraPoint);
+                continue;
             }
+
+            TileDefinition extra = tileBag.drawExtraBiome(drawn.biome);
+            if (extra == null) {
+                log("Нет доп. тайла для биома " + drawn.biome.displayName);
+                continue;
+            }
+
+            placeDrawnTile(player, extra, extraPoint, true);
         }
     }
 
@@ -132,8 +127,6 @@ public final class GameSimulation {
         List<Point> candidates = map.availablePlacementPoints();
         if (candidates.isEmpty()) return null;
 
-        // Бот не знает, какой тайл вытащил, но может выбирать направление разведки.
-        // Сейчас стратегия простая: разведчик расширяет ближайшую к себе границу.
         return candidates.stream()
                 .min(Comparator.comparingInt(p -> p.manhattan(player.scout)))
                 .orElse(candidates.get(random.nextInt(candidates.size())));
@@ -268,8 +261,6 @@ public final class GameSimulation {
     private void moveByBioTrail(Dinosaur dino) {
         Point target = predictNextBioTarget(dino);
 
-        // Если нужного биома на столе ещё нет, динозавр тянется к краю разведанной карты.
-        // Если дошёл до пустой пограничной клетки — ушёл с карты.
         if (target == null) {
             Point frontier = map.nearestUnexploredFrontier(dino.position);
             if (frontier == null) return;
@@ -318,11 +309,6 @@ public final class GameSimulation {
                 .orElse(from);
     }
 
-    /**
-     * Движение к неизвестной клетке.
-     * Если соседняя клетка уже не выложена и это именно целевая frontier-клетка,
-     * разрешаем сделать шаг туда, чтобы потом убрать динозавра с карты.
-     */
     private Point stepTowardFrontier(Point from, Point frontier) {
         Point direct = from.stepToward(frontier);
         if (direct.equals(frontier) && map.canPlace(direct)) return direct;

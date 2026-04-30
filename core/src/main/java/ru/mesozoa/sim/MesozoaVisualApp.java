@@ -8,24 +8,35 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
-import ru.mesozoa.sim.model.Biome;
-import ru.mesozoa.sim.model.Dinosaur;
-import ru.mesozoa.sim.model.PlayerState;
-import ru.mesozoa.sim.model.Point;
-import ru.mesozoa.sim.model.Tile;
-import ru.mesozoa.sim.model.Trap;
+import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.rules.GameSimulation;
 import ru.mesozoa.sim.rules.SimulationConfig;
 import ru.mesozoa.sim.view.AssetCatalog;
 import ru.mesozoa.sim.view.Palette;
 import ru.mesozoa.sim.view.RussianFontFactory;
 
+import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Map;
 
 public final class MesozoaVisualApp extends ApplicationAdapter {
     private static final int HUD_WIDTH = 390;
     private static final int TILE_SIZE = 48;
+
+    /*
+     * Важно:
+     * - прямое направление рисуем полосой по центру края;
+     * - диагональ рисуем только в самом углу + короткие плечи по двум соседним краям.
+     *
+     * CORNER_ARM_RATIO = 0.20 означает примерно 20% длины стороны тайла.
+     * Так NW больше не выглядит как "поставь тайлы на запад, юго-запад, юг,
+     * юго-восток и восток", а честно говорит: "ставь по диагонали в угол".
+     */
+    private static final float TRANSITION_STRIP = 10f;
+    private static final float TRANSITION_INSET = 12f;
+    private static final float CORNER_ARM_RATIO = 0.20f;
+    private static final float HATCH_SPACING = 4.5f;
+    private static final float HATCH_WIDTH = 1.8f;
 
     private final long seed;
     private float stepDelay;
@@ -42,11 +53,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private boolean showDebug = true;
     private float timer = 0f;
 
-    /**
-     * Камера в координатах тайлов.
-     * Это простое смещение доски: для настольной сетки не надо тащить сюда
-     * полноценную LibGDX Camera и потом героически бороться с матрицами.
-     */
     private float cameraX = 0f;
     private float cameraY = 0f;
 
@@ -140,33 +146,21 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
         float delta = cameraSpeedTilesPerSecond * dt;
 
-        if (Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT)) {
-            cameraX -= delta;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)) {
-            cameraX += delta;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) {
-            cameraY += delta;
-        }
-        if (Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN)) {
-            cameraY -= delta;
-        }
+        if (Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT)) cameraX -= delta;
+        if (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)) cameraX += delta;
+        if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) cameraY += delta;
+        if (Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN)) cameraY -= delta;
     }
 
     private void updateCameraFromMouse() {
         int mouseX = Gdx.input.getX();
-        if (mouseX >= boardViewportWidth()) {
-            return;
-        }
+        if (mouseX >= boardViewportWidth()) return;
 
         boolean dragPressed =
                 Gdx.input.isButtonPressed(Input.Buttons.RIGHT)
                         || Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
 
-        if (!dragPressed) {
-            return;
-        }
+        if (!dragPressed) return;
 
         cameraX -= (float) Gdx.input.getDeltaX() / TILE_SIZE;
         cameraY += (float) Gdx.input.getDeltaY() / TILE_SIZE;
@@ -249,6 +243,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         }
         batch.end();
 
+        drawTransitionOverlays();
+
         if (showGrid) {
             shapes.begin(ShapeRenderer.ShapeType.Line);
             shapes.setColor(0f, 0f, 0f, 0.45f);
@@ -258,6 +254,213 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
                 shapes.rect(screenX(p), screenY(p), TILE_SIZE - 2, TILE_SIZE - 2);
             }
             shapes.end();
+        }
+    }
+
+    private void drawTransitionOverlays() {
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+            Point p = entry.getKey();
+            if (!isVisibleOnBoard(p)) continue;
+
+            Tile tile = entry.getValue();
+            if (!tile.hasExpansion()) continue;
+
+            float sx = screenX(p);
+            float sy = screenY(p);
+
+            for (Direction direction : tile.expansionDirections) {
+                drawTransitionBase(sx, sy, direction);
+            }
+        }
+        shapes.end();
+
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+            Point p = entry.getKey();
+            if (!isVisibleOnBoard(p)) continue;
+
+            Tile tile = entry.getValue();
+            if (!tile.hasExpansion()) continue;
+
+            float sx = screenX(p);
+            float sy = screenY(p);
+
+            for (Direction direction : tile.expansionDirections) {
+                drawTransitionHatching(sx, sy, direction);
+            }
+        }
+        shapes.end();
+    }
+
+    private void drawTransitionBase(float sx, float sy, Direction direction) {
+        shapes.setColor(0.08f, 0.58f, 1f, 0.55f);
+
+        switch (direction) {
+            case NORTH, SOUTH, EAST, WEST -> drawCardinalTransitionBase(sx, sy, direction);
+            case NORTH_WEST, NORTH_EAST, SOUTH_WEST, SOUTH_EAST -> drawDiagonalTransitionBase(sx, sy, direction);
+        }
+    }
+
+    private void drawTransitionHatching(float sx, float sy, Direction direction) {
+        shapes.setColor(0.03f, 0.28f, 0.95f, 0.95f);
+
+        switch (direction) {
+            case NORTH, SOUTH, EAST, WEST -> drawCardinalTransitionHatching(sx, sy, direction);
+            case NORTH_WEST, NORTH_EAST, SOUTH_WEST, SOUTH_EAST -> drawDiagonalTransitionHatching(sx, sy, direction);
+        }
+    }
+
+    private void drawCardinalTransitionBase(float sx, float sy, Direction direction) {
+        float size = TILE_SIZE - 2f;
+
+        switch (direction) {
+            case NORTH -> shapes.rect(
+                    sx + TRANSITION_INSET,
+                    sy + size - TRANSITION_STRIP,
+                    size - TRANSITION_INSET * 2f,
+                    TRANSITION_STRIP
+            );
+            case SOUTH -> shapes.rect(
+                    sx + TRANSITION_INSET,
+                    sy,
+                    size - TRANSITION_INSET * 2f,
+                    TRANSITION_STRIP
+            );
+            case EAST -> shapes.rect(
+                    sx + size - TRANSITION_STRIP,
+                    sy + TRANSITION_INSET,
+                    TRANSITION_STRIP,
+                    size - TRANSITION_INSET * 2f
+            );
+            case WEST -> shapes.rect(
+                    sx,
+                    sy + TRANSITION_INSET,
+                    TRANSITION_STRIP,
+                    size - TRANSITION_INSET * 2f
+            );
+            default -> {
+            }
+        }
+    }
+
+    private void drawCardinalTransitionHatching(float sx, float sy, Direction direction) {
+        float size = TILE_SIZE - 2f;
+
+        switch (direction) {
+            case NORTH -> drawHatchedRect(
+                    sx + TRANSITION_INSET,
+                    sy + size - TRANSITION_STRIP,
+                    size - TRANSITION_INSET * 2f,
+                    TRANSITION_STRIP
+            );
+            case SOUTH -> drawHatchedRect(
+                    sx + TRANSITION_INSET,
+                    sy,
+                    size - TRANSITION_INSET * 2f,
+                    TRANSITION_STRIP
+            );
+            case EAST -> drawHatchedRect(
+                    sx + size - TRANSITION_STRIP,
+                    sy + TRANSITION_INSET,
+                    TRANSITION_STRIP,
+                    size - TRANSITION_INSET * 2f
+            );
+            case WEST -> drawHatchedRect(
+                    sx,
+                    sy + TRANSITION_INSET,
+                    TRANSITION_STRIP,
+                    size - TRANSITION_INSET * 2f
+            );
+            default -> {
+            }
+        }
+    }
+
+    private void drawDiagonalTransitionBase(float sx, float sy, Direction direction) {
+        float size = TILE_SIZE - 2f;
+        float arm = size * CORNER_ARM_RATIO;
+
+        switch (direction) {
+            case NORTH_WEST -> shapes.triangle(
+                    sx, sy + size,
+                    sx + arm, sy + size,
+                    sx, sy + size - arm
+            );
+            case NORTH_EAST -> shapes.triangle(
+                    sx + size, sy + size,
+                    sx + size - arm, sy + size,
+                    sx + size, sy + size - arm
+            );
+            case SOUTH_WEST -> shapes.triangle(
+                    sx, sy,
+                    sx + arm, sy,
+                    sx, sy + arm
+            );
+            case SOUTH_EAST -> shapes.triangle(
+                    sx + size, sy,
+                    sx + size - arm, sy,
+                    sx + size, sy + arm
+            );
+            default -> {
+            }
+        }
+    }
+
+    private void drawDiagonalTransitionHatching(float sx, float sy, Direction direction) {
+        float size = TILE_SIZE - 2f;
+        float arm = size * CORNER_ARM_RATIO;
+
+        switch (direction) {
+            case NORTH_WEST -> drawCornerHatchingNorthWest(sx, sy + size, arm);
+            case NORTH_EAST -> drawCornerHatchingNorthEast(sx + size, sy + size, arm);
+            case SOUTH_WEST -> drawCornerHatchingSouthWest(sx, sy, arm);
+            case SOUTH_EAST -> drawCornerHatchingSouthEast(sx + size, sy, arm);
+            default -> {
+            }
+        }
+    }
+
+    private void drawHatchedRect(float x, float y, float width, float height) {
+        for (float c = -height; c <= width; c += HATCH_SPACING) {
+            ArrayList<float[]> pts = new ArrayList<>(4);
+
+            if (c >= -height && c <= 0f) pts.add(new float[]{0f, -c});
+            if (c >= width - height && c <= width) pts.add(new float[]{width, width - c});
+            if (c >= 0f && c <= width) pts.add(new float[]{c, 0f});
+            if (c >= -height && c <= width - height) pts.add(new float[]{height + c, height});
+
+            if (pts.size() >= 2) {
+                float[] p1 = pts.get(0);
+                float[] p2 = pts.get(1);
+                if (Math.abs(p1[0] - p2[0]) > 0.01f || Math.abs(p1[1] - p2[1]) > 0.01f) {
+                    shapes.rectLine(x + p1[0], y + p1[1], x + p2[0], y + p2[1], HATCH_WIDTH);
+                }
+            }
+        }
+    }
+
+    private void drawCornerHatchingNorthWest(float xLeft, float yTop, float arm) {
+        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
+            shapes.rectLine(xLeft + t, yTop, xLeft, yTop - t, HATCH_WIDTH);
+        }
+    }
+
+    private void drawCornerHatchingNorthEast(float xRight, float yTop, float arm) {
+        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
+            shapes.rectLine(xRight - t, yTop, xRight, yTop - t, HATCH_WIDTH);
+        }
+    }
+
+    private void drawCornerHatchingSouthWest(float xLeft, float yBottom, float arm) {
+        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
+            shapes.rectLine(xLeft + t, yBottom, xLeft, yBottom + t, HATCH_WIDTH);
+        }
+    }
+
+    private void drawCornerHatchingSouthEast(float xRight, float yBottom, float arm) {
+        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
+            shapes.rectLine(xRight - t, yBottom, xRight, yBottom + t, HATCH_WIDTH);
         }
     }
 
@@ -363,16 +566,15 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
         font.draw(batch, "Мезозоя Visual Simulator", x, y);
         y -= 22;
-        font.draw(batch, "Раунд: " + simulation.round + (paused ? "  [PAUSE]" : ""), x, y);
+        font.draw(batch, "Раунд: " + simulation.round + (paused ? " [PAUSE]" : ""), x, y);
         y -= 18;
         font.draw(batch, "Выложено тайлов: " + simulation.map.openedCount(), x, y);
         y -= 18;
-        font.draw(batch, "Тайлов в мешке: " + simulation.tileBag.remaining(), x, y);
+        font.draw(batch, "Основных тайлов: " + simulation.tileBag.remainingMain(), x, y);
+        y -= 18;
+        font.draw(batch, "Доп. тайлов: " + simulation.tileBag.remainingExtra(), x, y);
         y -= 18;
         font.draw(batch, "Динозавров: " + aliveDinos() + " / всего " + simulation.dinosaurs.size(), x, y);
-        y -= 18;
-        font.draw(batch, "Камера: " + String.format(Locale.US, "%.1f", cameraX) + "; "
-                + String.format(Locale.US, "%.1f", cameraY), x, y);
         y -= 18;
         font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/раунд", x, y);
         y -= 24;
@@ -383,7 +585,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 18;
         font.draw(batch, "ПКМ/СКМ — тащить карту", x, y);
         y -= 18;
-        font.draw(batch, "C база, G сетка, S спауны, D лог", x, y);
+        font.draw(batch, "C база, G сетка, K спауны, J лог", x, y);
         y -= 28;
 
         if (showDebug) {

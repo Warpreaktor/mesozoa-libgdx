@@ -12,18 +12,6 @@ import java.util.List;
 
 /**
  * Генератор BitmapFont с поддержкой кириллицы.
- *
- * Ожидаемое имя файла:
- * NotoSans-Regular.ttf
- *
- * Поддерживаемые варианты расположения:
- * 1) <project-root>/assets/fonts/NotoSans-Regular.ttf
- * 2) <project-root>/core/src/main/resources/assets/fonts/NotoSans-Regular.ttf
- * 3) <working-dir>/fonts/NotoSans-Regular.ttf
- * 4) <working-dir>/assets/fonts/NotoSans-Regular.ttf
- *
- * Сделано специально терпимым к Gradle workingDir, потому что Gradle,
- * как водится, любит делать вид, что текущая папка — это философский вопрос.
  */
 public final class RussianFontFactory {
     private static final String DEFAULT_FONT_PATH = "fonts/NotoSans-Regular.ttf";
@@ -80,9 +68,6 @@ public final class RussianFontFactory {
 
     private static FileHandle resolveFontFile(String fontPath) {
         List<FileHandle> candidates = new ArrayList<>();
-
-        // Если workingDir = root/assets
-        candidates.add(Gdx.files.internal(fontPath));
 
         // Если workingDir = root
         candidates.add(Gdx.files.internal("assets/" + fontPath));

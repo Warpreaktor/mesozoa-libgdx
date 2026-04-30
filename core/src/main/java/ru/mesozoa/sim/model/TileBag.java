@@ -8,14 +8,22 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * Мешочек тайлов.
+ * Мешочки тайлов:
+ * - mainTiles — основная колода/мешочек исследования;
+ * - extraTiles — дополнительная колода для автоматической достройки биомов.
  *
- * Модель принципиально не знает карту заранее. Тайлы существуют только тут,
- * пока игрок не вытянул их и не положил на стол. Да, наконец-то настольная игра
- * перестала притворяться заранее сгенерированным прямоугольником.
+ * Переходы лежат в TileDefinition.expansionDirections и не меняют картинку тайла.
  */
 public final class TileBag {
-    private final ArrayList<TileDefinition> tiles = new ArrayList<>();
+    private static final Direction[] CARDINALS = {
+            Direction.NORTH,
+            Direction.EAST,
+            Direction.SOUTH,
+            Direction.WEST
+    };
+
+    private final ArrayList<TileDefinition> mainTiles = new ArrayList<>();
+    private final ArrayList<TileDefinition> extraTiles = new ArrayList<>();
     private final Random random;
 
     private TileBag(Random random) {
@@ -25,62 +33,121 @@ public final class TileBag {
     public static TileBag createDefault(SimulationConfig config, Random random) {
         TileBag bag = new TileBag(random);
 
-        // Базовая колода по текущим пропорциям из правил.
-        // Лес разделён на лиственный и хвойный, потому что био-тропы уже различают их.
-        bag.add(Biome.BROADLEAF_FOREST, 24);
-        bag.add(Biome.CONIFEROUS_FOREST, 24);
-        bag.add(Biome.MEADOW, 40);
-        bag.add(Biome.MOUNTAIN, 24);
-        bag.add(Biome.RIVER, 16);
-        bag.add(Biome.SWAMP, 16);
-        bag.add(Biome.LAKE, 13);
-        bag.add(Biome.FLOODPLAIN, 12);
+        /*
+         * Основная колода генератора карты.
+         * Числа соответствуют текущей таблице:
+         *   Биом: обычные, +1, +2, +3
+         *
+         * Лес из правил делим между лиственным и хвойным,
+         * потому что био-тропы уже различают эти два биома.
+         */
+        bag.addMainWithExpansion(Biome.BROADLEAF_FOREST, 5, 4, 3, 1);
+        bag.addMainWithExpansion(Biome.CONIFEROUS_FOREST, 4, 4, 2, 1);
+        bag.addMainWithExpansion(Biome.MEADOW, 8, 6, 4, 2);
+        bag.addMainWithExpansion(Biome.MOUNTAIN, 6, 4, 2, 1);
+        bag.addMainWithExpansion(Biome.RIVER, 7, 3, 1, 0);
+        bag.addMainWithExpansion(Biome.SWAMP, 7, 3, 1, 0);
+        bag.addMainWithExpansion(Biome.LAKE, 6, 2, 1, 0);
+        bag.addMainWithExpansion(Biome.FLOODPLAIN, 0, 0, 3, 2);
 
-        // Спаун-тайлы. Они лежат в том же мешочке и становятся видимыми только
-        // когда реально вытянуты и размещены.
+        /*
+         * Спаун-тайлы лежат в основной колоде.
+         * Визуально это та же картинка биома, а пиктограмма/буква динозавра
+         * рисуется отдельным слоем поверх.
+         */
         for (var entry : config.spawnTiles.entrySet()) {
             Species species = entry.getKey();
             int count = entry.getValue();
+
             for (int i = 0; i < count; i++) {
-                bag.tiles.add(new TileDefinition(species.spawnBiome, species));
+                bag.mainTiles.add(new TileDefinition(species.spawnBiome, species));
             }
         }
 
-        Collections.shuffle(bag.tiles, random);
+        /*
+         * Доп. колода тайлов. Эти тайлы нужны только для автодостройки.
+         * Они не содержат спаунов, чтобы переходы не плодили динозавров из воздуха.
+         */
+        bag.addExtra(Biome.BROADLEAF_FOREST, 12);
+        bag.addExtra(Biome.CONIFEROUS_FOREST, 12);
+        bag.addExtra(Biome.MEADOW, 20);
+        bag.addExtra(Biome.MOUNTAIN, 11);
+        bag.addExtra(Biome.RIVER, 5);
+        bag.addExtra(Biome.SWAMP, 5);
+        bag.addExtra(Biome.LAKE, 4);
+        bag.addExtra(Biome.FLOODPLAIN, 12);
+
+        Collections.shuffle(bag.mainTiles, random);
+        Collections.shuffle(bag.extraTiles, random);
+
         return bag;
     }
 
-    private void add(Biome biome, int count) {
+    private void addMainWithExpansion(Biome biome, int baseCount, int plusOneCount, int plusTwoCount, int plusThreeCount) {
+        addMain(biome, baseCount, 0);
+        addMain(biome, plusOneCount, 1);
+        addMain(biome, plusTwoCount, 2);
+        addMain(biome, plusThreeCount, 3);
+    }
+
+    private void addMain(Biome biome, int count, int expansionCount) {
         for (int i = 0; i < count; i++) {
-            tiles.add(new TileDefinition(biome, null));
+            mainTiles.add(new TileDefinition(biome, null, randomDirections(expansionCount)));
         }
     }
 
-    public TileDefinition draw() {
-        if (tiles.isEmpty()) return null;
-        return tiles.remove(random.nextInt(tiles.size()));
+    private void addExtra(Biome biome, int count) {
+        for (int i = 0; i < count; i++) {
+            extraTiles.add(new TileDefinition(biome, null));
+        }
     }
 
-    /**
-     * Нужен для будущих автодостроек биомов: лес расползся, река продолжилась,
-     * болото разлилось. Сейчас этот метод уже готов, даже если паттерны расширения
-     * пока почти не используются.
-     */
-    public TileDefinition drawBiome(Biome biome) {
-        for (int i = 0; i < tiles.size(); i++) {
-            TileDefinition def = tiles.get(i);
-            if (def.biome == biome && def.spawnSpecies == null) {
-                return tiles.remove(i);
+    private List<Direction> randomDirections(int count) {
+        if (count <= 0) return List.of();
+
+        ArrayList<Direction> directions = new ArrayList<>(List.of(CARDINALS));
+        Collections.shuffle(directions, random);
+
+        return directions.subList(0, Math.min(count, directions.size())).stream()
+                .sorted()
+                .toList();
+    }
+
+    public TileDefinition draw() {
+        if (mainTiles.isEmpty()) return null;
+        return mainTiles.remove(random.nextInt(mainTiles.size()));
+    }
+
+    public TileDefinition drawExtraBiome(Biome biome) {
+        for (int i = 0; i < extraTiles.size(); i++) {
+            TileDefinition def = extraTiles.get(i);
+            if (def.biome == biome) {
+                return extraTiles.remove(i);
             }
         }
         return null;
     }
 
+    /**
+     * Старое имя оставлено как алиас, чтобы соседний код не падал лицом в луг.
+     */
+    public TileDefinition drawBiome(Biome biome) {
+        return drawExtraBiome(biome);
+    }
+
     public int remaining() {
-        return tiles.size();
+        return remainingMain();
+    }
+
+    public int remainingMain() {
+        return mainTiles.size();
+    }
+
+    public int remainingExtra() {
+        return extraTiles.size();
     }
 
     public boolean isEmpty() {
-        return tiles.isEmpty();
+        return mainTiles.isEmpty();
     }
 }
