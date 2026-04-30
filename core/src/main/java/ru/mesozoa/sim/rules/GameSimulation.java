@@ -393,7 +393,7 @@ public final class GameSimulation {
         for (Direction direction : placedTile.expansionDirections) {
             Point extraPoint = direction.from(placement);
 
-            if (!map.canPlace(extraPoint)) {
+            if (!map.canPlaceExpansion(extraPoint)) {
                 log("Переход " + direction + " заблокирован: клетка занята " + extraPoint);
                 continue;
             }
@@ -420,7 +420,10 @@ public final class GameSimulation {
     private Tile placeDrawnTile(PlayerState player, TileDefinition drawn, Point placement, boolean automaticExpansion) {
         int rotationQuarterTurns = random.nextInt(4);
         Tile tile = drawn.toPlacedTile(rotationQuarterTurns);
-        boolean placed = map.placeTile(placement, tile);
+        boolean placed = automaticExpansion
+                ? map.placeExpansionTile(placement, tile)
+                : map.placeTile(placement, tile);
+
         if (!placed) return null;
 
         if (!automaticExpansion) {

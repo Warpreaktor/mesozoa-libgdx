@@ -1,6 +1,12 @@
 package ru.mesozoa.sim.model;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Динамическое игровое поле.
@@ -49,15 +55,41 @@ public final class GameMap {
         return Collections.unmodifiableSet(placedTiles.keySet());
     }
 
+    /**
+     * Обычная выкладка тайла игроком.
+     *
+     * Для ручной разведки оставляем ограничение:
+     * новый тайл должен прилегать к уже выложенным по стороне.
+     */
     public boolean placeTile(Point p, Tile tile) {
-        if (placedTiles.containsKey(p)) return false;
-        if (!placedTiles.isEmpty() && !isAdjacentToPlacedTile(p)) return false;
+        if (!canPlace(p)) return false;
         placedTiles.put(p, tile);
         return true;
     }
 
     public boolean canPlace(Point p) {
-        return !placedTiles.containsKey(p) && isAdjacentToPlacedTile(p);
+        return !placedTiles.containsKey(p) && (placedTiles.isEmpty() || isAdjacentToPlacedTile(p));
+    }
+
+    /**
+     * Автоматическая достройка по маркеру перехода.
+     *
+     * Важно: диагональный переход NORTH_WEST / NORTH_EAST / SOUTH_WEST / SOUTH_EAST
+     * указывает на клетку, которая может касаться текущего тайла только углом.
+     *
+     * Поэтому здесь нельзя использовать canPlace(), потому что canPlace()
+     * проверяет только соседство по стороне. Иначе UI честно рисует синий
+     * уголок, а доп. тайл не выкладывается. Компьютер, как обычно, выполняет
+     * инструкцию буквально и портит настолку.
+     */
+    public boolean placeExpansionTile(Point p, Tile tile) {
+        if (!canPlaceExpansion(p)) return false;
+        placedTiles.put(p, tile);
+        return true;
+    }
+
+    public boolean canPlaceExpansion(Point p) {
+        return !placedTiles.containsKey(p) && inBounds(p);
     }
 
     private boolean isAdjacentToPlacedTile(Point p) {
@@ -68,7 +100,8 @@ public final class GameMap {
     }
 
     /**
-     * Все свободные клетки, куда игрок сейчас может положить новый тайл.
+     * Все свободные клетки, куда игрок сейчас может положить новый тайл вручную.
+     * Это именно ручная выкладка, поэтому только 4 стороны.
      */
     public List<Point> availablePlacementPoints() {
         LinkedHashSet<Point> result = new LinkedHashSet<>();
