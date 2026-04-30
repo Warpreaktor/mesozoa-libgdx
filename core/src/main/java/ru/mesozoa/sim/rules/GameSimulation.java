@@ -6,7 +6,6 @@ import ru.mesozoa.sim.report.GameResult;
 import java.util.*;
 
 public final class GameSimulation {
-
     public final SimulationConfig config;
     public final Random random;
     public GameMap map;
@@ -57,10 +56,10 @@ public final class GameSimulation {
 
     /**
      * Один микрошаг симуляции:
-     * - ход одного игрока;
+     * - ход одного игрока, в котором он активирует до двух разных рейнджеров;
      * - или общая фаза динозавров.
      *
-     * Именно это вызывается по N.
+     * N вызывает этот метод.
      */
     public void stepOneTurn() {
         if (gameOver) return;
@@ -87,7 +86,7 @@ public final class GameSimulation {
      * Полный раунд:
      * все игроки по очереди + фаза динозавров.
      *
-     * Это вызывается по Ctrl+N.
+     * Ctrl+N вызывает этот метод.
      */
     public void stepRound() {
         if (gameOver) return;
@@ -172,14 +171,213 @@ public final class GameSimulation {
             return;
         }
 
-        log("Ход игрока " + player.id + " (" + player.color.assetSuffix + ")");
+        List<RangerRole> roles = chooseTwoRangersForTurn(player);
 
-        for (int i = 0; i < config.scoutOpenActions; i++) {
-            exploreOneTile(player);
+        log("Ход игрока " + player.id + " (" + player.color.assetSuffix + "): "
+                + roleListToText(roles));
+
+        for (RangerRole role : roles) {
+            performRangerAction(player, role, 2);
+        }
+    }
+
+    /**
+     * Упрощённый AI выбора двух фигурок.
+     *
+     * Логика такая:
+     * 1. разведчик почти всегда полезен, пока есть что открывать;
+     * 2. если на карте есть нужная S-дичь, нужен инженер с ловушками;
+     * 3. если есть нужная M-дичь или хищник, нужен охотник;
+     * 4. водитель пока играет логистическую роль и подтягивается к команде.
+     *
+     * Это не финальный интеллект игрока, а сухая математика для симулятора.
+     */
+    private List<RangerRole> chooseTwoRangersForTurn(PlayerState player) {
+        ArrayList<RangerRole> roles = new ArrayList<>(2);
+
+        if (!tileBag.isEmpty()) {
+            roles.add(RangerRole.SCOUT);
         }
 
-        placeTrapsForNeededS(player);
-        attemptCapture(player);
+        if (roles.size() < 2 && hasUsefulEngineerAction(player)) {
+            roles.add(RangerRole.ENGINEER);
+        }
+
+        if (roles.size() < 2 && hasUsefulHunterAction(player)) {
+            roles.add(RangerRole.HUNTER);
+        }
+
+        if (roles.size() < 2 && hasUsefulDriverAction(player)) {
+            roles.add(RangerRole.DRIVER);
+        }
+
+        if (roles.size() < 2 && !roles.contains(RangerRole.HUNTER)) {
+            roles.add(RangerRole.HUNTER);
+        }
+
+        if (roles.size() < 2 && !roles.contains(RangerRole.ENGINEER)) {
+            roles.add(RangerRole.ENGINEER);
+        }
+
+        if (roles.size() < 2 && !roles.contains(RangerRole.DRIVER)) {
+            roles.add(RangerRole.DRIVER);
+        }
+
+        return roles.subList(0, Math.min(2, roles.size()));
+    }
+
+    private String roleListToText(List<RangerRole> roles) {
+        ArrayList<String> names = new ArrayList<>();
+        for (RangerRole role : roles) {
+            names.add(switch (role) {
+                case SCOUT -> "разведчик";
+                case DRIVER -> "водитель";
+                case ENGINEER -> "инженер";
+                case HUNTER -> "охотник";
+            });
+        }
+        return String.join(" + ", names);
+    }
+
+    private boolean hasUsefulEngineerAction(PlayerState player) {
+        if (player.traps.stream().filter(t -> t.active).count() >= config.maxTrapsPerPlayer) {
+            return false;
+        }
+
+        return dinosaurs.stream()
+                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .anyMatch(d -> d.species.captureMethod == CaptureMethod.TRAP);
+    }
+
+    private boolean hasUsefulHunterAction(PlayerState player) {
+        return dinosaurs.stream()
+                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .anyMatch(d -> d.species.captureMethod == CaptureMethod.TRACKING
+                        || d.species.captureMethod == CaptureMethod.HUNT);
+    }
+
+    private boolean hasUsefulDriverAction(PlayerState player) {
+        return !player.driver.equals(player.hunter)
+                || !player.driver.equals(player.engineer)
+                || !player.driver.equals(player.scout);
+    }
+
+    private void performRangerAction(PlayerState player, RangerRole role, int movementPoints) {
+        switch (role) {
+            case SCOUT -> scoutAction(player, movementPoints);
+            case ENGINEER -> engineerAction(player, movementPoints);
+            case HUNTER -> hunterAction(player, movementPoints);
+            case DRIVER -> driverAction(player, movementPoints);
+        }
+    }
+
+    /**
+     * Разведчик:
+     * - имеет 2 очка действий;
+     * - спецдействие открытия тайла используется не более одного раза за активацию.
+     *
+     * Пока для симуляции оставляем старую абстракцию:
+     * разведчик выбирает ближайшее доступное место, вытаскивает слепой тайл из мешка
+     * и открывает его.
+     */
+    private void scoutAction(PlayerState player, int movementPoints) {
+        if (tileBag.isEmpty()) {
+            moveRoleTowardNearestFrontier(player, RangerRole.SCOUT, movementPoints);
+            return;
+        }
+
+        exploreOneTile(player);
+    }
+
+    private void engineerAction(PlayerState player, int movementPoints) {
+        boolean placedTrap = placeTrapsForNeededS(player);
+        if (placedTrap) {
+            return;
+        }
+
+        Optional<Dinosaur> target = nearestNeededDinosaur(player, player.engineer, CaptureMethod.TRAP);
+        if (target.isPresent()) {
+            moveRoleToward(player, RangerRole.ENGINEER, target.get().position, movementPoints);
+            return;
+        }
+
+        moveRoleToward(player, RangerRole.ENGINEER, player.scout, movementPoints);
+    }
+
+    private void hunterAction(PlayerState player, int movementPoints) {
+        boolean acted = attemptCapture(player);
+        if (acted) {
+            return;
+        }
+
+        Optional<Dinosaur> target = nearestNeededDinosaur(
+                player,
+                player.hunter,
+                CaptureMethod.TRACKING,
+                CaptureMethod.HUNT
+        );
+
+        if (target.isPresent()) {
+            moveRoleToward(player, RangerRole.HUNTER, target.get().position, movementPoints);
+            return;
+        }
+
+        /*
+         * Если охотнику пока некого ловить, он всё равно тратит свою активацию:
+         * подтягивается к разведчику. Иначе в логе написано "разведчик + охотник",
+         * а на столе охотник стоит на базе и философски смотрит в пустоту.
+         */
+        moveRoleToward(player, RangerRole.HUNTER, player.scout, movementPoints);
+    }
+
+    private void driverAction(PlayerState player, int movementPoints) {
+        Point target;
+
+        if (!player.driver.equals(player.hunter)) {
+            target = player.hunter;
+        } else if (!player.driver.equals(player.engineer)) {
+            target = player.engineer;
+        } else {
+            target = player.scout;
+        }
+
+        moveRoleToward(player, RangerRole.DRIVER, target, movementPoints);
+    }
+
+    private Optional<Dinosaur> nearestNeededDinosaur(PlayerState player, Point from, CaptureMethod... methods) {
+        Set<CaptureMethod> allowedMethods = EnumSet.noneOf(CaptureMethod.class);
+        allowedMethods.addAll(Arrays.asList(methods));
+
+        return dinosaurs.stream()
+                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> allowedMethods.contains(d.species.captureMethod))
+                .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
+    }
+
+    private void moveRoleTowardNearestFrontier(PlayerState player, RangerRole role, int movementPoints) {
+        Point start = player.positionOf(role);
+        Point frontier = map.nearestUnexploredFrontier(start);
+        if (frontier == null) return;
+
+        moveRoleToward(player, role, frontier, movementPoints);
+    }
+
+    private void moveRoleToward(PlayerState player, RangerRole role, Point target, int movementPoints) {
+        Point position = player.positionOf(role);
+
+        for (int i = 0; i < movementPoints; i++) {
+            if (position.equals(target)) break;
+
+            Point next = stepTowardPlaced(position, target);
+            if (next.equals(position)) break;
+
+            position = next;
+        }
+
+        player.setPosition(role, position);
     }
 
     private void exploreOneTile(PlayerState player) {
@@ -192,9 +390,6 @@ public final class GameSimulation {
         Tile placedTile = placeDrawnTile(player, drawn, placement, false);
         if (placedTile == null) return;
 
-        /*
-         * Достройка идёт по направлениям уже повёрнутого тайла.
-         */
         for (Direction direction : placedTile.expansionDirections) {
             Point extraPoint = direction.from(placement);
 
@@ -250,8 +445,8 @@ public final class GameSimulation {
         log("СПАУН: " + species.displayName + " на " + position);
     }
 
-    private void placeTrapsForNeededS(PlayerState player) {
-        if (player.traps.stream().filter(t -> t.active).count() >= config.maxTrapsPerPlayer) return;
+    private boolean placeTrapsForNeededS(PlayerState player) {
+        if (player.traps.stream().filter(t -> t.active).count() >= config.maxTrapsPerPlayer) return false;
 
         Optional<Dinosaur> target = dinosaurs.stream()
                 .filter(d -> !d.captured && !d.removed)
@@ -259,17 +454,20 @@ public final class GameSimulation {
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
                 .min(Comparator.comparingInt(d -> d.position.manhattan(player.engineer)));
 
-        if (target.isEmpty()) return;
+        if (target.isEmpty()) return false;
 
         Point predicted = predictNextBioStep(target.get());
         if (predicted != null && map.isPlaced(predicted)) {
             player.traps.add(new Trap(player.id, predicted));
             player.engineer = predicted;
             log("Игрок " + player.id + " поставил ловушку на " + predicted);
+            return true;
         }
+
+        return false;
     }
 
-    private void attemptCapture(PlayerState player) {
+    private boolean attemptCapture(PlayerState player) {
         List<Dinosaur> needed = dinosaurs.stream()
                 .filter(d -> !d.captured && !d.removed)
                 .filter(d -> player.needs(d.species))
@@ -284,15 +482,15 @@ public final class GameSimulation {
                         capture(player, dino, "выслеживание");
                         result.trackingCaptures++;
                     }
-                    return;
+                    return true;
                 }
 
                 player.hunter = stepTowardPlaced(player.hunter, dino.position);
-                return;
+                return true;
             }
 
             if (dino.species.captureMethod == CaptureMethod.HUNT) {
-                if (player.hunterBait <= 0) return;
+                if (player.hunterBait <= 0) return false;
 
                 if (player.hunter.manhattan(dino.position) <= 2) {
                     double chance = random.nextBoolean() ? config.huntBaseSuccess : config.huntPreparedSuccess;
@@ -301,13 +499,15 @@ public final class GameSimulation {
                         result.huntCaptures++;
                     }
                     player.hunterBait--;
-                    return;
+                    return true;
                 }
 
                 player.hunter = stepTowardPlaced(player.hunter, dino.position);
-                return;
+                return true;
             }
         }
+
+        return false;
     }
 
     private void dinosaurPhase() {
@@ -448,8 +648,12 @@ public final class GameSimulation {
         for (PlayerState player : players) {
             boolean hunterNearby = player.hunter.manhattan(dino.position) <= dino.species.huntRadius;
             boolean engineerNearby = player.engineer.manhattan(dino.position) <= dino.species.huntRadius;
+            boolean driverNearby = player.driver.manhattan(dino.position) <= dino.species.huntRadius;
 
-            if ((hunterNearby || engineerNearby) && random.nextDouble() < 0.20) {
+            /*
+             * Разведчика не трогаем: по правилам динозавры на него не обращают внимания.
+             */
+            if ((hunterNearby || engineerNearby || driverNearby) && random.nextDouble() < 0.20) {
                 player.turnsSkipped = 1;
                 player.returnTeamToBase(map.base);
                 log("Велоцитаурус напал на команду игрока " + player.id);
