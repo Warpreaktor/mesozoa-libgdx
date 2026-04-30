@@ -6,7 +6,7 @@ import ru.mesozoa.sim.MesozoaVisualApp;
 
 public final class Lwjgl3Launcher {
     public static void main(String[] args) {
-        long seed = readLongArg(args, "--seed", MesozoaVisualApp.RANDOM_SEED);
+        long seed = readLongArg(args, "--seed", Long.MIN_VALUE);
         float speed = readFloatArg(args, "--speed", 0.35f);
 
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();

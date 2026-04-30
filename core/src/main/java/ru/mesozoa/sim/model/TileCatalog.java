@@ -111,6 +111,7 @@ public final class TileCatalog {
 
                 // Болото
                 TileBlueprint.tile(Biome.SWAMP, 6),
+
                 TileBlueprint.tile(Biome.SWAMP, 1, EAST),
                 TileBlueprint.tile(Biome.SWAMP, 1, SOUTH),
                 TileBlueprint.tile(Biome.SWAMP, 1, SOUTH_WEST),
@@ -119,14 +120,17 @@ public final class TileCatalog {
 
                 // Озеро
                 TileBlueprint.tile(Biome.LAKE, 4),
+
                 TileBlueprint.tile(Biome.LAKE, 1, SOUTH),
                 TileBlueprint.tile(Biome.LAKE, 1, EAST),
+
                 TileBlueprint.tile(Biome.LAKE, 1, NORTH_EAST, EAST),
 
                 // Пойма
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, WEST, NORTH_EAST),
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, SOUTH_WEST, NORTH_EAST),
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH_WEST, SOUTH_EAST),
+
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH_WEST, SOUTH_EAST, WEST),
                 TileBlueprint.tile(Biome.FLOODPLAIN, 1, NORTH, SOUTH_EAST, SOUTH_WEST)
         );
