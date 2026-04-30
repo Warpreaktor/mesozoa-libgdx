@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Matrix4;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.rules.GameSimulation;
 import ru.mesozoa.sim.rules.SimulationConfig;
@@ -21,6 +22,9 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class MesozoaVisualApp extends ApplicationAdapter {
+
+    public static final long RANDOM_SEED = Long.MIN_VALUE;
+
     private static final int HUD_WIDTH = 390;
     private static final int TILE_SIZE = 48;
 
@@ -54,6 +58,9 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private float cameraY = 0f;
     private float zoom = BASE_ZOOM;
 
+    private int restartCounter = 0;
+    private long currentSeed = 0L;
+
     public MesozoaVisualApp(long seed, float stepDelay) {
         this.seed = seed;
         this.stepDelay = stepDelay;
@@ -65,6 +72,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch = new SpriteBatch();
         font = RussianFontFactory.create(16);
         assets = new AssetCatalog();
+        resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         Gdx.input.setInputProcessor(new InputAdapter() {
             @Override
@@ -84,12 +92,35 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     private void restart() {
         SimulationConfig config = new SimulationConfig();
-        simulation = new GameSimulation(config, seed);
+        currentSeed = nextSimulationSeed();
+        simulation = new GameSimulation(config, currentSeed);
         paused = true;
         timer = 0f;
         zoom = BASE_ZOOM;
         centerCameraOnBase();
     }
+    private long nextSimulationSeed() {
+        if (seed != RANDOM_SEED) {
+            return seed;
+        }
+
+        restartCounter++;
+        long mixedTime = System.nanoTime() ^ System.currentTimeMillis();
+        return mixedTime ^ ((long) restartCounter << 32);
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        if (width <= 0 || height <= 0 || shapes == null || batch == null) {
+            return;
+        }
+
+        Gdx.gl.glViewport(0, 0, width, height);
+        Matrix4 projection = new Matrix4().setToOrtho2D(0, 0, width, height);
+        shapes.setProjectionMatrix(projection);
+        batch.setProjectionMatrix(projection);
+    }
+
 
     private void centerCameraOnBase() {
         cameraX = simulation.map.base.x;
@@ -666,6 +697,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         font.draw(batch, "Динозавров: " + aliveDinos() + " / всего " + simulation.dinosaurs.size(), x, y);
         y -= 18;
         font.draw(batch, "Масштаб: " + Math.round(zoomPercent()) + "%", x, y);
+        y -= 18;
+        font.draw(batch, "Seed: " + currentSeed, x, y);
         y -= 18;
         font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/ход", x, y);
         y -= 24;

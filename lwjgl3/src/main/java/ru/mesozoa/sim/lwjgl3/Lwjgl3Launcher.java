@@ -6,12 +6,13 @@ import ru.mesozoa.sim.MesozoaVisualApp;
 
 public final class Lwjgl3Launcher {
     public static void main(String[] args) {
-        long seed = readLongArg(args, "--seed", 42L);
+        long seed = readLongArg(args, "--seed", MesozoaVisualApp.RANDOM_SEED);
         float speed = readFloatArg(args, "--speed", 0.35f);
 
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("Mesozoa Visual Simulator");
         config.setWindowedMode(1280, 720);
+        config.setResizable(true);
         config.useVsync(true);
         config.setForegroundFPS(60);
 
@@ -21,6 +22,7 @@ public final class Lwjgl3Launcher {
     private static long readLongArg(String[] args, String name, long fallback) {
         String value = readStringArg(args, name);
         if (value == null) return fallback;
+
         try {
             return Long.parseLong(value);
         } catch (NumberFormatException e) {
@@ -31,6 +33,7 @@ public final class Lwjgl3Launcher {
     private static float readFloatArg(String[] args, String name, float fallback) {
         String value = readStringArg(args, name);
         if (value == null) return fallback;
+
         try {
             return Float.parseFloat(value);
         } catch (NumberFormatException e) {
@@ -42,6 +45,7 @@ public final class Lwjgl3Launcher {
         for (int i = 0; i < args.length - 1; i++) {
             if (name.equals(args[i])) return args[i + 1];
         }
+
         return null;
     }
 }
