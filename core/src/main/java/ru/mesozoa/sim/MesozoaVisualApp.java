@@ -3,6 +3,7 @@ package ru.mesozoa.sim;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -23,6 +24,25 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private static final int HUD_WIDTH = 390;
     private static final int TILE_SIZE = 48;
 
+    /*
+     * TILE_SIZE = внутренняя базовая логическая величина.
+     * BASE_ZOOM = то, что пользователь видит как 100%.
+     *
+     * Раньше тайл был 48px. Теперь стартовый размер 48 * 1.25 = 60px,
+     * и именно эти 60px считаем UI-масштабом 100%.
+     */
+    private static final float BASE_ZOOM = 1.25f;
+    private static final float MIN_ZOOM = BASE_ZOOM * 0.40f;
+    private static final float MAX_ZOOM = BASE_ZOOM * 3.00f;
+    private static final float MOUSE_WHEEL_ZOOM_STEP = 1.12f;
+
+    /*
+     * Важно:
+     * - прямое направление рисуем полосой по центру края;
+     * - диагональ рисуем только в самом углу + короткие плечи по двум соседним краям.
+     *
+     * CORNER_ARM_RATIO = 0.20 означает примерно 20% длины стороны тайла.
+     */
     private static final float TRANSITION_STRIP = 10f;
     private static final float TRANSITION_INSET = 12f;
     private static final float CORNER_ARM_RATIO = 0.20f;
@@ -47,6 +67,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private float cameraX = 0f;
     private float cameraY = 0f;
 
+    private float zoom = BASE_ZOOM;
+
     public MesozoaVisualApp(long seed, float stepDelay) {
         this.seed = seed;
         this.stepDelay = stepDelay;
@@ -58,6 +80,20 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch = new SpriteBatch();
         font = RussianFontFactory.create(16);
         assets = new AssetCatalog();
+
+        Gdx.input.setInputProcessor(new InputAdapter() {
+            @Override
+            public boolean scrolled(float amountX, float amountY) {
+                if (Gdx.input.getX() >= boardViewportWidth()) {
+                    return false;
+                }
+
+                float factor = (float) Math.pow(MOUSE_WHEEL_ZOOM_STEP, -amountY);
+                zoomAtMouse(factor);
+                return true;
+            }
+        });
+
         restart();
     }
 
@@ -66,6 +102,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         simulation = new GameSimulation(config, seed);
         paused = true;
         timer = 0f;
+        zoom = BASE_ZOOM;
         centerCameraOnBase();
     }
 
@@ -111,12 +148,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         if (Gdx.input.isKeyJustPressed(Input.Keys.C)) centerCameraOnBase();
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.G)) showGrid = !showGrid;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.K) || Gdx.input.isKeyJustPressed(Input.Keys.S)) {
-            showSpawnDebug = !showSpawnDebug;
-        }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.J) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
-            showDebug = !showDebug;
-        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) showSpawnDebug = !showSpawnDebug;
+        if (Gdx.input.isKeyJustPressed(Input.Keys.J)) showDebug = !showDebug;
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.PLUS) || Gdx.input.isKeyJustPressed(Input.Keys.EQUALS)) {
             stepDelay = Math.max(0.05f, stepDelay * 0.75f);
@@ -157,8 +190,48 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
         if (!dragPressed) return;
 
-        cameraX -= (float) Gdx.input.getDeltaX() / TILE_SIZE;
-        cameraY += (float) Gdx.input.getDeltaY() / TILE_SIZE;
+        cameraX -= (float) Gdx.input.getDeltaX() / tilePixelSize();
+        cameraY += (float) Gdx.input.getDeltaY() / tilePixelSize();
+    }
+
+    private void zoomAtMouse(float factor) {
+        float oldZoom = zoom;
+        float newZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
+
+        if (Math.abs(newZoom - oldZoom) < 0.0001f) {
+            return;
+        }
+
+        float mouseX = Gdx.input.getX();
+        float mouseY = Gdx.graphics.getHeight() - Gdx.input.getY();
+
+        /*
+         * Держим точку под курсором на месте при зуме.
+         * Иначе карта будет прыгать, как бухгалтерия перед релизом.
+         */
+        float worldXBefore = cameraX + (mouseX - boardCenterX()) / tilePixelSize();
+        float worldYBefore = cameraY + (mouseY - boardCenterY()) / tilePixelSize();
+
+        zoom = newZoom;
+
+        cameraX = worldXBefore - (mouseX - boardCenterX()) / tilePixelSize();
+        cameraY = worldYBefore - (mouseY - boardCenterY()) / tilePixelSize();
+    }
+
+    private float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private float tilePixelSize() {
+        return TILE_SIZE * zoom;
+    }
+
+    private float pixelScale() {
+        return tilePixelSize() / TILE_SIZE;
+    }
+
+    private float zoomPercent() {
+        return zoom / BASE_ZOOM * 100f;
     }
 
     private int boardViewportWidth() {
@@ -178,20 +251,22 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private float screenX(Point p) {
-        return boardCenterX() + (p.x - cameraX) * TILE_SIZE;
+        return boardCenterX() + (p.x - cameraX) * tilePixelSize();
     }
 
     private float screenY(Point p) {
-        return boardCenterY() + (p.y - cameraY) * TILE_SIZE;
+        return boardCenterY() + (p.y - cameraY) * tilePixelSize();
     }
 
     private boolean isVisibleOnBoard(Point p) {
         float sx = screenX(p);
         float sy = screenY(p);
-        return sx > -TILE_SIZE
-                && sx < boardViewportWidth() + TILE_SIZE
-                && sy > -TILE_SIZE
-                && sy < boardViewportHeight() + TILE_SIZE;
+        float size = tilePixelSize();
+
+        return sx > -size
+                && sx < boardViewportWidth() + size
+                && sy > -size
+                && sy < boardViewportHeight() + size;
     }
 
     private void drawBoardBackground() {
@@ -202,6 +277,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void drawTiles() {
+        float size = tilePixelSize();
+
         shapes.begin(ShapeRenderer.ShapeType.Filled);
         for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
             Point p = entry.getKey();
@@ -212,7 +289,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             float sy = screenY(p);
 
             shapes.setColor(Palette.biome(tile.biome));
-            shapes.rect(sx, sy, TILE_SIZE - 2, TILE_SIZE - 2);
+            shapes.rect(sx, sy, size - 2f, size - 2f);
         }
         shapes.end();
 
@@ -227,30 +304,13 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
             Texture texture = assets.get(tile.imagePath);
             if (texture != null) {
-                batch.draw(
-                        texture,
-                        sx,
-                        sy,
-                        TILE_SIZE / 2f,
-                        TILE_SIZE / 2f,
-                        TILE_SIZE - 2,
-                        TILE_SIZE - 2,
-                        1f,
-                        1f,
-                        tile.rotationDegreesForRendering(),
-                        0,
-                        0,
-                        texture.getWidth(),
-                        texture.getHeight(),
-                        false,
-                        false
-                );
+                batch.draw(texture, sx, sy, size - 2f, size - 2f);
             }
 
-            font.draw(batch, shortBiome(tile.biome), sx + 4, sy + 16);
+            font.draw(batch, shortBiome(tile.biome), sx + 4f * pixelScale(), sy + 16f * pixelScale());
 
             if (tile.hasSpawn() && showSpawnDebug) {
-                font.draw(batch, tile.spawnSpecies.shortCode, sx + TILE_SIZE - 18, sy + TILE_SIZE - 8);
+                font.draw(batch, tile.spawnSpecies.shortCode, sx + size - 18f * pixelScale(), sy + size - 8f * pixelScale());
             }
         }
         batch.end();
@@ -263,7 +323,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
                 Point p = entry.getKey();
                 if (!isVisibleOnBoard(p)) continue;
-                shapes.rect(screenX(p), screenY(p), TILE_SIZE - 2, TILE_SIZE - 2);
+                shapes.rect(screenX(p), screenY(p), size - 2f, size - 2f);
             }
             shapes.end();
         }
@@ -324,33 +384,37 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void drawCardinalTransitionBase(float sx, float sy, Direction direction) {
-        float size = TILE_SIZE - 2f;
+        float size = tilePixelSize() - 2f;
+        float strip = TRANSITION_STRIP * pixelScale();
+        float inset = TRANSITION_INSET * pixelScale();
 
         switch (direction) {
-            case NORTH -> shapes.rect(sx + TRANSITION_INSET, sy + size - TRANSITION_STRIP, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
-            case SOUTH -> shapes.rect(sx + TRANSITION_INSET, sy, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
-            case EAST -> shapes.rect(sx + size - TRANSITION_STRIP, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
-            case WEST -> shapes.rect(sx, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
+            case NORTH -> shapes.rect(sx + inset, sy + size - strip, size - inset * 2f, strip);
+            case SOUTH -> shapes.rect(sx + inset, sy, size - inset * 2f, strip);
+            case EAST -> shapes.rect(sx + size - strip, sy + inset, strip, size - inset * 2f);
+            case WEST -> shapes.rect(sx, sy + inset, strip, size - inset * 2f);
             default -> {
             }
         }
     }
 
     private void drawCardinalTransitionHatching(float sx, float sy, Direction direction) {
-        float size = TILE_SIZE - 2f;
+        float size = tilePixelSize() - 2f;
+        float strip = TRANSITION_STRIP * pixelScale();
+        float inset = TRANSITION_INSET * pixelScale();
 
         switch (direction) {
-            case NORTH -> drawHatchedRect(sx + TRANSITION_INSET, sy + size - TRANSITION_STRIP, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
-            case SOUTH -> drawHatchedRect(sx + TRANSITION_INSET, sy, size - TRANSITION_INSET * 2f, TRANSITION_STRIP);
-            case EAST -> drawHatchedRect(sx + size - TRANSITION_STRIP, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
-            case WEST -> drawHatchedRect(sx, sy + TRANSITION_INSET, TRANSITION_STRIP, size - TRANSITION_INSET * 2f);
+            case NORTH -> drawHatchedRect(sx + inset, sy + size - strip, size - inset * 2f, strip);
+            case SOUTH -> drawHatchedRect(sx + inset, sy, size - inset * 2f, strip);
+            case EAST -> drawHatchedRect(sx + size - strip, sy + inset, strip, size - inset * 2f);
+            case WEST -> drawHatchedRect(sx, sy + inset, strip, size - inset * 2f);
             default -> {
             }
         }
     }
 
     private void drawDiagonalTransitionBase(float sx, float sy, Direction direction) {
-        float size = TILE_SIZE - 2f;
+        float size = tilePixelSize() - 2f;
         float arm = size * CORNER_ARM_RATIO;
 
         switch (direction) {
@@ -364,7 +428,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void drawDiagonalTransitionHatching(float sx, float sy, Direction direction) {
-        float size = TILE_SIZE - 2f;
+        float size = tilePixelSize() - 2f;
         float arm = size * CORNER_ARM_RATIO;
 
         switch (direction) {
@@ -378,7 +442,10 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void drawHatchedRect(float x, float y, float width, float height) {
-        for (float c = -height; c <= width; c += HATCH_SPACING) {
+        float hatchSpacing = HATCH_SPACING * pixelScale();
+        float hatchWidth = HATCH_WIDTH * pixelScale();
+
+        for (float c = -height; c <= width; c += hatchSpacing) {
             ArrayList<float[]> pts = new ArrayList<>(4);
 
             if (c >= -height && c <= 0f) pts.add(new float[]{0f, -c});
@@ -390,44 +457,59 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
                 float[] p1 = pts.get(0);
                 float[] p2 = pts.get(1);
                 if (Math.abs(p1[0] - p2[0]) > 0.01f || Math.abs(p1[1] - p2[1]) > 0.01f) {
-                    shapes.rectLine(x + p1[0], y + p1[1], x + p2[0], y + p2[1], HATCH_WIDTH);
+                    shapes.rectLine(x + p1[0], y + p1[1], x + p2[0], y + p2[1], hatchWidth);
                 }
             }
         }
     }
 
     private void drawCornerHatchingNorthWest(float xLeft, float yTop, float arm) {
-        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
-            shapes.rectLine(xLeft + t, yTop, xLeft, yTop - t, HATCH_WIDTH);
+        float hatchSpacing = HATCH_SPACING * pixelScale();
+        float hatchWidth = HATCH_WIDTH * pixelScale();
+
+        for (float t = hatchSpacing; t < arm; t += hatchSpacing) {
+            shapes.rectLine(xLeft + t, yTop, xLeft, yTop - t, hatchWidth);
         }
     }
 
     private void drawCornerHatchingNorthEast(float xRight, float yTop, float arm) {
-        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
-            shapes.rectLine(xRight - t, yTop, xRight, yTop - t, HATCH_WIDTH);
+        float hatchSpacing = HATCH_SPACING * pixelScale();
+        float hatchWidth = HATCH_WIDTH * pixelScale();
+
+        for (float t = hatchSpacing; t < arm; t += hatchSpacing) {
+            shapes.rectLine(xRight - t, yTop, xRight, yTop - t, hatchWidth);
         }
     }
 
     private void drawCornerHatchingSouthWest(float xLeft, float yBottom, float arm) {
-        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
-            shapes.rectLine(xLeft + t, yBottom, xLeft, yBottom + t, HATCH_WIDTH);
+        float hatchSpacing = HATCH_SPACING * pixelScale();
+        float hatchWidth = HATCH_WIDTH * pixelScale();
+
+        for (float t = hatchSpacing; t < arm; t += hatchSpacing) {
+            shapes.rectLine(xLeft + t, yBottom, xLeft, yBottom + t, hatchWidth);
         }
     }
 
     private void drawCornerHatchingSouthEast(float xRight, float yBottom, float arm) {
-        for (float t = HATCH_SPACING; t < arm; t += HATCH_SPACING) {
-            shapes.rectLine(xRight - t, yBottom, xRight, yBottom + t, HATCH_WIDTH);
+        float hatchSpacing = HATCH_SPACING * pixelScale();
+        float hatchWidth = HATCH_WIDTH * pixelScale();
+
+        for (float t = hatchSpacing; t < arm; t += hatchSpacing) {
+            shapes.rectLine(xRight - t, yBottom, xRight, yBottom + t, hatchWidth);
         }
     }
 
     private void drawPlacementFrontier() {
+        float size = tilePixelSize();
+        float inset = 6f * pixelScale();
+
         shapes.begin(ShapeRenderer.ShapeType.Line);
         shapes.setColor(0.75f, 0.75f, 0.75f, 0.40f);
         for (Point p : simulation.map.availablePlacementPoints()) {
             if (!isVisibleOnBoard(p)) continue;
             float sx = screenX(p);
             float sy = screenY(p);
-            shapes.rect(sx + 6, sy + 6, TILE_SIZE - 14, TILE_SIZE - 14);
+            shapes.rect(sx + inset, sy + inset, size - inset * 2f - 2f, size - inset * 2f - 2f);
         }
         shapes.end();
     }
@@ -447,31 +529,35 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void drawTraps() {
+        float size = tilePixelSize();
+
         shapes.begin(ShapeRenderer.ShapeType.Line);
         shapes.setColor(1f, 1f, 1f, 1f);
         for (PlayerState player : simulation.players) {
             for (Trap trap : player.traps) {
                 if (!trap.active || !isVisibleOnBoard(trap.position)) continue;
 
-                float x = screenX(trap.position) + TILE_SIZE * 0.20f;
-                float y = screenY(trap.position) + TILE_SIZE * 0.20f;
-                shapes.line(x, y, x + TILE_SIZE * 0.55f, y + TILE_SIZE * 0.55f);
-                shapes.line(x + TILE_SIZE * 0.55f, y, x, y + TILE_SIZE * 0.55f);
+                float x = screenX(trap.position) + size * 0.20f;
+                float y = screenY(trap.position) + size * 0.20f;
+                shapes.line(x, y, x + size * 0.55f, y + size * 0.55f);
+                shapes.line(x + size * 0.55f, y, x, y + size * 0.55f);
             }
         }
         shapes.end();
     }
 
     private void drawDinosaurs() {
+        float size = tilePixelSize();
+
         shapes.begin(ShapeRenderer.ShapeType.Filled);
         for (Dinosaur dino : simulation.dinosaurs) {
             if (dino.captured || dino.removed || !isVisibleOnBoard(dino.position)) continue;
 
-            float cx = screenX(dino.position) + TILE_SIZE * 0.50f;
-            float cy = screenY(dino.position) + TILE_SIZE * 0.50f;
+            float cx = screenX(dino.position) + size * 0.50f;
+            float cy = screenY(dino.position) + size * 0.50f;
 
             shapes.setColor(Palette.species(dino.species));
-            shapes.circle(cx, cy, 12f);
+            shapes.circle(cx, cy, size * 0.25f);
         }
         shapes.end();
 
@@ -479,14 +565,14 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         for (Dinosaur dino : simulation.dinosaurs) {
             if (dino.captured || dino.removed || !isVisibleOnBoard(dino.position)) continue;
 
-            float sx = screenX(dino.position) + 12;
-            float sy = screenY(dino.position) + 12;
+            float sx = screenX(dino.position) + size * 0.25f;
+            float sy = screenY(dino.position) + size * 0.25f;
 
             Texture texture = assets.get("dinos/" + dino.species.imagePath);
             if (texture != null) {
-                batch.draw(texture, sx, sy, 26, 26);
+                batch.draw(texture, sx, sy, size * 0.54f, size * 0.54f);
             } else {
-                font.draw(batch, dino.species.shortCode + dino.id, sx - 2, sy + 22);
+                font.draw(batch, dino.species.shortCode + dino.id, sx - 2f * pixelScale(), sy + 22f * pixelScale());
             }
         }
         batch.end();
@@ -505,11 +591,13 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private void drawRangerSquare(Point p, int offsetIndex, float r, float g, float b) {
         if (!isVisibleOnBoard(p)) return;
 
-        float sx = screenX(p) + 4 + offsetIndex * 12;
-        float sy = screenY(p) + 4;
+        float size = tilePixelSize();
+        float marker = Math.max(8f, size * 0.20f);
+        float sx = screenX(p) + size * 0.08f + offsetIndex * marker * 1.1f;
+        float sy = screenY(p) + size * 0.08f;
 
         shapes.setColor(r, g, b, 1f);
-        shapes.rect(sx, sy, 10, 10);
+        shapes.rect(sx, sy, marker, marker);
     }
 
     private void drawHud() {
@@ -532,16 +620,20 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 18;
         font.draw(batch, "Динозавров: " + aliveDinos() + " / всего " + simulation.dinosaurs.size(), x, y);
         y -= 18;
+        font.draw(batch, "Масштаб: " + Math.round(zoomPercent()) + "%", x, y);
+        y -= 18;
         font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/раунд", x, y);
         y -= 24;
 
         font.draw(batch, "SPACE пауза, N шаг, R рестарт", x, y);
         y -= 18;
+        font.draw(batch, "Колесо мыши — масштаб", x, y);
+        y -= 18;
         font.draw(batch, "WASD/стрелки — камера", x, y);
         y -= 18;
         font.draw(batch, "ПКМ/СКМ — тащить карту", x, y);
         y -= 18;
-        font.draw(batch, "C база, G сетка, K/S спауны, J/D лог", x, y);
+        font.draw(batch, "C база, G сетка, K спауны, J лог", x, y);
         y -= 28;
 
         if (showDebug) {
