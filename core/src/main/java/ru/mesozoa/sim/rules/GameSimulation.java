@@ -6,6 +6,7 @@ import ru.mesozoa.sim.report.GameResult;
 import java.util.*;
 
 public final class GameSimulation {
+
     public final SimulationConfig config;
     public final Random random;
     public GameMap map;

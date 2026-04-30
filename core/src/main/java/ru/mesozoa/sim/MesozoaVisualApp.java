@@ -9,24 +9,31 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Matrix4;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.rules.GameSimulation;
 import ru.mesozoa.sim.rules.SimulationConfig;
 import ru.mesozoa.sim.view.AssetCatalog;
+import ru.mesozoa.sim.view.BoardOccupancy;
+import ru.mesozoa.sim.view.BoardPiece;
 import ru.mesozoa.sim.view.Palette;
 import ru.mesozoa.sim.view.RussianFontFactory;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 public final class MesozoaVisualApp extends ApplicationAdapter {
 
-    private static final int HUD_WIDTH = 390;
-    private static final int TILE_SIZE = 96;
+    public static final long RANDOM_SEED = Long.MIN_VALUE;
 
+    private static final int HUD_WIDTH = 390;
+
+    private static final int TILE_SIZE = 192;
     private static final float BASE_ZOOM = 1.25f;
-    private static final float MIN_ZOOM = BASE_ZOOM * 0.40f;
+    private static final float MIN_ZOOM = BASE_ZOOM * 0.30f;
     private static final float MAX_ZOOM = BASE_ZOOM * 3.00f;
     private static final float MOUSE_WHEEL_ZOOM_STEP = 1.12f;
 
@@ -35,6 +42,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private static final float CORNER_ARM_RATIO = 0.20f;
     private static final float HATCH_SPACING = 4.5f;
     private static final float HATCH_WIDTH = 1.8f;
+
+    private static final int PIECE_GRID_SIZE = 4;
 
     private final long seed;
     private float stepDelay;
@@ -55,6 +64,9 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private float cameraY = 0f;
     private float zoom = BASE_ZOOM;
 
+    private int restartCounter = 0;
+    private long currentSeed = 0L;
+
     public MesozoaVisualApp(long seed, float stepDelay) {
         this.seed = seed;
         this.stepDelay = stepDelay;
@@ -66,6 +78,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch = new SpriteBatch();
         font = RussianFontFactory.create(16);
         assets = new AssetCatalog();
+        resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         Gdx.input.setInputProcessor(new InputAdapter() {
             @Override
@@ -85,11 +98,34 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     private void restart() {
         SimulationConfig config = new SimulationConfig();
-        simulation = new GameSimulation(config, seed);
+        currentSeed = nextSimulationSeed();
+        simulation = new GameSimulation(config, currentSeed);
         paused = true;
         timer = 0f;
         zoom = BASE_ZOOM;
         centerCameraOnBase();
+    }
+
+    private long nextSimulationSeed() {
+        if (seed != RANDOM_SEED) {
+            return seed;
+        }
+
+        restartCounter++;
+        long mixedTime = System.nanoTime() ^ System.currentTimeMillis();
+        return mixedTime ^ ((long) restartCounter << 32);
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        if (width <= 0 || height <= 0 || shapes == null || batch == null) {
+            return;
+        }
+
+        Gdx.gl.glViewport(0, 0, width, height);
+        Matrix4 projection = new Matrix4().setToOrtho2D(0, 0, width, height);
+        shapes.setProjectionMatrix(projection);
+        batch.setProjectionMatrix(projection);
     }
 
     private void centerCameraOnBase() {
@@ -122,8 +158,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         drawTiles();
         drawPlacementFrontier();
         drawTraps();
-        drawDinosaurs();
-        drawRangers();
+        drawPieces();
         drawHud();
     }
 
@@ -142,8 +177,12 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         if (Gdx.input.isKeyJustPressed(Input.Keys.C)) centerCameraOnBase();
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.G)) showGrid = !showGrid;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) showSpawnDebug = !showSpawnDebug;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.J)) showDebug = !showDebug;
+        if (Gdx.input.isKeyJustPressed(Input.Keys.K) || Gdx.input.isKeyJustPressed(Input.Keys.S)) {
+            showSpawnDebug = !showSpawnDebug;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.J) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
+            showDebug = !showDebug;
+        }
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.PLUS) || Gdx.input.isKeyJustPressed(Input.Keys.EQUALS)) {
             stepDelay = Math.max(0.05f, stepDelay * 0.75f);
@@ -558,90 +597,120 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         shapes.end();
     }
 
-    private void drawDinosaurs() {
-        float size = tilePixelSize();
+    private void drawPieces() {
+        BoardOccupancy occupancy = BoardOccupancy.from(simulation);
 
         shapes.begin(ShapeRenderer.ShapeType.Filled);
-        for (Dinosaur dino : simulation.dinosaurs) {
-            if (dino.captured || dino.removed || !isVisibleOnBoard(dino.position)) continue;
+        for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+            Point tilePoint = entry.getKey();
+            if (!isVisibleOnBoard(tilePoint)) continue;
 
-            float cx = screenX(dino.position) + size * 0.50f;
-            float cy = screenY(dino.position) + size * 0.50f;
-
-            shapes.setColor(Palette.species(dino.species));
-            shapes.circle(cx, cy, size * 0.25f);
+            List<BoardPiece> pieces = occupancy.at(tilePoint);
+            for (int i = 0; i < pieces.size(); i++) {
+                drawPieceFallback(tilePoint, pieces.get(i), i, pieces.size());
+            }
         }
         shapes.end();
 
         batch.begin();
-        for (Dinosaur dino : simulation.dinosaurs) {
-            if (dino.captured || dino.removed || !isVisibleOnBoard(dino.position)) continue;
+        for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+            Point tilePoint = entry.getKey();
+            if (!isVisibleOnBoard(tilePoint)) continue;
 
-            float sx = screenX(dino.position) + size * 0.25f;
-            float sy = screenY(dino.position) + size * 0.25f;
-
-            Texture texture = assets.get("dinos/" + dino.species.imagePath);
-            if (texture != null) {
-                batch.draw(texture, sx, sy, size * 0.54f, size * 0.54f);
-            } else {
-                font.draw(batch, dino.species.shortCode + dino.id, sx - 2f * pixelScale(), sy + 22f * pixelScale());
+            List<BoardPiece> pieces = occupancy.at(tilePoint);
+            for (int i = 0; i < pieces.size(); i++) {
+                drawPieceTextureOrLabel(tilePoint, pieces.get(i), i, pieces.size());
             }
         }
         batch.end();
     }
 
-    private void drawRangers() {
-        batch.begin();
-        for (PlayerState player : simulation.players) {
-            drawRangerFigure(player, RangerRole.SCOUT, 0);
-            drawRangerFigure(player, RangerRole.DRIVER, 1);
-            drawRangerFigure(player, RangerRole.ENGINEER, 2);
-            drawRangerFigure(player, RangerRole.HUNTER, 3);
-        }
-        batch.end();
+    private void drawPieceFallback(Point tilePoint, BoardPiece piece, int pieceIndex, int totalPieces) {
+        Texture texture = pieceTexture(piece);
+        if (texture != null) return;
 
-        shapes.begin(ShapeRenderer.ShapeType.Filled);
-        for (PlayerState player : simulation.players) {
-            drawRangerFallback(player, RangerRole.SCOUT, 0, 0.2f, 0.8f, 1f);
-            drawRangerFallback(player, RangerRole.DRIVER, 1, 0.70f, 0.70f, 0.70f);
-            drawRangerFallback(player, RangerRole.ENGINEER, 2, 0.8f, 0.8f, 0.15f);
-            drawRangerFallback(player, RangerRole.HUNTER, 3, 0.9f, 0.2f, 0.2f);
-        }
-        shapes.end();
-    }
+        PieceRect rect = pieceRect(tilePoint, pieceIndex, totalPieces);
 
-    private void drawRangerFigure(PlayerState player, RangerRole role, int offsetIndex) {
-        Point p = player.positionOf(role);
-        if (!isVisibleOnBoard(p)) return;
-
-        Texture texture = assets.get(role.imagePath(player.color));
-        if (texture == null) return;
-
-        float size = tilePixelSize();
-        float figureSize = size * 0.32f;
-        float gap = size * 0.035f;
-
-        float sx = screenX(p) + size * 0.045f + offsetIndex * (figureSize + gap);
-        float sy = screenY(p) + size * 0.06f;
-
-        batch.draw(texture, sx, sy, figureSize, figureSize);
-    }
-
-    private void drawRangerFallback(PlayerState player, RangerRole role, int offsetIndex, float r, float g, float b) {
-        Point p = player.positionOf(role);
-        if (!isVisibleOnBoard(p)) return;
-
-        if (assets.get(role.imagePath(player.color)) != null) {
+        if (piece.type == BoardPiece.Type.DINOSAUR) {
+            shapes.setColor(Palette.species(piece.dinosaur.species));
+            shapes.circle(rect.centerX(), rect.centerY(), rect.size() * 0.42f);
             return;
         }
 
-        float size = tilePixelSize();
-        float marker = Math.max(8f, size * 0.17f);
-        float sx = screenX(p) + size * 0.055f + offsetIndex * marker * 1.13f;
-        float sy = screenY(p) + size * 0.08f;
+        setRangerFallbackColor(piece.player.color);
+        shapes.rect(rect.x(), rect.y(), rect.size(), rect.size());
+    }
 
-        shapes.setColor(r, g, b, 1f);
-        shapes.rect(sx, sy, marker, marker);
+    private void drawPieceTextureOrLabel(Point tilePoint, BoardPiece piece, int pieceIndex, int totalPieces) {
+        PieceRect rect = pieceRect(tilePoint, pieceIndex, totalPieces);
+        Texture texture = pieceTexture(piece);
+
+        if (texture != null) {
+            batch.draw(texture, rect.x(), rect.y(), rect.size(), rect.size());
+            return;
+        }
+
+        String label = piece.type == BoardPiece.Type.DINOSAUR
+                ? piece.dinosaur.species.shortCode + piece.dinosaur.id
+                : piece.role.assetPrefix.substring(0, 1).toUpperCase(Locale.ROOT);
+
+        font.draw(batch, label, rect.x() + rect.size() * 0.18f, rect.y() + rect.size() * 0.70f);
+    }
+
+    private Texture pieceTexture(BoardPiece piece) {
+        if (piece.type == BoardPiece.Type.DINOSAUR) {
+            return assets.get("dinos/" + piece.dinosaur.species.imagePath);
+        }
+
+        return assets.get(piece.role.imagePath(piece.player.color));
+    }
+
+    private PieceRect pieceRect(Point tilePoint, int pieceIndex, int totalPieces) {
+        int grid = totalPieces <= PIECE_GRID_SIZE * PIECE_GRID_SIZE
+                ? PIECE_GRID_SIZE
+                : Math.max(PIECE_GRID_SIZE + 1, (int) Math.ceil(Math.sqrt(totalPieces)));
+
+        List<Slot> slotOrder = buildSlotOrder(grid);
+        Slot slot = slotOrder.get(Math.min(pieceIndex, slotOrder.size() - 1));
+
+        float tileSize = tilePixelSize() - 2f;
+        float cellSize = tileSize / grid;
+        float pieceSize = cellSize * 0.82f;
+
+        float tileX = screenX(tilePoint);
+        float tileY = screenY(tilePoint);
+
+        float x = tileX + slot.col() * cellSize + (cellSize - pieceSize) / 2f;
+        float y = tileY + slot.row() * cellSize + (cellSize - pieceSize) / 2f;
+
+        return new PieceRect(x, y, pieceSize);
+    }
+
+    private static List<Slot> buildSlotOrder(int grid) {
+        ArrayList<Slot> slots = new ArrayList<>();
+
+        float center = (grid - 1) / 2f;
+        for (int row = 0; row < grid; row++) {
+            for (int col = 0; col < grid; col++) {
+                slots.add(new Slot(row, col, Math.abs(row - center) + Math.abs(col - center)));
+            }
+        }
+
+        slots.sort(Comparator
+                .comparingDouble((Slot slot) -> slot.distanceToCenter)
+                .thenComparingInt(slot -> slot.row)
+                .thenComparingInt(slot -> slot.col));
+
+        return slots;
+    }
+
+    private void setRangerFallbackColor(RangerColor color) {
+        switch (color) {
+            case RED -> shapes.setColor(0.85f, 0.12f, 0.10f, 1f);
+            case BLUE -> shapes.setColor(0.12f, 0.38f, 0.95f, 1f);
+            case GREEN -> shapes.setColor(0.15f, 0.70f, 0.20f, 1f);
+            case YELLOW -> shapes.setColor(0.95f, 0.80f, 0.10f, 1f);
+        }
     }
 
     private void drawHud() {
@@ -668,6 +737,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 18;
         font.draw(batch, "Масштаб: " + Math.round(zoomPercent()) + "%", x, y);
         y -= 18;
+        font.draw(batch, "Seed: " + currentSeed, x, y);
+        y -= 18;
         font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/ход", x, y);
         y -= 24;
 
@@ -681,7 +752,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 18;
         font.draw(batch, "ПКМ/СКМ — тащить карту", x, y);
         y -= 18;
-        font.draw(batch, "C база, G сетка, K спауны, J лог", x, y);
+        font.draw(batch, "C база, G сетка, K/S спауны, J/D лог", x, y);
         y -= 28;
 
         if (showDebug) {
@@ -732,5 +803,18 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch.dispose();
         font.dispose();
         assets.dispose();
+    }
+
+    private record Slot(int row, int col, double distanceToCenter) {
+    }
+
+    private record PieceRect(float x, float y, float size) {
+        float centerX() {
+            return x + size / 2f;
+        }
+
+        float centerY() {
+            return y + size / 2f;
+        }
     }
 }
