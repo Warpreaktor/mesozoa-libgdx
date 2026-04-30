@@ -145,7 +145,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             timer += Gdx.graphics.getDeltaTime();
             if (timer >= stepDelay) {
                 timer = 0f;
-                simulation.stepOneTurn();
+                simulation.phaseSwitcher();
             }
         }
     }
@@ -169,7 +169,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             if (isCtrlPressed()) {
                 simulation.stepRound();
             } else {
-                simulation.stepOneTurn();
+                simulation.phaseSwitcher();
             }
         }
 

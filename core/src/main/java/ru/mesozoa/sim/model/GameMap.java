@@ -11,7 +11,6 @@ import java.util.Map;
 /**
  * Динамическое игровое поле.
  *
- * Здесь больше нет Tile[][] и заранее созданной карты 18x10.
  * На столе существуют только те тайлы, которые игроки уже выложили.
  */
 public final class GameMap {
@@ -30,8 +29,6 @@ public final class GameMap {
     }
 
     public boolean inBounds(Point p) {
-        // У карты нет фиксированных границ. Ограничения могут появиться позже
-        // как сценарий: стол, планшет, режим 18x10 и т.д.
         return true;
     }
 
@@ -56,10 +53,8 @@ public final class GameMap {
     }
 
     /**
-     * Обычная выкладка тайла игроком.
-     *
-     * Для ручной разведки оставляем ограничение:
-     * новый тайл должен прилегать к уже выложенным по стороне.
+     * Ручная выкладка тайла игроком.
+     * Новый тайл должен прилегать к уже выложенным по стороне.
      */
     public boolean placeTile(Point p, Tile tile) {
         if (!canPlace(p)) return false;
@@ -72,15 +67,10 @@ public final class GameMap {
     }
 
     /**
-     * Автоматическая достройка по маркеру перехода.
+     * Автоматическая достройка по переходу.
      *
-     * Важно: диагональный переход NORTH_WEST / NORTH_EAST / SOUTH_WEST / SOUTH_EAST
-     * указывает на клетку, которая может касаться текущего тайла только углом.
-     *
-     * Поэтому здесь нельзя использовать canPlace(), потому что canPlace()
-     * проверяет только соседство по стороне. Иначе UI честно рисует синий
-     * уголок, а доп. тайл не выкладывается. Компьютер, как обычно, выполняет
-     * инструкцию буквально и портит настолку.
+     * Диагональный переход касается исходного тайла только углом,
+     * поэтому здесь нельзя требовать соседство по стороне.
      */
     public boolean placeExpansionTile(Point p, Tile tile) {
         if (!canPlaceExpansion(p)) return false;
@@ -99,10 +89,6 @@ public final class GameMap {
         return false;
     }
 
-    /**
-     * Все свободные клетки, куда игрок сейчас может положить новый тайл вручную.
-     * Это именно ручная выкладка, поэтому только 4 стороны.
-     */
     public List<Point> availablePlacementPoints() {
         LinkedHashSet<Point> result = new LinkedHashSet<>();
         for (Point p : placedTiles.keySet()) {
@@ -144,10 +130,6 @@ public final class GameMap {
         return best;
     }
 
-    /**
-     * Ближайшая неизвестная клетка на границе разведанной карты.
-     * Динозавры могут уходить туда, если нужного биома ещё нет на столе.
-     */
     public Point nearestUnexploredFrontier(Point from) {
         Point best = null;
         int bestDistance = Integer.MAX_VALUE;
@@ -163,7 +145,6 @@ public final class GameMap {
         return best;
     }
 
-    // Старое имя оставлено как алиас, чтобы меньше ломать соседний код.
     public Point nearestClosed(Point from) {
         return nearestUnexploredFrontier(from);
     }

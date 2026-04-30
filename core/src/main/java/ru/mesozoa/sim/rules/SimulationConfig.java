@@ -6,11 +6,8 @@ import java.util.EnumMap;
 import java.util.Map;
 
 public final class SimulationConfig {
-    public int width = 18;
-    public int height = 10;
     public int players = 4;
     public int maxRounds = 80;
-    public int scoutOpenActions = 1;
     public int maxTrapsPerPlayer = 3;
 
     public double trackingBaseSuccess = 0.20;
