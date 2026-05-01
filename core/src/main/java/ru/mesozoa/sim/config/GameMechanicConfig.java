@@ -1,6 +1,9 @@
 package ru.mesozoa.sim.config;
 
-public class MechanicConfig {
+/**
+ * Конфигурация игровых механик
+ */
+public class GameMechanicConfig {
 
     /**
      * Базовый шанс успешной поимки динозавра через выслеживание.

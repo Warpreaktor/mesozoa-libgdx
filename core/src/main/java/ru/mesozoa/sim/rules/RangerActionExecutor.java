@@ -276,9 +276,9 @@ public final class RangerActionExecutor {
         for (Dinosaur dinosaur : needed) {
             if (dinosaur.species.captureMethod == CaptureMethod.TRACKING) {
                 if (player.hunter.manhattan(dinosaur.position) <= 1) {
-                    double chance = simulation.mechanicConfig.trackingBaseSuccess
-                            + simulation.mechanicConfig.trackingStepBonus
-                            * simulation.random.nextInt(simulation.mechanicConfig.trackingMaxSteps);
+                    double chance = simulation.gameMechanicConfig.trackingBaseSuccess
+                            + simulation.gameMechanicConfig.trackingStepBonus
+                            * simulation.random.nextInt(simulation.gameMechanicConfig.trackingMaxSteps);
 
                     if (simulation.random.nextDouble() < chance) {
                         capture(player, dinosaur, "выслеживание");
@@ -296,8 +296,8 @@ public final class RangerActionExecutor {
 
                 if (player.hunter.manhattan(dinosaur.position) <= 2) {
                     double chance = simulation.random.nextBoolean()
-                            ? simulation.mechanicConfig.huntBaseSuccess
-                            : simulation.mechanicConfig.huntPreparedSuccess;
+                            ? simulation.gameMechanicConfig.huntBaseSuccess
+                            : simulation.gameMechanicConfig.huntPreparedSuccess;
 
                     if (simulation.random.nextDouble() < chance) {
                         capture(player, dinosaur, "охота");

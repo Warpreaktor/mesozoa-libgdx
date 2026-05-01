@@ -2,7 +2,8 @@ package ru.mesozoa.sim.rules;
 
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
-import ru.mesozoa.sim.config.MechanicConfig;
+import ru.mesozoa.sim.config.GameMechanicConfig;
+import ru.mesozoa.sim.game.TileBag;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.report.GameResult;
 
@@ -16,7 +17,7 @@ public final class GameSimulation {
 
     public final GameConfig gameConfig;
     public final InventoryConfig inventoryConfig;
-    public final MechanicConfig mechanicConfig;
+    public final GameMechanicConfig gameMechanicConfig;
     public final Random random;
     public GameMap map;
     public TileBag tileBag;
@@ -37,12 +38,12 @@ public final class GameSimulation {
 
     public GameSimulation(GameConfig gameConfig,
                           InventoryConfig inventoryConfig,
-                          MechanicConfig mechanicConfig,
+                          GameMechanicConfig gameMechanicConfig,
                           long seed) {
 
         this.gameConfig = gameConfig;
         this.inventoryConfig = inventoryConfig;
-        this.mechanicConfig = mechanicConfig;
+        this.gameMechanicConfig = gameMechanicConfig;
         this.random = new Random(seed);
         reset();
     }

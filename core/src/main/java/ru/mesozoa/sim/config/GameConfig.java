@@ -5,6 +5,13 @@ import ru.mesozoa.sim.model.Species;
 import java.util.EnumMap;
 import java.util.Map;
 
+/**
+ * Конфигурация общих параметров игры.
+ * - сколько игроков
+ * - сколько раундов
+ * - Ограничения по тайлам
+ * и проч.
+ */
 public final class GameConfig {
 
     /**

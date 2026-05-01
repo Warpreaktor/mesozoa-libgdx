@@ -1,5 +1,8 @@
 package ru.mesozoa.sim.config;
 
+/**
+ * Конфигурация инвентаря игрока
+ */
 public class InventoryConfig {
 
     /**

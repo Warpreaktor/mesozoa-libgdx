@@ -11,7 +11,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Matrix4;
 import ru.mesozoa.sim.config.InventoryConfig;
-import ru.mesozoa.sim.config.MechanicConfig;
+import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.rules.GameSimulation;
 import ru.mesozoa.sim.config.GameConfig;
@@ -101,9 +101,9 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private void restart() {
         GameConfig config = new GameConfig();
         InventoryConfig inventoryConfig = new InventoryConfig();
-        MechanicConfig mechanicConfig = new MechanicConfig();
+        GameMechanicConfig gameMechanicConfig = new GameMechanicConfig();
         currentSeed = nextSimulationSeed();
-        simulation = new GameSimulation(config, inventoryConfig, mechanicConfig, currentSeed);
+        simulation = new GameSimulation(config, inventoryConfig, gameMechanicConfig, currentSeed);
         paused = true;
         timer = 0f;
         zoom = BASE_ZOOM;
