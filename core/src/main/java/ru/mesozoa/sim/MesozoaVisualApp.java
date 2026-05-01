@@ -15,6 +15,7 @@ import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.rules.GameSimulation;
 import ru.mesozoa.sim.config.GameConfig;
+import ru.mesozoa.sim.tile.Tile;
 import ru.mesozoa.sim.view.AssetCatalog;
 import ru.mesozoa.sim.view.BoardOccupancy;
 import ru.mesozoa.sim.view.BoardPiece;

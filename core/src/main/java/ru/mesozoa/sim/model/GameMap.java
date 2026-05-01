@@ -1,5 +1,7 @@
 package ru.mesozoa.sim.model;
 
+import ru.mesozoa.sim.tile.Tile;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;

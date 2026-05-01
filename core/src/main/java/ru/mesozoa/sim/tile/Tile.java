@@ -1,4 +1,8 @@
-package ru.mesozoa.sim.model;
+package ru.mesozoa.sim.tile;
+
+import ru.mesozoa.sim.model.Biome;
+import ru.mesozoa.sim.model.Direction;
+import ru.mesozoa.sim.model.Species;
 
 import java.util.List;
 

@@ -1,6 +1,8 @@
 package ru.mesozoa.sim.rules;
 
 import ru.mesozoa.sim.model.*;
+import ru.mesozoa.sim.tile.Tile;
+import ru.mesozoa.sim.tile.TileDefinition;
 
 import java.util.Arrays;
 import java.util.Comparator;

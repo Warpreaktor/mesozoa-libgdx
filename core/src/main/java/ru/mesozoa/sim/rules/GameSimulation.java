@@ -3,7 +3,8 @@ package ru.mesozoa.sim.rules;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
-import ru.mesozoa.sim.game.TileBag;
+import ru.mesozoa.sim.tile.Tile;
+import ru.mesozoa.sim.tile.TileBag;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.report.GameResult;
 
