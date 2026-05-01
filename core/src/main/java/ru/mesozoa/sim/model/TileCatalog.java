@@ -21,10 +21,17 @@ import static ru.mesozoa.sim.model.Direction.WEST;
  * и в какие стороны эти варианты достраивают доп. тайлы.
  */
 public final class TileCatalog {
+
+    private final List<TileBlueprint> mainTiles;
+
+    private final List<TileBlueprint> extraTiles;
+
     private TileCatalog() {
+        mainTiles = mainTileBlueprints();
+        extraTiles = extraTileBlueprints();
     }
 
-    public static List<TileBlueprint> mainTileBlueprints() {
+    private List<TileBlueprint> mainTileBlueprints() {
         return List.of(
                 // Лиственный лес
                 TileBlueprint.tile(Biome.BROADLEAF_FOREST, 7),
@@ -136,23 +143,14 @@ public final class TileCatalog {
         );
     }
 
-    public static List<TileBlueprint> spawnTileBlueprints(Map<Species, Integer> spawnTiles) {
-        ArrayList<TileBlueprint> blueprints = new ArrayList<>();
-
-        for (var entry : spawnTiles.entrySet()) {
-            Species species = entry.getKey();
-            int count = entry.getValue();
-
-            if (count > 0) {
-                blueprints.add(TileBlueprint.spawn(species.spawnBiome, species, count));
-            }
-        }
-
-        return blueprints;
+    //TODO метод должен промарикровать дополнительные тайлы согласно настройкам спауна
+    private void spawnMarkedExtraTile(List<TileBlueprint> extraTiles) {
+        //logic
     }
 
+    //TODO метод должен брать количество тайлов из количества переходов в основных тайлах
     public static List<TileBlueprint> extraTileBlueprints() {
-        return List.of(
+        return java.util.List.of(
                 TileBlueprint.tile(Biome.BROADLEAF_FOREST, 12),
                 TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 12),
                 TileBlueprint.tile(Biome.MEADOW, 20),

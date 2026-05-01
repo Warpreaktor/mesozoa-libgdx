@@ -12,9 +12,13 @@ import java.util.List;
  * и перемешивает мешочек.
  */
 public final class TileBlueprint {
+
     public final Biome biome;
+
     public final Species spawnSpecies;
+
     public final List<Direction> expansionDirections;
+
     public final int count;
 
     public TileBlueprint(
