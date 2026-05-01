@@ -149,7 +149,7 @@ public final class TileCatalog {
     }
 
     //TODO метод должен брать количество тайлов из количества переходов в основных тайлах
-    public static List<TileBlueprint> extraTileBlueprints() {
+    private List<TileBlueprint> extraTileBlueprints() {
         return java.util.List.of(
                 TileBlueprint.tile(Biome.BROADLEAF_FOREST, 12),
                 TileBlueprint.tile(Biome.CONIFEROUS_FOREST, 12),
