@@ -2,9 +2,11 @@ package ru.mesozoa.sim.model;
 
 import ru.mesozoa.sim.tile.Tile;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -26,7 +28,9 @@ public final class GameMap {
     public static GameMap createWithLanding() {
         Point base = new Point(0, 0);
         GameMap map = new GameMap(base);
-        map.placeTile(base, new Tile(Biome.LANDING, null, true));
+        Tile landing = new Tile(Biome.LANDING, null, List.of(), true, List.of());
+        landing.place(base, 0);
+        map.placeTile(base, landing);
         return map;
     }
 
@@ -107,6 +111,103 @@ public final class GameMap {
             if (placedTiles.containsKey(n)) result.add(n);
         }
         return result;
+    }
+
+    /**
+     * Возвращает соседние клетки, куда может проехать водитель.
+     *
+     * Правило:
+     * - если на одном из двух тайлов лежит мостик, проезд разрешён;
+     * - если между двумя тайлами есть дорога, проезд разрешён;
+     * - база считается мостиком, чтобы машина могла стартовать.
+     */
+    public List<Point> driverReachableNeighbors(Point from) {
+        ArrayList<Point> result = new ArrayList<>();
+
+        if (!isPlaced(from)) {
+            return result;
+        }
+
+        for (Direction direction : Direction.values()) {
+            Point to = direction.from(from);
+            if (isPlaced(to) && canDriverMoveBetween(from, to)) {
+                result.add(to);
+            }
+        }
+
+        return result;
+    }
+
+    public boolean hasDriverPath(Point from, Point target) {
+        return nextDriverStepToward(from, target) != null;
+    }
+
+    public Point stepDriverToward(Point from, Point target) {
+        Point next = nextDriverStepToward(from, target);
+        return next == null ? from : next;
+    }
+
+    private Point nextDriverStepToward(Point from, Point target) {
+        if (from.equals(target)) return from;
+        if (!isPlaced(from) || !isPlaced(target)) return null;
+
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+        HashMap<Point, Point> previous = new HashMap<>();
+
+        queue.add(from);
+        previous.put(from, null);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            if (current.equals(target)) break;
+
+            for (Point neighbor : driverReachableNeighbors(current)) {
+                if (previous.containsKey(neighbor)) continue;
+                previous.put(neighbor, current);
+                queue.addLast(neighbor);
+            }
+        }
+
+        if (!previous.containsKey(target)) return null;
+
+        Point step = target;
+        Point parent = previous.get(step);
+        while (parent != null && !parent.equals(from)) {
+            step = parent;
+            parent = previous.get(step);
+        }
+
+        return step;
+    }
+
+    private boolean canDriverMoveBetween(Point from, Point to) {
+        Tile fromTile = tile(from);
+        Tile toTile = tile(to);
+
+        if (fromTile == null || toTile == null) return false;
+        if (from.equals(base) || to.equals(base)) return true;
+        if (fromTile.hasBridge || toTile.hasBridge) return true;
+
+        Direction direction = directionBetween(from, to);
+        if (direction == null) return false;
+
+        Direction opposite = direction.rotateClockwiseQuarterTurns(2);
+        return fromTile.hasRoadTo(direction) || toTile.hasRoadTo(opposite);
+    }
+
+    private Direction directionBetween(Point from, Point to) {
+        int dx = Integer.compare(to.x, from.x);
+        int dy = Integer.compare(to.y, from.y);
+
+        if (to.x - from.x != dx || to.y - from.y != dy) return null;
+
+        for (Direction direction : Direction.values()) {
+            if (direction.dx == dx && direction.dy == dy) {
+                return direction;
+            }
+        }
+
+        return null;
     }
 
     public Point nearestOpenedBiome(Point from, Biome biome) {

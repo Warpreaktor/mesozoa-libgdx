@@ -8,28 +8,30 @@ import java.util.Collections;
 import java.util.Random;
 
 /**
- * Мешочки тайлов:
+ * Мешочки физических тайлов:
  * - mainTiles — основная колода/мешочек исследования;
  * - extraTiles — дополнительная колода для автоматической достройки биомов.
  *
- * TileBag не придумывает состав тайлов. Он берёт уже подготовленные списки из TileCatalog,
- * разворачивает TileBlueprint в конкретные TileDefinition и перемешивает их перед партией.
+ * TileBag не хранит описания тайлов. Внутри лежат уже конкретные экземпляры Tile,
+ * как реальные картонки в мешочке. Пока тайл в мешочке, у него нет координат.
  */
 public final class TileBag {
 
     /**
      * Основной мешочек тайлов исследования.
      *
-     * Из него игроки вслепую вытягивают тайлы во время разведки новых участков острова.
+     * Из него разведчик вслепую вытягивает физический тайл и сразу выкладывает его
+     * в неизвестную клетку, куда вошёл.
      */
-    private final ArrayList<TileDefinition> mainTiles = new ArrayList<>();
+    private final ArrayList<Tile> mainTiles = new ArrayList<>();
 
     /**
-     * Дополнительный мешочек тайлов.
+     * Дополнительный мешочек тайлов автодостройки.
      *
-     * Используется для автоматической достройки биомов по переходам на уже выложенных тайлах.
+     * Эти тайлы не являются спаун-тайлами и используются только для закрытия
+     * переходов, нарисованных на основных тайлах.
      */
-    private final ArrayList<TileDefinition> extraTiles = new ArrayList<>();
+    private final ArrayList<Tile> extraTiles = new ArrayList<>();
 
     /**
      * Источник случайности для перемешивания мешочков и вытягивания тайлов.
@@ -42,18 +44,13 @@ public final class TileBag {
 
     /**
      * Создаёт стандартный набор мешочков для новой партии.
-     *
-     * TileCatalog сначала собирает основной набор тайлов,
-     * случайно маркирует часть основных тайлов спаунами,
-     * затем вычисляет количество дополнительных тайлов по количеству переходов.
      */
     public static TileBag createDefault(GameConfig config, Random random) {
         TileCatalog catalog = new TileCatalog(config, random);
 
         TileBag bag = new TileBag(random);
-
-        bag.addMain(catalog.getMainTileBlueprints());
-        bag.addExtra(catalog.getExtraTileBlueprints());
+        bag.mainTiles.addAll(catalog.getMainTiles());
+        bag.extraTiles.addAll(catalog.getExtraTiles());
 
         Collections.shuffle(bag.mainTiles, random);
         Collections.shuffle(bag.extraTiles, random);
@@ -61,39 +58,21 @@ public final class TileBag {
         return bag;
     }
 
-    private void addMain(Iterable<TileBlueprint> blueprints) {
-        for (TileBlueprint blueprint : blueprints) {
-            addTo(mainTiles, blueprint);
-        }
-    }
-
-    private void addExtra(Iterable<TileBlueprint> blueprints) {
-        for (TileBlueprint blueprint : blueprints) {
-            addTo(extraTiles, blueprint);
-        }
-    }
-
-    private void addTo(ArrayList<TileDefinition> target, TileBlueprint blueprint) {
-        if (blueprint.isEmpty()) return;
-
-        for (int i = 0; i < blueprint.count; i++) {
-            target.add(new TileDefinition(
-                    blueprint.biome,
-                    blueprint.spawnSpecies,
-                    blueprint.expansionDirections
-            ));
-        }
-    }
-
-    public TileDefinition draw() {
+    /**
+     * Вытягивает случайный основной тайл.
+     */
+    public Tile draw() {
         if (mainTiles.isEmpty()) return null;
         return mainTiles.remove(random.nextInt(mainTiles.size()));
     }
 
-    public TileDefinition drawExtraBiome(Biome biome) {
+    /**
+     * Вытягивает дополнительный тайл указанного биома.
+     */
+    public Tile drawExtraBiome(Biome biome) {
         for (int i = 0; i < extraTiles.size(); i++) {
-            TileDefinition def = extraTiles.get(i);
-            if (def.biome == biome) {
+            Tile tile = extraTiles.get(i);
+            if (tile.biome == biome) {
                 return extraTiles.remove(i);
             }
         }

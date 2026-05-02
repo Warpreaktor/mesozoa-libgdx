@@ -2,6 +2,7 @@
 /.gradle/
 /core/build/
 /assets/
+/.idea
 /core/build/classes/java/main/
 /lwjgl3/build/
 /lwjgl3/build/classes/java/main/

@@ -21,7 +21,7 @@ import static ru.mesozoa.sim.model.Direction.SOUTH_WEST;
 import static ru.mesozoa.sim.model.Direction.WEST;
 
 /**
- * Статический каталог тайлов, из которого перед началом партии собираются мешочки.
+ * Каталог физических тайлов, из которого перед началом партии собираются мешочки.
  *
  * Важно:
  * - класс не должен добавлять "сверху" отдельную пачку спаун-тайлов;
@@ -31,35 +31,36 @@ import static ru.mesozoa.sim.model.Direction.WEST;
  * После создания каталога списки считаются неизменяемыми.
  */
 public final class TileCatalog {
-    private final List<TileBlueprint> mainTileBlueprints;
-    private final List<TileBlueprint> extraTileBlueprints;
+    private final List<Tile> mainTiles;
+    private final List<Tile> extraTiles;
 
     public TileCatalog(GameConfig config, Random random) {
         ArrayList<TileBlueprint> main = expandToSingleTileBlueprints(baseMainTileBlueprints());
 
         markSpawnTiles(main, config.spawnTiles, random);
 
-        this.mainTileBlueprints = List.copyOf(main);
-        this.extraTileBlueprints = List.copyOf(generateExtraTileBlueprints(main));
+        this.mainTiles = List.copyOf(toTiles(main));
+        this.extraTiles = List.copyOf(toTiles(generateExtraTileBlueprints(main)));
     }
 
     /**
-     * Возвращает копию списка основных тайлов.
+     * Возвращает копию списка физических основных тайлов.
      *
-     * Список уже содержит спаун-маркировку на случайно выбранных тайлах.
+     * Список уже содержит конкретные экземпляры тайлов, часть которых случайно
+     * помечена спаунами динозавров. Пока эти тайлы лежат в мешочке, их position == null.
      */
-    public List<TileBlueprint> getMainTileBlueprints() {
-        return List.copyOf(mainTileBlueprints);
+    public List<Tile> getMainTiles() {
+        return List.copyOf(mainTiles);
     }
 
     /**
-     * Возвращает копию списка дополнительных тайлов.
+     * Возвращает копию списка физических дополнительных тайлов.
      *
      * Количество дополнительных тайлов каждого биома вычисляется из основных тайлов:
      * один переход на основном тайле требует один дополнительный тайл того же биома.
      */
-    public List<TileBlueprint> getExtraTileBlueprints() {
-        return List.copyOf(extraTileBlueprints);
+    public List<Tile> getExtraTiles() {
+        return List.copyOf(extraTiles);
     }
 
     /**
@@ -178,6 +179,8 @@ public final class TileCatalog {
                         blueprint.biome,
                         blueprint.spawnSpecies,
                         blueprint.expansionDirections,
+                        blueprint.hasBridge,
+                        blueprint.roadDirections,
                         1
                 ));
             }
@@ -236,6 +239,30 @@ public final class TileCatalog {
                 ));
             }
         }
+    }
+
+
+    /**
+     * Превращает blueprint-описания в конкретные физические тайлы.
+     */
+    private static List<Tile> toTiles(List<TileBlueprint> blueprints) {
+        ArrayList<Tile> result = new ArrayList<>();
+
+        for (TileBlueprint blueprint : blueprints) {
+            if (blueprint.isEmpty()) continue;
+
+            for (int i = 0; i < blueprint.count; i++) {
+                result.add(new Tile(
+                        blueprint.biome,
+                        blueprint.spawnSpecies,
+                        blueprint.expansionDirections,
+                        blueprint.hasBridge,
+                        blueprint.roadDirections
+                ));
+            }
+        }
+
+        return result;
     }
 
     /**

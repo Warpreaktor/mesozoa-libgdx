@@ -2,7 +2,6 @@ package ru.mesozoa.sim.action;
 
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
-import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.rules.GameSimulation;
 
 public class DriverAction {
@@ -18,16 +17,32 @@ public class DriverAction {
     }
 
     public void action(PlayerState player, int movementPoints) {
-        Point target;
+        Point target = chooseDriverTarget(player);
+        Point position = player.driver;
 
-        if (!player.driver.equals(player.hunter)) {
-            target = player.hunter;
-        } else if (!player.driver.equals(player.engineer)) {
-            target = player.engineer;
-        } else {
-            target = player.scout;
+        for (int i = 0; i < movementPoints; i++) {
+            if (position.equals(target)) break;
+
+            Point next = simulation.map.stepDriverToward(position, target);
+            if (next.equals(position)) break;
+
+            position = next;
         }
 
-        rangerActionExecutor.moveRoleToward(player, RangerRole.DRIVER, target, movementPoints);
+        if (position.equals(player.driver) && !position.equals(target)) {
+            simulation.log("Водитель игрока " + player.id + " не нашёл дороги или моста к цели");
+        }
+
+        player.driver = position;
+    }
+
+    public Point chooseDriverTarget(PlayerState player) {
+        if (!player.driver.equals(player.hunter)) {
+            return player.hunter;
+        }
+        if (!player.driver.equals(player.engineer)) {
+            return player.engineer;
+        }
+        return player.scout;
     }
 }

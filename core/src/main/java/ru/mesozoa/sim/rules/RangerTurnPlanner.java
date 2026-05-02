@@ -2,6 +2,7 @@ package ru.mesozoa.sim.rules;
 
 import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.PlayerState;
+import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 
 import java.util.ArrayList;
@@ -105,8 +106,16 @@ public final class RangerTurnPlanner {
     }
 
     private boolean hasUsefulDriverAction(PlayerState player) {
-        return !player.driver.equals(player.hunter)
-                || !player.driver.equals(player.engineer)
-                || !player.driver.equals(player.scout);
+        Point target;
+
+        if (!player.driver.equals(player.hunter)) {
+            target = player.hunter;
+        } else if (!player.driver.equals(player.engineer)) {
+            target = player.engineer;
+        } else {
+            target = player.scout;
+        }
+
+        return !player.driver.equals(target) && simulation.map.hasDriverPath(player.driver, target);
     }
 }

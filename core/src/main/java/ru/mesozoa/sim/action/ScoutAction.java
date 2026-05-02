@@ -6,7 +6,6 @@ import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.rules.GameSimulation;
 import ru.mesozoa.sim.tile.Tile;
-import ru.mesozoa.sim.tile.TileDefinition;
 
 import java.util.Comparator;
 import java.util.List;
@@ -45,7 +44,7 @@ public class ScoutAction {
     }
 
     private void exploreOneTile(PlayerState player) {
-        TileDefinition drawn = simulation.tileBag.draw();
+        Tile drawn = simulation.tileBag.draw();
         if (drawn == null) return;
 
         Point placement = choosePlacementPoint(player);
@@ -62,7 +61,7 @@ public class ScoutAction {
                 continue;
             }
 
-            TileDefinition extra = simulation.tileBag.drawExtraBiome(placedTile.biome);
+            Tile extra = simulation.tileBag.drawExtraBiome(placedTile.biome);
             if (extra == null) {
                 simulation.log("Нет доп. тайла для биома " + placedTile.biome.displayName);
                 continue;
@@ -81,9 +80,9 @@ public class ScoutAction {
                 .orElse(candidates.get(simulation.random.nextInt(candidates.size())));
     }
 
-    private Tile placeDrawnTile(PlayerState player, TileDefinition drawn, Point placement, boolean automaticExpansion) {
+    private Tile placeDrawnTile(PlayerState player, Tile tile, Point placement, boolean automaticExpansion) {
         int rotationQuarterTurns = simulation.random.nextInt(4);
-        Tile tile = drawn.toPlacedTile(rotationQuarterTurns);
+        tile.place(placement, rotationQuarterTurns);
 
         boolean placed = automaticExpansion
                 ? simulation.map.placeExpansionTile(placement, tile)
