@@ -37,29 +37,6 @@ public final class RangerActionExecutor {
     }
 
     /**
-     * Начинает ход игрока и возвращает две роли, которые будут активированы по одной.
-     */
-    public List<RangerRole> startTurn(PlayerState player) {
-        if (player.isComplete()) {
-            simulation.log("Игрок " + player.id + " уже выполнил задание.");
-            return List.of();
-        }
-
-        if (player.turnsSkipped > 0) {
-            player.turnsSkipped--;
-            simulation.log("Игрок " + player.id + " пропускает ход.");
-            return List.of();
-        }
-
-        List<RangerRole> roles = planner.chooseTwoRangersForTurn(player);
-
-        simulation.log("Ход игрока " + player.id + " (" + player.color.assetSuffix + "): "
-                + planner.roleListToText(roles));
-
-        return roles;
-    }
-
-    /**
      * Исполняет одну активацию одной роли.
      */
     public void playRole(PlayerState player, RangerRole role, int movementPoints) {

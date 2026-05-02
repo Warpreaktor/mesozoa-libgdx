@@ -12,9 +12,10 @@ import ru.mesozoa.sim.tile.TileBag;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Optional;
 import java.util.Random;
+import java.util.EnumSet;
+import java.util.Set;
 
 public final class GameSimulation {
 
@@ -22,7 +23,6 @@ public final class GameSimulation {
     public final InventoryConfig inventoryConfig;
     public final GameMechanicConfig gameMechanicConfig;
     public final Random random;
-
     public GameMap map;
     public TileBag tileBag;
 
@@ -36,22 +36,23 @@ public final class GameSimulation {
     public final GameResult result = new GameResult();
 
     private RangerActionExecutor rangerActionExecutor;
+    private RangerTurnPlanner rangerTurnPlanner;
 
     private boolean roundStarted = false;
     private int activeRangerIndex = 0;
 
     /**
-     * Роли, выбранные AI для текущего игрока.
+     * Роли, уже активированные текущим игроком в рамках его хода.
      *
-     * Теперь ход игрока не исполняется целиком за одно нажатие N:
-     * первое N активирует первого рейнджера, второе N активирует второго.
+     * Ход игрока состоит из двух отдельных нажатий N. Перед каждым нажатием
+     * AI заново взвешивает ситуацию на карте и выбирает следующую роль.
      */
-    private List<RangerRole> activePlayerRoles = List.of();
+    private Set<RangerRole> activePlayerUsedRoles = EnumSet.noneOf(RangerRole.class);
 
     /**
-     * Индекс следующей роли из activePlayerRoles.
+     * Количество уже выполненных активаций текущего игрока.
      */
-    private int activePlayerRoleIndex = 0;
+    private int activePlayerActionIndex = 0;
 
     public GameSimulation(GameConfig gameConfig,
                           InventoryConfig inventoryConfig,
@@ -69,8 +70,8 @@ public final class GameSimulation {
         round = 0;
         roundStarted = false;
         activeRangerIndex = 0;
-        activePlayerRoles = List.of();
-        activePlayerRoleIndex = 0;
+        activePlayerUsedRoles = EnumSet.noneOf(RangerRole.class);
+        activePlayerActionIndex = 0;
         gameOver = false;
         dinosaurs.clear();
         players.clear();
@@ -80,7 +81,7 @@ public final class GameSimulation {
         map = GameMap.createWithLanding();
         tileBag = TileBag.createDefault(gameConfig, random);
 
-        RangerTurnPlanner rangerTurnPlanner = new RangerTurnPlanner(this);
+        rangerTurnPlanner = new RangerTurnPlanner(this);
         rangerActionExecutor = new RangerActionExecutor(this, rangerTurnPlanner);
 
         for (int i = 0; i < gameConfig.players; i++) {
@@ -108,11 +109,8 @@ public final class GameSimulation {
         if (activeRangerIndex < players.size()) {
             PlayerState player = players.get(activeRangerIndex);
 
-            if (activePlayerRoles.isEmpty()) {
-                activePlayerRoles = rangerActionExecutor.startTurn(player);
-                activePlayerRoleIndex = 0;
-
-                if (activePlayerRoles.isEmpty()) {
+            if (activePlayerActionIndex == 0 && activePlayerUsedRoles.isEmpty()) {
+                if (!prepareCurrentPlayerTurn(player)) {
                     finishCurrentPlayerTurn();
                     updateResult();
                     checkGameOverAfterPartialStep();
@@ -120,13 +118,21 @@ public final class GameSimulation {
                 }
             }
 
-            RangerRole role = activePlayerRoles.get(activePlayerRoleIndex);
+            RangerRole role = rangerTurnPlanner.chooseNextRangerForTurn(player, activePlayerUsedRoles);
+            if (role == null) {
+                finishCurrentPlayerTurn();
+                updateResult();
+                checkGameOverAfterPartialStep();
+                return;
+            }
+
             log("Действие игрока " + player.id + ": " + roleToText(role));
             rangerActionExecutor.playRole(player, role, 2);
 
-            activePlayerRoleIndex++;
+            activePlayerUsedRoles.add(role);
+            activePlayerActionIndex++;
 
-            if (activePlayerRoleIndex >= activePlayerRoles.size()) {
+            if (activePlayerActionIndex >= 2) {
                 finishCurrentPlayerTurn();
             }
 
@@ -166,9 +172,12 @@ public final class GameSimulation {
 
         if (activeRangerIndex < players.size()) {
             PlayerState player = players.get(activeRangerIndex);
+            RangerRole nextRole = rangerTurnPlanner == null
+                    ? null
+                    : rangerTurnPlanner.chooseNextRangerForTurn(player, activePlayerUsedRoles);
 
-            if (!activePlayerRoles.isEmpty() && activePlayerRoleIndex < activePlayerRoles.size()) {
-                return "игрок " + player.id + ": " + roleToText(activePlayerRoles.get(activePlayerRoleIndex));
+            if (nextRole != null) {
+                return "игрок " + player.id + ": " + roleToText(nextRole);
             }
 
             return "игрок " + player.id + " (" + player.color.assetSuffix + ")";
@@ -182,16 +191,32 @@ public final class GameSimulation {
 
         round++;
         activeRangerIndex = 0;
-        activePlayerRoles = List.of();
-        activePlayerRoleIndex = 0;
+        activePlayerUsedRoles = EnumSet.noneOf(RangerRole.class);
+        activePlayerActionIndex = 0;
         roundStarted = true;
         log("Раунд " + round);
     }
 
+    private boolean prepareCurrentPlayerTurn(PlayerState player) {
+        if (player.isComplete()) {
+            log("Игрок " + player.id + " уже выполнил задание.");
+            return false;
+        }
+
+        if (player.turnsSkipped > 0) {
+            player.turnsSkipped--;
+            log("Игрок " + player.id + " пропускает ход.");
+            return false;
+        }
+
+        log("Ход игрока " + player.id + " (" + player.color.assetSuffix + ")");
+        return true;
+    }
+
     private void finishCurrentPlayerTurn() {
         activeRangerIndex++;
-        activePlayerRoles = List.of();
-        activePlayerRoleIndex = 0;
+        activePlayerUsedRoles = EnumSet.noneOf(RangerRole.class);
+        activePlayerActionIndex = 0;
     }
 
     private void finishRound() {
@@ -205,8 +230,8 @@ public final class GameSimulation {
 
         roundStarted = false;
         activeRangerIndex = 0;
-        activePlayerRoles = List.of();
-        activePlayerRoleIndex = 0;
+        activePlayerUsedRoles = EnumSet.noneOf(RangerRole.class);
+        activePlayerActionIndex = 0;
     }
 
     private void checkGameOverAfterPartialStep() {
