@@ -586,6 +586,23 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     private void drawTraps() {
         float size = tilePixelSize();
+        Texture trapTexture = assets.get("traps/trap.png");
+
+        if (trapTexture != null) {
+            batch.begin();
+            for (PlayerState player : simulation.players) {
+                for (Trap trap : player.traps) {
+                    if (!trap.active || !isVisibleOnBoard(trap.position)) continue;
+
+                    float iconSize = size * 0.34f;
+                    float x = screenX(trap.position) + (size - iconSize) / 2f;
+                    float y = screenY(trap.position) + (size - iconSize) / 2f;
+                    batch.draw(trapTexture, x, y, iconSize, iconSize);
+                }
+            }
+            batch.end();
+            return;
+        }
 
         shapes.begin(ShapeRenderer.ShapeType.Line);
         shapes.setColor(1f, 1f, 1f, 1f);

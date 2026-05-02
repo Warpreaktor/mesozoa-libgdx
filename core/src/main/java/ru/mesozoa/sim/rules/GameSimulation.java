@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.rules;
 
+import ru.mesozoa.sim.action.RangerActionExecutor;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
@@ -314,7 +315,7 @@ public final class GameSimulation {
         return map.nearestPlacedBiome(dinosaur.position, nextBiome);
     }
 
-    Point stepTowardPlaced(Point from, Point target) {
+    public Point stepTowardPlaced(Point from, Point target) {
         Point direct = from.stepToward(target);
         if (map.isPlaced(direct) && isPassable(direct)) return direct;
 
@@ -391,7 +392,7 @@ public final class GameSimulation {
         result.completedPlayers = (int) players.stream().filter(PlayerState::isComplete).count();
     }
 
-    void log(String message) {
+    public void log(String message) {
         log.addFirst(message);
         while (log.size() > 18) log.removeLast();
     }

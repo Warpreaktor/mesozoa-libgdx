@@ -1,6 +1,7 @@
 # Project exclude paths
 /.gradle/
 /core/build/
+/assets/
 /core/build/classes/java/main/
 /lwjgl3/build/
 /lwjgl3/build/classes/java/main/
