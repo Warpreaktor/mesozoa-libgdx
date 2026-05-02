@@ -22,6 +22,7 @@ import java.util.Set;
  * уже с учётом нового динозавра на карте.
  */
 public final class RangerTurnPlanner {
+
     private final GameSimulation simulation;
 
     public RangerTurnPlanner(GameSimulation simulation) {
@@ -36,48 +37,27 @@ public final class RangerTurnPlanner {
      * @return лучшая роль для следующей активации или null, если доступных ролей нет
      */
     public RangerRole chooseNextRangerForTurn(PlayerState player, Set<RangerRole> alreadyUsedRoles) {
-        return List.of(RangerRole.SCOUT, RangerRole.ENGINEER, RangerRole.HUNTER, RangerRole.DRIVER)
-                .stream()
-                .filter(role -> !alreadyUsedRoles.contains(role))
-                .max(Comparator.comparingDouble(role -> scoreRole(player, role)))
-                .orElse(null);
-    }
+        RangerRole bestRole = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
 
-    /**
-     * Старый совместимый метод: возвращает две роли, но выбирает их через ту же весовую систему.
-     *
-     * Используется только там, где ещё нужен полный ход без пошагового разбиения.
-     */
-    public List<RangerRole> chooseTwoRangersForTurn(PlayerState player) {
-        EnumSet<RangerRole> usedRoles = EnumSet.noneOf(RangerRole.class);
-        ArrayList<RangerRole> roles = new ArrayList<>(2);
+        for (RangerRole role : List.of(RangerRole.SCOUT,
+                RangerRole.ENGINEER,
+                RangerRole.HUNTER,
+                RangerRole.DRIVER)) {
 
-        for (int i = 0; i < 2; i++) {
-            RangerRole role = chooseNextRangerForTurn(player, usedRoles);
-            if (role == null) break;
+            if (alreadyUsedRoles.contains(role)) {
+                continue;
+            }
 
-            roles.add(role);
-            usedRoles.add(role);
+            double score = scoreRole(player, role);
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestRole = role;
+            }
         }
 
-        return List.copyOf(roles);
-    }
-
-    public String roleListToText(List<RangerRole> roles) {
-        ArrayList<String> names = new ArrayList<>();
-        for (RangerRole role : roles) {
-            names.add(roleToText(role));
-        }
-        return String.join(" + ", names);
-    }
-
-    public String roleToText(RangerRole role) {
-        return switch (role) {
-            case SCOUT -> "разведчик";
-            case DRIVER -> "водитель";
-            case ENGINEER -> "инженер";
-            case HUNTER -> "охотник";
-        };
+        return bestRole;
     }
 
     private double scoreRole(PlayerState player, RangerRole role) {
@@ -234,5 +214,8 @@ public final class RangerTurnPlanner {
         int dx = Math.abs(a.x - b.x);
         int dy = Math.abs(a.y - b.y);
         return dx <= 1 && dy <= 1;
+    }
+
+    private record RoleScore(double value, String reason) {
     }
 }
