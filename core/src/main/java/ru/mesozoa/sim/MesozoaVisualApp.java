@@ -372,6 +372,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch.end();
 
         drawTransitionOverlays();
+        drawTransportOverlays();
 
         if (showGrid) {
             shapes.begin(ShapeRenderer.ShapeType.Line);
@@ -553,6 +554,178 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         for (float t = hatchSpacing; t < arm; t += hatchSpacing) {
             shapes.rectLine(xRight - t, yBottom, xRight, yBottom + t, hatchWidth);
         }
+    }
+
+
+    /**
+     * Рисует транспортную инфраструктуру поверх тайла:
+     * - мостик внутри тайла;
+     * - дороги на стыках тайлов.
+     *
+     * Дорога — это связь между двумя соседними тайлами, поэтому визуально она
+     * кладётся на границу/угол между клетками, а не в центр тайла. Мостик,
+     * наоборот, лежит внутри тайла и разрешает водителю выезд в любую соседнюю
+     * открытую клетку. Мир снова усложнился из-за картонки, но хотя бы честно.
+     */
+    private void drawTransportOverlays() {
+        drawRoadOverlays();
+        drawBridgeOverlays();
+    }
+
+    private void drawRoadOverlays() {
+        Texture roadTexture = assets.get("routes/road.png");
+
+        if (roadTexture != null) {
+            batch.begin();
+            for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+                Point point = entry.getKey();
+                if (!isVisibleOnBoard(point)) continue;
+
+                Tile tile = entry.getValue();
+                for (Direction direction : tile.roadDirections) {
+                    drawRoadTexture(point, direction, roadTexture);
+                }
+            }
+            batch.end();
+            return;
+        }
+
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(0.93f, 0.78f, 0.42f, 0.95f);
+        for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+            Point point = entry.getKey();
+            if (!isVisibleOnBoard(point)) continue;
+
+            Tile tile = entry.getValue();
+            for (Direction direction : tile.roadDirections) {
+                drawRoadFallback(point, direction);
+            }
+        }
+        shapes.end();
+    }
+
+    private void drawBridgeOverlays() {
+        Texture bridgeTexture = assets.get("routes/bridge.png");
+        float tileSize = tilePixelSize();
+
+        if (bridgeTexture != null) {
+            batch.begin();
+            for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+                Point point = entry.getKey();
+                if (!isVisibleOnBoard(point)) continue;
+
+                Tile tile = entry.getValue();
+                if (!tile.hasBridge) continue;
+
+                float iconSize = tileSize * 0.34f;
+                float x = screenX(point) + (tileSize - iconSize) / 2f;
+                float y = screenY(point) + (tileSize - iconSize) / 2f;
+                batch.draw(bridgeTexture, x, y, iconSize, iconSize);
+            }
+            batch.end();
+            return;
+        }
+
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(0.62f, 0.44f, 0.26f, 0.92f);
+        for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
+            Point point = entry.getKey();
+            if (!isVisibleOnBoard(point)) continue;
+
+            Tile tile = entry.getValue();
+            if (!tile.hasBridge) continue;
+
+            float sx = screenX(point);
+            float sy = screenY(point);
+            float bridgeWidth = tileSize * 0.42f;
+            float bridgeHeight = tileSize * 0.13f;
+            shapes.rect(
+                    sx + (tileSize - bridgeWidth) / 2f,
+                    sy + (tileSize - bridgeHeight) / 2f,
+                    bridgeWidth,
+                    bridgeHeight
+            );
+        }
+        shapes.end();
+    }
+
+    private void drawRoadTexture(Point point, Direction direction, Texture texture) {
+        float tileSize = tilePixelSize();
+        float roadLength = isCardinal(direction) ? tileSize * 0.34f : tileSize * 0.30f;
+        float roadWidth = tileSize * 0.10f;
+        float sx = screenX(point);
+        float sy = screenY(point);
+        float cx = sx + tileSize / 2f;
+        float cy = sy + tileSize / 2f;
+        float centerX = roadCenterX(sx, tileSize, direction);
+        float centerY = roadCenterY(sy, tileSize, direction);
+        float rotation = roadRotationDegrees(direction);
+
+        batch.draw(
+                texture,
+                centerX - roadLength / 2f,
+                centerY - roadWidth / 2f,
+                roadLength / 2f,
+                roadWidth / 2f,
+                roadLength,
+                roadWidth,
+                1f,
+                1f,
+                rotation,
+                0,
+                0,
+                texture.getWidth(),
+                texture.getHeight(),
+                false,
+                false
+        );
+    }
+
+    private void drawRoadFallback(Point point, Direction direction) {
+        float tileSize = tilePixelSize();
+        float sx = screenX(point);
+        float sy = screenY(point);
+        float centerX = roadCenterX(sx, tileSize, direction);
+        float centerY = roadCenterY(sy, tileSize, direction);
+        float length = isCardinal(direction) ? tileSize * 0.32f : tileSize * 0.27f;
+        float width = Math.max(3f, tileSize * 0.045f);
+
+        float dx = direction.dx;
+        float dy = direction.dy;
+        float norm = (float) Math.sqrt(dx * dx + dy * dy);
+        if (norm <= 0f) return;
+
+        dx /= norm;
+        dy /= norm;
+
+        shapes.rectLine(
+                centerX - dx * length / 2f,
+                centerY - dy * length / 2f,
+                centerX + dx * length / 2f,
+                centerY + dy * length / 2f,
+                width
+        );
+    }
+
+    private float roadCenterX(float tileScreenX, float tileSize, Direction direction) {
+        return tileScreenX + tileSize / 2f + direction.dx * tileSize / 2f;
+    }
+
+    private float roadCenterY(float tileScreenY, float tileSize, Direction direction) {
+        return tileScreenY + tileSize / 2f + direction.dy * tileSize / 2f;
+    }
+
+    private boolean isCardinal(Direction direction) {
+        return direction.dx == 0 || direction.dy == 0;
+    }
+
+    private float roadRotationDegrees(Direction direction) {
+        return switch (direction) {
+            case EAST, WEST -> 0f;
+            case NORTH, SOUTH -> 90f;
+            case NORTH_EAST, SOUTH_WEST -> 45f;
+            case NORTH_WEST, SOUTH_EAST -> -45f;
+        };
     }
 
     private void drawPlacementFrontier() {
@@ -759,23 +932,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         y -= 18;
         font.draw(batch, "Масштаб: " + Math.round(zoomPercent()) + "%", x, y);
         y -= 18;
-        font.draw(batch, "Seed: " + currentSeed, x, y);
-        y -= 18;
         font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/ход", x, y);
         y -= 24;
-
-        font.draw(batch, "N ход, Ctrl+N полный раунд", x, y);
-        y -= 18;
-        font.draw(batch, "SPACE пауза, R рестарт", x, y);
-        y -= 18;
-        font.draw(batch, "Колесо мыши — масштаб", x, y);
-        y -= 18;
-        font.draw(batch, "WASD/стрелки — камера", x, y);
-        y -= 18;
-        font.draw(batch, "ПКМ/СКМ — тащить карту", x, y);
-        y -= 18;
-        font.draw(batch, "C база, G сетка, K/S спауны, J/D лог", x, y);
-        y -= 28;
 
         if (showDebug) {
             font.draw(batch, "Лог:", x, y);

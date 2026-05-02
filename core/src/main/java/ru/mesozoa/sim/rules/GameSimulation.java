@@ -22,6 +22,7 @@ public final class GameSimulation {
     public final InventoryConfig inventoryConfig;
     public final GameMechanicConfig gameMechanicConfig;
     public final Random random;
+
     public GameMap map;
     public TileBag tileBag;
 

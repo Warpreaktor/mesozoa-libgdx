@@ -11,13 +11,10 @@ import ru.mesozoa.sim.model.Trap;
 import ru.mesozoa.sim.rules.GameSimulation;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * Класс содержащий логику ходов и AI для инженера
