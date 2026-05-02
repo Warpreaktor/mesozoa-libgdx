@@ -12,10 +12,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Исполнение хода игрока.
- *
- * Здесь живёт "что делает выбранная роль".
- * Решение "какие две роли выбрать" живёт в RangerTurnPlanner.
+ * Исполнение действий рейнджеров.
  */
 public final class RangerActionExecutor {
     private final GameSimulation simulation;
@@ -26,16 +23,19 @@ public final class RangerActionExecutor {
         this.planner = planner;
     }
 
-    public void playTurn(PlayerState player) {
+    /**
+     * Начинает ход игрока и возвращает две роли, которые будут активированы по одной.
+     */
+    public List<RangerRole> startTurn(PlayerState player) {
         if (player.isComplete()) {
             simulation.log("Игрок " + player.id + " уже выполнил задание.");
-            return;
+            return List.of();
         }
 
         if (player.turnsSkipped > 0) {
             player.turnsSkipped--;
             simulation.log("Игрок " + player.id + " пропускает ход.");
-            return;
+            return List.of();
         }
 
         List<RangerRole> roles = planner.chooseTwoRangersForTurn(player);
@@ -43,12 +43,13 @@ public final class RangerActionExecutor {
         simulation.log("Ход игрока " + player.id + " (" + player.color.assetSuffix + "): "
                 + planner.roleListToText(roles));
 
-        for (RangerRole role : roles) {
-            performRangerAction(player, role, 2);
-        }
+        return roles;
     }
 
-    private void performRangerAction(PlayerState player, RangerRole role, int movementPoints) {
+    /**
+     * Исполняет одну активацию одной роли.
+     */
+    public void playRole(PlayerState player, RangerRole role, int movementPoints) {
         switch (role) {
             case SCOUT -> scoutAction(player, movementPoints);
             case ENGINEER -> engineerAction(player, movementPoints);
@@ -57,14 +58,6 @@ public final class RangerActionExecutor {
         }
     }
 
-    /**
-     * Разведчик:
-     * - имеет 2 очка действий;
-     * - спецдействие открытия тайла используется не более одного раза за активацию.
-     *
-     * Пока для симуляции сохраняем текущую абстракцию:
-     * разведчик вытягивает закрытый тайл из мешка и выкладывает его рядом с разведанной картой.
-     */
     private void scoutAction(PlayerState player, int movementPoints) {
         if (simulation.tileBag.isEmpty()) {
             moveRoleTowardNearestFrontier(player, RangerRole.SCOUT, movementPoints);
@@ -107,11 +100,6 @@ public final class RangerActionExecutor {
             return;
         }
 
-        /*
-         * Если охотнику пока некого ловить, он всё равно тратит свою активацию:
-         * подтягивается к разведчику. Иначе в логе написано "разведчик + охотник",
-         * а на столе охотник стоит на базе и изображает мебель.
-         */
         moveRoleToward(player, RangerRole.HUNTER, player.scout, movementPoints);
     }
 

@@ -1,16 +1,17 @@
 package ru.mesozoa.sim.rules;
 
 import ru.mesozoa.sim.config.GameConfig;
-import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
-import ru.mesozoa.sim.tile.Tile;
-import ru.mesozoa.sim.tile.TileBag;
+import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.report.GameResult;
+import ru.mesozoa.sim.tile.Tile;
+import ru.mesozoa.sim.tile.TileBag;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 
@@ -37,6 +38,19 @@ public final class GameSimulation {
     private boolean roundStarted = false;
     private int activeRangerIndex = 0;
 
+    /**
+     * Роли, выбранные AI для текущего игрока.
+     *
+     * Теперь ход игрока не исполняется целиком за одно нажатие N:
+     * первое N активирует первого рейнджера, второе N активирует второго.
+     */
+    private List<RangerRole> activePlayerRoles = List.of();
+
+    /**
+     * Индекс следующей роли из activePlayerRoles.
+     */
+    private int activePlayerRoleIndex = 0;
+
     public GameSimulation(GameConfig gameConfig,
                           InventoryConfig inventoryConfig,
                           GameMechanicConfig gameMechanicConfig,
@@ -53,6 +67,8 @@ public final class GameSimulation {
         round = 0;
         roundStarted = false;
         activeRangerIndex = 0;
+        activePlayerRoles = List.of();
+        activePlayerRoleIndex = 0;
         gameOver = false;
         dinosaurs.clear();
         players.clear();
@@ -79,10 +95,8 @@ public final class GameSimulation {
 
     /**
      * Один микрошаг симуляции:
-     * - ход одного игрока, в котором он активирует до двух разных рейнджеров;
-     * - или общая фаза динозавров.
-     *
-     * N вызывает этот метод.
+     * - активация одного рейнджера текущего игрока;
+     * - или фаза динозавров.
      */
     public void stepOneTurn() {
         if (gameOver) return;
@@ -91,9 +105,29 @@ public final class GameSimulation {
 
         if (activeRangerIndex < players.size()) {
             PlayerState player = players.get(activeRangerIndex);
-            activeRangerIndex++;
 
-            rangerActionExecutor.playTurn(player);
+            if (activePlayerRoles.isEmpty()) {
+                activePlayerRoles = rangerActionExecutor.startTurn(player);
+                activePlayerRoleIndex = 0;
+
+                if (activePlayerRoles.isEmpty()) {
+                    finishCurrentPlayerTurn();
+                    updateResult();
+                    checkGameOverAfterPartialStep();
+                    return;
+                }
+            }
+
+            RangerRole role = activePlayerRoles.get(activePlayerRoleIndex);
+            log("Действие игрока " + player.id + ": " + roleToText(role));
+            rangerActionExecutor.playRole(player, role, 2);
+
+            activePlayerRoleIndex++;
+
+            if (activePlayerRoleIndex >= activePlayerRoles.size()) {
+                finishCurrentPlayerTurn();
+            }
+
             updateResult();
             checkGameOverAfterPartialStep();
             return;
@@ -107,9 +141,7 @@ public final class GameSimulation {
 
     /**
      * Полный раунд:
-     * все игроки по очереди + фаза динозавров.
-     *
-     * Ctrl+N вызывает этот метод.
+     * все игроки выполняют обе активации, затем ходят динозавры.
      */
     public void stepRound() {
         if (gameOver) return;
@@ -132,6 +164,11 @@ public final class GameSimulation {
 
         if (activeRangerIndex < players.size()) {
             PlayerState player = players.get(activeRangerIndex);
+
+            if (!activePlayerRoles.isEmpty() && activePlayerRoleIndex < activePlayerRoles.size()) {
+                return "игрок " + player.id + ": " + roleToText(activePlayerRoles.get(activePlayerRoleIndex));
+            }
+
             return "игрок " + player.id + " (" + player.color.assetSuffix + ")";
         }
 
@@ -143,8 +180,16 @@ public final class GameSimulation {
 
         round++;
         activeRangerIndex = 0;
+        activePlayerRoles = List.of();
+        activePlayerRoleIndex = 0;
         roundStarted = true;
         log("Раунд " + round);
+    }
+
+    private void finishCurrentPlayerTurn() {
+        activeRangerIndex++;
+        activePlayerRoles = List.of();
+        activePlayerRoleIndex = 0;
     }
 
     private void finishRound() {
@@ -158,6 +203,8 @@ public final class GameSimulation {
 
         roundStarted = false;
         activeRangerIndex = 0;
+        activePlayerRoles = List.of();
+        activePlayerRoleIndex = 0;
     }
 
     private void checkGameOverAfterPartialStep() {
@@ -180,6 +227,15 @@ public final class GameSimulation {
         ArrayList<String> names = new ArrayList<>();
         for (Species species : player.task) names.add(species.displayName);
         return String.join(", ", names);
+    }
+
+    private String roleToText(RangerRole role) {
+        return switch (role) {
+            case SCOUT -> "разведчик";
+            case DRIVER -> "водитель";
+            case ENGINEER -> "инженер";
+            case HUNTER -> "охотник";
+        };
     }
 
     private void dinosaurPhase() {
@@ -319,9 +375,6 @@ public final class GameSimulation {
             boolean engineerNearby = player.engineer.manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
             boolean driverNearby = player.driver.manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
 
-            /*
-             * Разведчика не трогаем: по правилам динозавры на него не обращают внимания.
-             */
             if ((hunterNearby || engineerNearby || driverNearby) && random.nextDouble() < 0.20) {
                 player.turnsSkipped = 1;
                 player.returnTeamToBase(map.base);

@@ -19,10 +19,6 @@ public enum Biome {
         this.imagePath = imagePath;
     }
 
-    public boolean isWaterLike() {
-        return this == RIVER || this == LAKE || this == SWAMP || this == FLOODPLAIN;
-    }
-
     public boolean blocksMostMovement() {
         return this == LAKE || this == MOUNTAIN;
     }
