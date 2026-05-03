@@ -1,5 +1,8 @@
-package ru.mesozoa.sim.model;
+package ru.mesozoa.sim.simulation;
 
+import ru.mesozoa.sim.model.Biome;
+import ru.mesozoa.sim.model.Direction;
+import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.tile.Tile;
 
 import java.util.ArrayDeque;
@@ -20,6 +23,7 @@ import java.util.Map;
 public final class GameMap {
 
     private final LinkedHashMap<Point, Tile> placedTiles = new LinkedHashMap<>();
+
     public final Point base;
 
     private GameMap(Point base) {
@@ -43,20 +47,12 @@ public final class GameMap {
         return placedTiles.containsKey(p);
     }
 
-    public boolean isOpen(Point p) {
-        return isPlaced(p);
-    }
-
     public Tile tile(Point p) {
         return placedTiles.get(p);
     }
 
     public Collection<Map.Entry<Point, Tile>> entries() {
         return Collections.unmodifiableCollection(placedTiles.entrySet());
-    }
-
-    public Collection<Point> points() {
-        return Collections.unmodifiableSet(placedTiles.keySet());
     }
 
     /**
