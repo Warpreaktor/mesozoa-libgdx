@@ -162,6 +162,9 @@ public final class GameSimulation {
         }
     }
 
+    /**
+     * Возвращает подпись следующего шага для HUD.
+     */
     public String nextStepLabel() {
         if (gameOver) {
             return "игра завершена";
@@ -173,15 +176,9 @@ public final class GameSimulation {
 
         if (activeRangerIndex < players.size()) {
             PlayerState player = players.get(activeRangerIndex);
-            RangerRole nextRole = rangerTurnPlanner == null
-                    ? null
-                    : rangerTurnPlanner.chooseNextRangerForTurn(player, activePlayerUsedRoles);
-
-            if (nextRole != null) {
-                return "игрок " + player.id + ": " + roleToText(nextRole);
-            }
-
-            return "игрок " + player.id + " (" + player.color.assetSuffix + ")";
+            return "игрок " + player.id
+                    + " (" + player.color.assetSuffix + ")"
+                    + ", действие " + (activePlayerActionIndex + 1) + "/2";
         }
 
         return "динозавры";

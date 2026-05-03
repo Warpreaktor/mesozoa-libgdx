@@ -57,7 +57,6 @@ public class ScoutAction {
             Point extraPoint = direction.from(placement);
 
             if (!simulation.map.canPlaceExpansion(extraPoint)) {
-                simulation.log("Переход " + direction + " заблокирован: клетка занята " + extraPoint);
                 continue;
             }
 
@@ -93,10 +92,6 @@ public class ScoutAction {
         if (!automaticExpansion) {
             player.scout = placement;
         }
-
-        String prefix = automaticExpansion ? "Автодостройка" : "Игрок " + player.id + " выложил";
-        simulation.log(prefix + ": " + tile.biome.displayName + " " + placement
-                + ", поворот " + (rotationQuarterTurns * 90) + "°");
 
         if (tile.hasSpawn() && !tile.spawnUsed) {
             dinosaurAction.spawnDinosaur(tile.spawnSpecies, placement);

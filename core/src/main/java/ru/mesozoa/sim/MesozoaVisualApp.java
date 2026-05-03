@@ -2,7 +2,6 @@ package ru.mesozoa.sim;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
 import com.badlogic.gdx.InputAdapter;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
@@ -32,6 +31,9 @@ import java.util.Map;
 import static ru.mesozoa.sim.config.GraphicsConfig.BASE_ZOOM;
 import static ru.mesozoa.sim.config.GraphicsConfig.MOUSE_WHEEL_ZOOM_STEP;
 
+/**
+ * Класс отвечает только за визуализацию игры
+ */
 public final class MesozoaVisualApp extends ApplicationAdapter {
 
     public static final long RANDOM_SEED = Long.MIN_VALUE;
@@ -70,12 +72,11 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private int restartCounter = 0;
     private long currentSeed = 0L;
 
-    private final InputHandler inputHandler;
+    private InputHandler inputHandler;
 
     public MesozoaVisualApp(long seed, float stepDelay) {
         this.seed = seed;
         this.stepDelay = stepDelay;
-        this.inputHandler = new InputHandler(simulation, this);
     }
 
     @Override
@@ -108,6 +109,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         GameMechanicConfig gameMechanicConfig = new GameMechanicConfig();
         currentSeed = nextSimulationSeed();
         simulation = new GameSimulation(config, inventoryConfig, gameMechanicConfig, currentSeed);
+        inputHandler = new InputHandler(simulation, this);
         paused = true;
         timer = 0f;
         zoom = BASE_ZOOM;
@@ -828,8 +830,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         font.draw(batch, "Мезозоя Visual Simulator", x, y);
         y -= 22;
         font.draw(batch, "Раунд: " + simulation.round + (paused ? " [PAUSE]" : ""), x, y);
-        y -= 18;
-        font.draw(batch, "Следующий ход: " + simulation.nextStepLabel(), x, y);
         y -= 18;
         font.draw(batch, "Выложено тайлов: " + simulation.map.openedCount(), x, y);
         y -= 18;

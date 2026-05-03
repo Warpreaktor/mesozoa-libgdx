@@ -14,18 +14,11 @@ public final class Lwjgl3Launcher {
 
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setTitle("Mesozoa Visual Simulator");
-        config.setWindowedMode(1280, 720);
+        config.setWindowedMode(1920, 1080);
         config.setResizable(true);
         config.useVsync(true);
         config.setForegroundFPS(60);
 
-        /*
-         * В IDE окно иногда создаётся за другими окнами. Да, компьютер явно
-         * считает, что пользователю хочется квест "найди симулятор".
-         *
-         * GLFW не всегда может украсть фокус у ОС, но show + focus + attention
-         * заметно повышают шанс, что окно появится активным или хотя бы мигнёт.
-         */
         config.setWindowListener(new Lwjgl3WindowAdapter() {
             @Override
             public void created(Lwjgl3Window window) {
