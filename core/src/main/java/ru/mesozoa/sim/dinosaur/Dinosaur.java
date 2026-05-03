@@ -1,4 +1,7 @@
-package ru.mesozoa.sim.model;
+package ru.mesozoa.sim.dinosaur;
+
+import ru.mesozoa.sim.model.Point;
+import ru.mesozoa.sim.model.Species;
 
 public final class Dinosaur {
     public final int id;

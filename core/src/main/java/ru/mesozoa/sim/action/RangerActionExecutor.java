@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.action;
 
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.ai.RangerTurnPlanner;

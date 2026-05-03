@@ -1,6 +1,6 @@
 package ru.mesozoa.sim.view;
 
-import ru.mesozoa.sim.model.Dinosaur;
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;

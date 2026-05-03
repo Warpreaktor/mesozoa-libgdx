@@ -17,7 +17,6 @@ public final class Palette {
             case LAKE -> new Color(0.10f, 0.35f, 0.63f, 1f);
             case FLOODPLAIN -> new Color(0.45f, 0.62f, 0.43f, 1f);
             case MOUNTAIN -> new Color(0.42f, 0.40f, 0.37f, 1f);
-            case LANDING -> new Color(0.85f, 0.74f, 0.35f, 1f);
         };
     }
 

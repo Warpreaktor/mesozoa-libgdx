@@ -2,7 +2,7 @@ package ru.mesozoa.sim.action;
 
 import ru.mesozoa.sim.model.Biome;
 import ru.mesozoa.sim.model.CaptureMethod;
-import ru.mesozoa.sim.model.Dinosaur;
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;

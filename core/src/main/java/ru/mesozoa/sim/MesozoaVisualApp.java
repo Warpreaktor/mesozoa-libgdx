@@ -11,10 +11,12 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Matrix4;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.input.InputHandler;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.config.GameConfig;
+import ru.mesozoa.sim.tile.BaseTile;
 import ru.mesozoa.sim.tile.Tile;
 import ru.mesozoa.sim.view.AssetCatalog;
 import ru.mesozoa.sim.view.BoardOccupancy;
@@ -229,6 +231,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private void drawTiles() {
         float size = tilePixelSize();
 
+        drawBaseTile(size);
+
         shapes.begin(ShapeRenderer.ShapeType.Filled);
         for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
             Point p = entry.getKey();
@@ -293,6 +297,41 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
                 if (!isVisibleOnBoard(p)) continue;
                 shapes.rect(screenX(p), screenY(p), size - 2f, size - 2f);
             }
+            shapes.end();
+        }
+    }
+
+    /**
+     * Рисует стартовую базу отдельно от обычных тайлов биомов.
+     *
+     * База больше не является Tile и не имеет Biome, поэтому она не участвует
+     * в общем цикле отрисовки terrain-тайлов. Да, базовый лагерь наконец-то
+     * перестал притворяться лугом с административными привилегиями.
+     */
+    private void drawBaseTile(float size) {
+        Point basePoint = simulation.map.baseTile.position;
+        if (!isVisibleOnBoard(basePoint)) return;
+
+        float sx = screenX(basePoint);
+        float sy = screenY(basePoint);
+
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(0.85f, 0.74f, 0.35f, 1f);
+        shapes.rect(sx, sy, size - 2f, size - 2f);
+        shapes.end();
+
+        batch.begin();
+        Texture texture = assets.get(BaseTile.IMAGE_PATH);
+        if (texture != null) {
+            batch.draw(texture, sx, sy, size - 2f, size - 2f);
+        }
+        font.draw(batch, "БЗ", sx + 4f * pixelScale(), sy + 16f * pixelScale());
+        batch.end();
+
+        if (showGrid) {
+            shapes.begin(ShapeRenderer.ShapeType.Line);
+            shapes.setColor(0f, 0f, 0f, 0.45f);
+            shapes.rect(sx, sy, size - 2f, size - 2f);
             shapes.end();
         }
     }
@@ -664,7 +703,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             case LAKE -> "О";
             case FLOODPLAIN -> "П";
             case MOUNTAIN -> "Г";
-            case LANDING -> "БЗ";
         };
     }
 
@@ -707,28 +745,36 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         BoardOccupancy occupancy = BoardOccupancy.from(simulation);
 
         shapes.begin(ShapeRenderer.ShapeType.Filled);
+        drawPieceFallbacksAtPoint(simulation.map.baseTile.position, occupancy);
         for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
-            Point tilePoint = entry.getKey();
-            if (!isVisibleOnBoard(tilePoint)) continue;
-
-            List<BoardPiece> pieces = occupancy.at(tilePoint);
-            for (int i = 0; i < pieces.size(); i++) {
-                drawPieceFallback(tilePoint, pieces.get(i), i, pieces.size());
-            }
+            drawPieceFallbacksAtPoint(entry.getKey(), occupancy);
         }
         shapes.end();
 
         batch.begin();
+        drawPieceTexturesAtPoint(simulation.map.baseTile.position, occupancy);
         for (Map.Entry<Point, Tile> entry : simulation.map.entries()) {
-            Point tilePoint = entry.getKey();
-            if (!isVisibleOnBoard(tilePoint)) continue;
-
-            List<BoardPiece> pieces = occupancy.at(tilePoint);
-            for (int i = 0; i < pieces.size(); i++) {
-                drawPieceTextureOrLabel(tilePoint, pieces.get(i), i, pieces.size());
-            }
+            drawPieceTexturesAtPoint(entry.getKey(), occupancy);
         }
         batch.end();
+    }
+
+    private void drawPieceFallbacksAtPoint(Point tilePoint, BoardOccupancy occupancy) {
+        if (!isVisibleOnBoard(tilePoint)) return;
+
+        List<BoardPiece> pieces = occupancy.at(tilePoint);
+        for (int i = 0; i < pieces.size(); i++) {
+            drawPieceFallback(tilePoint, pieces.get(i), i, pieces.size());
+        }
+    }
+
+    private void drawPieceTexturesAtPoint(Point tilePoint, BoardOccupancy occupancy) {
+        if (!isVisibleOnBoard(tilePoint)) return;
+
+        List<BoardPiece> pieces = occupancy.at(tilePoint);
+        for (int i = 0; i < pieces.size(); i++) {
+            drawPieceTextureOrLabel(tilePoint, pieces.get(i), i, pieces.size());
+        }
     }
 
     private void drawPieceFallback(Point tilePoint, BoardPiece piece, int pieceIndex, int totalPieces) {

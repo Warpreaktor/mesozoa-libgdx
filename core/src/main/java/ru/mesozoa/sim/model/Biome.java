@@ -8,8 +8,7 @@ public enum Biome {
     RIVER("Река", "river.png"),
     LAKE("Озеро", "lake.png"),
     FLOODPLAIN("Пойма", "floodplain.png"),
-    MOUNTAIN("Горы", "mountain.png"),
-    LANDING("База", "landing.png");
+    MOUNTAIN("Горы", "mountain.png");
 
     public final String displayName;
     public final String imagePath;

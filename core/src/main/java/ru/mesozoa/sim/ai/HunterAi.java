@@ -2,7 +2,7 @@ package ru.mesozoa.sim.ai;
 
 import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.CaptureMethod;
-import ru.mesozoa.sim.model.Dinosaur;
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
@@ -557,6 +557,10 @@ public final class HunterAi {
      * @return true, если охотник может войти на клетку
      */
     private boolean canHunterEnter(Point point) {
+        if (simulation.map.isBase(point)) {
+            return true;
+        }
+
         Tile tile = simulation.map.tile(point);
         return tile != null && !tile.biome.blocksMostMovement();
     }

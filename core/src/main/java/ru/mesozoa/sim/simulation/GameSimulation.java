@@ -5,6 +5,7 @@ import ru.mesozoa.sim.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.report.GameResult;
 import ru.mesozoa.sim.tile.Tile;
@@ -79,7 +80,7 @@ public final class GameSimulation {
         log.clear();
         nextDinoId = 1;
 
-        map = GameMap.createWithLanding();
+        map = GameMap.createWithBase();
         tileBag = TileBag.createDefault(gameConfig, random);
 
         rangerTurnPlanner = new RangerTurnPlanner(this);
@@ -361,6 +362,10 @@ public final class GameSimulation {
     }
 
     private boolean isPassable(Point point) {
+        if (map.isBase(point)) {
+            return true;
+        }
+
         Tile tile = map.tile(point);
         return tile != null && !tile.biome.blocksMostMovement();
     }

@@ -1,7 +1,7 @@
 package ru.mesozoa.sim.ai;
 
 import ru.mesozoa.sim.model.AiScore;
-import ru.mesozoa.sim.model.Dinosaur;
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.simulation.GameSimulation;

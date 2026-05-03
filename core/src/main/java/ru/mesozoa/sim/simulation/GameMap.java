@@ -3,6 +3,7 @@ package ru.mesozoa.sim.simulation;
 import ru.mesozoa.sim.model.Biome;
 import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.Point;
+import ru.mesozoa.sim.tile.BaseTile;
 import ru.mesozoa.sim.tile.Tile;
 
 import java.util.ArrayDeque;
@@ -18,46 +19,84 @@ import java.util.Map;
 /**
  * Динамическое игровое поле.
  *
- * На столе существуют только те тайлы, которые игроки уже выложили.
+ * Центр карты определяется тайлов BaseTile
  */
 public final class GameMap {
 
+    /**
+     * Обычные тайлы местности, выложенные игроками на стол.
+     *
+     * Базовый тайл здесь не хранится, потому что это отдельный объект карты,
+     * а не тайл биома из мешочка.
+     */
     private final LinkedHashMap<Point, Tile> placedTiles = new LinkedHashMap<>();
 
+    /**
+     * Стартовый тайл экспедиции и компас игрового поля.
+     */
+    public final BaseTile baseTile;
+
+    /**
+     * Координата базы. Оставлена отдельным полем для удобства старого кода.
+     */
     public final Point base;
 
-    private GameMap(Point base) {
-        this.base = base;
+    private GameMap(BaseTile baseTile) {
+        this.baseTile = baseTile;
+        this.base = baseTile.position;
     }
 
-    public static GameMap createWithLanding() {
-        Point base = new Point(0, 0);
-        GameMap map = new GameMap(base);
-        Tile landing = new Tile(Biome.LANDING, null, List.of(), false, List.of());
-        landing.place(base, 0);
-        map.placeTile(base, landing);
-        return map;
+    /**
+     * Создаёт карту с базовым тайлом в координате (0, 0).
+     */
+    public static GameMap createWithBase() {
+        return new GameMap(new BaseTile());
     }
 
     public boolean inBounds(Point p) {
         return true;
     }
 
-    public boolean isPlaced(Point p) {
-        return placedTiles.containsKey(p);
+    /**
+     * Проверяет, является ли координата координатой базового тайла.
+     *
+     * @param point проверяемая координата
+     * @return true, если координата соответствует базе
+     */
+    public boolean isBase(Point point) {
+        return base.equals(point);
     }
 
+    /**
+     * Проверяет, существует ли на карте клетка с указанной координатой.
+     *
+     * База считается размещённой клеткой, хотя не лежит в placedTiles.
+     */
+    public boolean isPlaced(Point p) {
+        return isBase(p) || placedTiles.containsKey(p);
+    }
+
+    /**
+     * Возвращает обычный тайл местности по координате.
+     *
+     * Для базы возвращается null, потому что база не имеет биома и не является Tile.
+     */
     public Tile tile(Point p) {
         return placedTiles.get(p);
     }
 
+    /**
+     * Возвращает только обычные тайлы местности.
+     *
+     * База не входит в этот набор и отрисовывается отдельно.
+     */
     public Collection<Map.Entry<Point, Tile>> entries() {
         return Collections.unmodifiableCollection(placedTiles.entrySet());
     }
 
     /**
      * Ручная выкладка тайла игроком.
-     * Новый тайл должен прилегать к уже выложенным по стороне.
+     * Новый тайл должен прилегать к базе или к уже выложенным тайлам по стороне.
      */
     public boolean placeTile(Point p, Tile tile) {
         if (!canPlace(p)) return false;
@@ -66,7 +105,7 @@ public final class GameMap {
     }
 
     public boolean canPlace(Point p) {
-        return !placedTiles.containsKey(p) && (placedTiles.isEmpty() || isAdjacentToPlacedTile(p));
+        return !isPlaced(p) && isAdjacentToPlacedTile(p);
     }
 
     /**
@@ -82,30 +121,47 @@ public final class GameMap {
     }
 
     public boolean canPlaceExpansion(Point p) {
-        return !placedTiles.containsKey(p) && inBounds(p);
+        return !isPlaced(p) && inBounds(p);
     }
 
     private boolean isAdjacentToPlacedTile(Point p) {
         for (Point n : p.neighbors4()) {
-            if (placedTiles.containsKey(n)) return true;
+            if (isPlaced(n)) return true;
         }
         return false;
     }
 
+    /**
+     * Возвращает свободные клетки, куда игрок может вручную положить новый тайл.
+     *
+     * Стартовая база тоже считается источником фронтира, но сама база не является
+     * обычным тайлом карты.
+     */
     public List<Point> availablePlacementPoints() {
         LinkedHashSet<Point> result = new LinkedHashSet<>();
+        addFreeCardinalNeighbors(base, result);
+
         for (Point p : placedTiles.keySet()) {
-            for (Point n : p.neighbors4()) {
-                if (!placedTiles.containsKey(n)) result.add(n);
-            }
+            addFreeCardinalNeighbors(p, result);
         }
         return new ArrayList<>(result);
     }
 
+    private void addFreeCardinalNeighbors(Point point, LinkedHashSet<Point> result) {
+        for (Point n : point.neighbors4()) {
+            if (!isPlaced(n)) result.add(n);
+        }
+    }
+
+    /**
+     * Возвращает выложенных соседей клетки по четырём сторонам.
+     *
+     * База входит в результат, если она соседствует с указанной клеткой.
+     */
     public List<Point> placedNeighbors(Point p) {
         ArrayList<Point> result = new ArrayList<>();
         for (Point n : p.neighbors4()) {
-            if (placedTiles.containsKey(n)) result.add(n);
+            if (isPlaced(n)) result.add(n);
         }
         return result;
     }
@@ -114,11 +170,9 @@ public final class GameMap {
      * Возвращает соседние клетки, куда может проехать водитель.
      *
      * Правило:
-     * - если на одном из двух тайлов лежит мостик, проезд разрешён;
-     * - если между двумя тайлами есть дорога, проезд разрешён.
-     *
-     * База не считается дорогой или мостом. Чтобы водитель выехал с базы,
-     * из неё должна быть проложена обычная дорога.
+     * - база не считается дорогой или мостом;
+     * - если один из двух концов пути — база, проезд возможен только по дороге;
+     * - между обычными тайлами проезд возможен по дороге или через мостик.
      */
     public List<Point> driverReachableNeighbors(Point from) {
         ArrayList<Point> result = new ArrayList<>();
@@ -202,21 +256,30 @@ public final class GameMap {
     }
 
     private boolean canDriverMoveBetween(Point from, Point to) {
-        Tile fromTile = tile(from);
-        Tile toTile = tile(to);
-
-        if (fromTile == null || toTile == null) return false;
+        if (from == null || to == null) return false;
+        if (!isPlaced(from) || !isPlaced(to)) return false;
 
         Direction direction = directionBetween(from, to);
         if (direction == null) return false;
 
         Direction opposite = direction.rotateClockwiseQuarterTurns(2);
-        boolean hasRoadBetweenTiles = fromTile.hasRoadTo(direction) || toTile.hasRoadTo(opposite);
+        boolean fromIsBase = isBase(from);
+        boolean toIsBase = isBase(to);
 
-        if (from.equals(base) || to.equals(base)) {
-            return hasRoadBetweenTiles;
+        if (fromIsBase && toIsBase) return false;
+
+        if (fromIsBase || toIsBase) {
+            Tile regularTile = fromIsBase ? tile(to) : tile(from);
+            Direction roadDirectionFromRegularTile = fromIsBase ? opposite : direction;
+            return regularTile != null && regularTile.hasRoadTo(roadDirectionFromRegularTile);
         }
 
+        Tile fromTile = tile(from);
+        Tile toTile = tile(to);
+
+        if (fromTile == null || toTile == null) return false;
+
+        boolean hasRoadBetweenTiles = fromTile.hasRoadTo(direction) || toTile.hasRoadTo(opposite);
         return fromTile.hasBridge || toTile.hasBridge || hasRoadBetweenTiles;
     }
 
@@ -233,10 +296,6 @@ public final class GameMap {
         }
 
         return null;
-    }
-
-    public Point nearestOpenedBiome(Point from, Biome biome) {
-        return nearestPlacedBiome(from, biome);
     }
 
     public Point nearestPlacedBiome(Point from, Biome biome) {
@@ -277,24 +336,27 @@ public final class GameMap {
         return nearestUnexploredFrontier(from);
     }
 
+    /**
+     * Количество открытых клеток карты, включая отдельный базовый тайл.
+     */
     public int openedCount() {
-        return placedTiles.size();
+        return placedTiles.size() + 1;
     }
 
     public int minX() {
-        return placedTiles.keySet().stream().mapToInt(p -> p.x).min().orElse(0);
+        return Math.min(base.x, placedTiles.keySet().stream().mapToInt(p -> p.x).min().orElse(base.x));
     }
 
     public int maxX() {
-        return placedTiles.keySet().stream().mapToInt(p -> p.x).max().orElse(0);
+        return Math.max(base.x, placedTiles.keySet().stream().mapToInt(p -> p.x).max().orElse(base.x));
     }
 
     public int minY() {
-        return placedTiles.keySet().stream().mapToInt(p -> p.y).min().orElse(0);
+        return Math.min(base.y, placedTiles.keySet().stream().mapToInt(p -> p.y).min().orElse(base.y));
     }
 
     public int maxY() {
-        return placedTiles.keySet().stream().mapToInt(p -> p.y).max().orElse(0);
+        return Math.max(base.y, placedTiles.keySet().stream().mapToInt(p -> p.y).max().orElse(base.y));
     }
 
     public int widthInTiles() {
