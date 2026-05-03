@@ -29,7 +29,7 @@ public final class GameMap {
     public static GameMap createWithLanding() {
         Point base = new Point(0, 0);
         GameMap map = new GameMap(base);
-        Tile landing = new Tile(Biome.LANDING, null, List.of(), true, List.of());
+        Tile landing = new Tile(Biome.LANDING, null, List.of(), false, List.of());
         landing.place(base, 0);
         map.placeTile(base, landing);
         return map;
@@ -119,8 +119,10 @@ public final class GameMap {
      *
      * Правило:
      * - если на одном из двух тайлов лежит мостик, проезд разрешён;
-     * - если между двумя тайлами есть дорога, проезд разрешён;
-     * - база считается мостиком, чтобы машина могла стартовать.
+     * - если между двумя тайлами есть дорога, проезд разрешён.
+     *
+     * База не считается дорогой или мостом. Чтобы водитель выехал с базы,
+     * из неё должна быть проложена обычная дорога.
      */
     public List<Point> driverReachableNeighbors(Point from) {
         ArrayList<Point> result = new ArrayList<>();
@@ -143,14 +145,35 @@ public final class GameMap {
         return nextDriverStepToward(from, target) != null;
     }
 
+    /**
+     * Возвращает длину кратчайшего водительского пути по дорогам и мостам.
+     *
+     * @param from стартовая клетка водителя
+     * @param target целевая клетка
+     * @return количество шагов до цели или Integer.MAX_VALUE, если пути нет
+     */
+    public int driverPathDistance(Point from, Point target) {
+        List<Point> path = findDriverPath(from, target);
+        if (path.isEmpty()) return Integer.MAX_VALUE;
+        return path.size() - 1;
+    }
+
     public Point stepDriverToward(Point from, Point target) {
         Point next = nextDriverStepToward(from, target);
         return next == null ? from : next;
     }
 
     private Point nextDriverStepToward(Point from, Point target) {
-        if (from.equals(target)) return from;
-        if (!isPlaced(from) || !isPlaced(target)) return null;
+        List<Point> path = findDriverPath(from, target);
+        if (path.isEmpty()) return null;
+        if (path.size() < 2) return from;
+        return path.get(1);
+    }
+
+    private List<Point> findDriverPath(Point from, Point target) {
+        if (from == null || target == null) return List.of();
+        if (from.equals(target)) return List.of(from);
+        if (!isPlaced(from) || !isPlaced(target)) return List.of();
 
         ArrayDeque<Point> queue = new ArrayDeque<>();
         HashMap<Point, Point> previous = new HashMap<>();
@@ -169,16 +192,17 @@ public final class GameMap {
             }
         }
 
-        if (!previous.containsKey(target)) return null;
+        if (!previous.containsKey(target)) return List.of();
 
+        ArrayList<Point> path = new ArrayList<>();
         Point step = target;
-        Point parent = previous.get(step);
-        while (parent != null && !parent.equals(from)) {
-            step = parent;
-            parent = previous.get(step);
+        while (step != null) {
+            path.add(step);
+            step = previous.get(step);
         }
 
-        return step;
+        Collections.reverse(path);
+        return path;
     }
 
     private boolean canDriverMoveBetween(Point from, Point to) {
@@ -186,14 +210,18 @@ public final class GameMap {
         Tile toTile = tile(to);
 
         if (fromTile == null || toTile == null) return false;
-        if (from.equals(base) || to.equals(base)) return true;
-        if (fromTile.hasBridge || toTile.hasBridge) return true;
 
         Direction direction = directionBetween(from, to);
         if (direction == null) return false;
 
         Direction opposite = direction.rotateClockwiseQuarterTurns(2);
-        return fromTile.hasRoadTo(direction) || toTile.hasRoadTo(opposite);
+        boolean hasRoadBetweenTiles = fromTile.hasRoadTo(direction) || toTile.hasRoadTo(opposite);
+
+        if (from.equals(base) || to.equals(base)) {
+            return hasRoadBetweenTiles;
+        }
+
+        return fromTile.hasBridge || toTile.hasBridge || hasRoadBetweenTiles;
     }
 
     private Direction directionBetween(Point from, Point to) {

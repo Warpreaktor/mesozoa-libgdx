@@ -29,6 +29,9 @@ import static ru.mesozoa.sim.model.RangerRole.SCOUT;
  */
 public final class RangerTurnPlanner {
 
+    /** Минимальная оценка, при которой роль считается полезной для активации. */
+    private static final double MIN_USEFUL_SCORE = 0.0;
+
     private final GameSimulation simulation;
     private final ScoutAi scoutAi;
     private final HunterAi hunterAi;
@@ -70,6 +73,15 @@ public final class RangerTurnPlanner {
 
         if (bestRole == null) {
             simulation.log("AI игрок " + player.id + ": нет доступного рейнджера для активации");
+            return null;
+        }
+
+        if (bestScore.value() <= MIN_USEFUL_SCORE) {
+            simulation.log("AI игрок " + player.id
+                    + ": нет полезной роли для активации; лучший кандидат "
+                    + roleToText(bestRole)
+                    + " получил оценку " + bestScore.value()
+                    + " — " + bestScore.reason());
             return null;
         }
 
