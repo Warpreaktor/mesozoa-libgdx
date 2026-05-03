@@ -5,6 +5,7 @@ import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -17,80 +18,42 @@ import java.util.List;
  */
 public final class Tile {
 
-    /**
-     * Биом обычного тайла местности: лес, луг, река, озеро, болото, горы или пойма.
-     */
+    /** Биом обычного тайла местности: лес, луг, река, озеро, болото, горы или пойма. */
     public final Biome biome;
 
-    /**
-     * Вид динозавра, который появляется при первой выкладке этого тайла.
-     *
-     * Если null, тайл не является спаун-тайлом.
-     */
+    /** Вид динозавра, который появляется при первой выкладке этого тайла. */
     public final Species spawnSpecies;
 
-    /**
-     * Путь к картинке тайла в assets.
-     */
+    /** Путь к картинке тайла в assets. */
     public final String imagePath;
 
-    /**
-     * Направления автодостройки в базовой ориентации физического тайла.
-     *
-     * Эти значения не меняются после создания тайла и нужны, чтобы корректно
-     * пересчитать фактические направления при выкладке с поворотом.
-     */
+    /** Направления автодостройки в базовой ориентации физического тайла. */
     public final List<Direction> baseExpansionDirections;
 
-    /**
-     * Направления дорог в базовой ориентации физического тайла.
-     */
+    /** Направления дорог в базовой ориентации физического тайла. */
     public final List<Direction> baseRoadDirections;
 
-    /**
-     * Фактические направления автодостройки после выкладки и поворота тайла.
-     */
+    /** Фактические направления автодостройки после выкладки и поворота тайла. */
     public List<Direction> expansionDirections;
 
     /**
      * Флаг мостика на тайле.
-     *
-     * Если на тайле лежит мостик, водитель может проехать с этого тайла
-     * на любой соседний выложенный тайл и заехать на этот тайл с любого
-     * соседнего выложенного тайла.
      */
-    public final boolean hasBridge;
+    public boolean hasBridge;
 
-    /**
-     * Фактические направления дорог после выкладки и поворота тайла.
-     *
-     * Дорога физически лежит между двумя тайлами, поэтому она моделируется
-     * как направление от текущего тайла к соседнему. Соединение считается
-     * проезжим, если дорога указана хотя бы с одной стороны пары тайлов.
-     */
+    /** Фактические направления дорог после выкладки и поворота тайла. */
     public List<Direction> roadDirections;
 
-    /**
-     * Поворот физического тайла при выкладке.
-     * 0 — 0°, 1 — 90° по часовой, 2 — 180°, 3 — 270° по часовой.
-     */
+    /** Поворот физического тайла при выкладке. */
     public int rotationQuarterTurns;
 
-    /**
-     * Координата тайла на столе.
-     *
-     * Пока тайл лежит в мешочке, значение равно null.
-     */
+    /** Координата тайла на столе. Пока тайл лежит в мешочке, значение равно null. */
     public Point position;
 
-    /**
-     * Открыт ли тайл на игровом поле.
-     */
+    /** Открыт ли тайл на игровом поле. */
     public boolean opened;
 
-    /**
-     * Был ли уже использован спаун этого тайла.
-     */
+    /** Был ли уже использован спаун этого тайла. */
     public boolean spawnUsed;
 
     public Tile(Biome biome, Species spawnSpecies) {
@@ -115,7 +78,7 @@ public final class Tile {
         this.baseRoadDirections = List.copyOf(roadDirections);
         this.expansionDirections = List.copyOf(expansionDirections);
         this.hasBridge = hasBridge;
-        this.roadDirections = List.copyOf(roadDirections);
+        this.roadDirections = new ArrayList<>(roadDirections);
         this.rotationQuarterTurns = 0;
         this.position = null;
         this.opened = false;
@@ -133,14 +96,7 @@ public final class Tile {
         this.opened = true;
         this.rotationQuarterTurns = Math.floorMod(rotationQuarterTurns, 4);
         this.expansionDirections = rotatedDirections(baseExpansionDirections, this.rotationQuarterTurns);
-        this.roadDirections = rotatedDirections(baseRoadDirections, this.rotationQuarterTurns);
-    }
-
-    /**
-     * Проверяет, размещён ли тайл на столе.
-     */
-    public boolean isPlaced() {
-        return position != null;
+        this.roadDirections = new ArrayList<>(rotatedDirections(baseRoadDirections, this.rotationQuarterTurns));
     }
 
     public boolean hasSpawn() {
@@ -151,12 +107,31 @@ public final class Tile {
         return !expansionDirections.isEmpty();
     }
 
-    public boolean hasRoad() {
-        return !roadDirections.isEmpty();
-    }
-
     public boolean hasRoadTo(Direction direction) {
         return roadDirections.contains(direction);
+    }
+
+    /**
+     * Добавляет направление дороги на уже выложенный тайл.
+     *
+     * @param direction направление дороги к соседней клетке
+     * @return true, если дорога была добавлена; false, если она уже существовала
+     */
+    public boolean addRoadTo(Direction direction) {
+        if (roadDirections.contains(direction)) return false;
+        roadDirections.add(direction);
+        return true;
+    }
+
+    /**
+     * Строит мост на тайле.
+     *
+     * @return true, если мост был построен; false, если мост уже существовал
+     */
+    public boolean addBridge() {
+        if (hasBridge) return false;
+        hasBridge = true;
+        return true;
     }
 
     /**

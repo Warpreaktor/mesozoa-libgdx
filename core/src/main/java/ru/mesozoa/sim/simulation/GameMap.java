@@ -255,6 +255,109 @@ public final class GameMap {
         return path;
     }
 
+
+    /**
+     * Проверяет, есть ли хотя бы одна дорога, соединяющая базу с соседним тайлом.
+     *
+     * База сама по себе не является дорогой. Для выезда джипа из стартовой клетки
+     * инженер должен построить дорогу между базой и обычным тайлом.
+     */
+    public boolean hasRoadOutOfBase() {
+        for (Point neighbor : base.neighbors4()) {
+            if (!isPlaced(neighbor)) continue;
+            if (canDriverMoveBetween(base, neighbor)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Проверяет, можно ли построить дорогу между двумя соседними клетками.
+     *
+     * Дорога моделируется как связь между сторонами двух клеток, поэтому диагональные
+     * соединения здесь запрещены. Дороги нельзя строить через горы и озёра.
+     */
+    public boolean canBuildRoadBetween(Point from, Point to) {
+        if (from == null || to == null) return false;
+        if (!isPlaced(from) || !isPlaced(to)) return false;
+
+        Direction direction = directionBetween(from, to);
+        if (direction == null || !isCardinal(direction)) return false;
+
+        Direction opposite = direction.rotateClockwiseQuarterTurns(2);
+        boolean fromIsBase = isBase(from);
+        boolean toIsBase = isBase(to);
+
+        if (fromIsBase && toIsBase) return false;
+
+        if (fromIsBase || toIsBase) {
+            Tile regularTile = fromIsBase ? tile(to) : tile(from);
+            Direction roadDirectionFromRegularTile = fromIsBase ? opposite : direction;
+            return canHoldRoad(regularTile) && !regularTile.hasRoadTo(roadDirectionFromRegularTile);
+        }
+
+        Tile fromTile = tile(from);
+        Tile toTile = tile(to);
+        if (!canHoldRoad(fromTile) || !canHoldRoad(toTile)) return false;
+
+        return !fromTile.hasRoadTo(direction) && !toTile.hasRoadTo(opposite);
+    }
+
+    /**
+     * Строит дорогу между двумя соседними клетками.
+     *
+     * Для связи с базой дорога записывается на обычный тайл в направлении базы,
+     * потому что BaseTile не является обычным тайлом местности.
+     */
+    public boolean buildRoadBetween(Point from, Point to) {
+        if (!canBuildRoadBetween(from, to)) return false;
+
+        Direction direction = directionBetween(from, to);
+        Direction opposite = direction.rotateClockwiseQuarterTurns(2);
+        boolean fromIsBase = isBase(from);
+        boolean toIsBase = isBase(to);
+
+        if (fromIsBase) {
+            return tile(to).addRoadTo(opposite);
+        }
+
+        if (toIsBase) {
+            return tile(from).addRoadTo(direction);
+        }
+
+        return tile(from).addRoadTo(direction);
+    }
+
+    /**
+     * Проверяет, можно ли построить мост на указанной клетке.
+     *
+     * Мост строится на реках и озёрах. На базе или обычной суше мост не нужен,
+     * даже если инженеру очень хочется потратить стройматериалы.
+     */
+    public boolean canBuildBridge(Point point) {
+        if (point == null || isBase(point)) return false;
+        Tile tile = tile(point);
+        if (tile == null || tile.hasBridge) return false;
+        return tile.biome == Biome.RIVER || tile.biome == Biome.LAKE;
+    }
+
+    /**
+     * Строит мост на указанной клетке.
+     *
+     * @return true, если мост был построен
+     */
+    public boolean buildBridge(Point point) {
+        if (!canBuildBridge(point)) return false;
+        return tile(point).addBridge();
+    }
+
+    private boolean canHoldRoad(Tile tile) {
+        return tile != null && tile.biome != Biome.MOUNTAIN && tile.biome != Biome.LAKE;
+    }
+
+    private boolean isCardinal(Direction direction) {
+        return direction.dx == 0 || direction.dy == 0;
+    }
+
     private boolean canDriverMoveBetween(Point from, Point to) {
         if (from == null || to == null) return false;
         if (!isPlaced(from) || !isPlaced(to)) return false;
