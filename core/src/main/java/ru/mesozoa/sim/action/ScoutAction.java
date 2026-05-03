@@ -4,7 +4,7 @@ import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
-import ru.mesozoa.sim.rules.GameSimulation;
+import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.tile.Tile;
 
 import java.util.Comparator;

@@ -1,13 +1,12 @@
 package ru.mesozoa.sim.action;
 
 import ru.mesozoa.sim.model.*;
-import ru.mesozoa.sim.rules.GameSimulation;
-import ru.mesozoa.sim.rules.RangerTurnPlanner;
+import ru.mesozoa.sim.simulation.GameSimulation;
+import ru.mesozoa.sim.ai.RangerTurnPlanner;
 
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 

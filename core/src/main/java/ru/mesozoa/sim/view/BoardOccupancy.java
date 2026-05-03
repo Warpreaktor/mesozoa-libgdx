@@ -4,7 +4,7 @@ import ru.mesozoa.sim.model.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
-import ru.mesozoa.sim.rules.GameSimulation;
+import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.ArrayList;
 import java.util.Comparator;

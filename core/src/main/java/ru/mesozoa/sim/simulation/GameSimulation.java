@@ -1,6 +1,7 @@
-package ru.mesozoa.sim.rules;
+package ru.mesozoa.sim.simulation;
 
 import ru.mesozoa.sim.action.RangerActionExecutor;
+import ru.mesozoa.sim.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;

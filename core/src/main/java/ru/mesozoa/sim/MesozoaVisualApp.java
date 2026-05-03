@@ -13,7 +13,7 @@ import com.badlogic.gdx.math.Matrix4;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.model.*;
-import ru.mesozoa.sim.rules.GameSimulation;
+import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.tile.Tile;
 import ru.mesozoa.sim.view.AssetCatalog;

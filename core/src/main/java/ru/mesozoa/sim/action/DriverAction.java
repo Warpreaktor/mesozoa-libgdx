@@ -2,7 +2,7 @@ package ru.mesozoa.sim.action;
 
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
-import ru.mesozoa.sim.rules.GameSimulation;
+import ru.mesozoa.sim.simulation.GameSimulation;
 
 public class DriverAction {
 

@@ -4,7 +4,7 @@ import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.RangerRole;
-import ru.mesozoa.sim.rules.GameSimulation;
+import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.Comparator;
 import java.util.List;
