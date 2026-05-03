@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.ai;
 
+import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
@@ -51,26 +52,44 @@ public final class RangerTurnPlanner {
      */
     public RangerRole chooseNextRangerForTurn(PlayerState player, Set<RangerRole> alreadyUsedRoles) {
         RangerRole bestRole = null;
-        double bestScore = Double.NEGATIVE_INFINITY;
+        AiScore bestScore = new AiScore(Double.NEGATIVE_INFINITY, "нет оценки");
 
         for (RangerRole role : List.of(SCOUT, ENGINEER, HUNTER, DRIVER)) {
-
             if (alreadyUsedRoles.contains(role)) {
                 continue;
             }
 
-            double score = scoreRole(player, role);
+            AiScore score = scoreRole(player, role);
 
-            if (score > bestScore) {
+            if (score.value() > bestScore.value()) {
                 bestScore = score;
                 bestRole = role;
             }
         }
 
+        if (bestRole == null) {
+            simulation.log("AI игрок " + player.id + ": нет доступного рейнджера для активации");
+            return null;
+        }
+
+        simulation.log("AI игрок " + player.id
+                + ": выбран " + roleToText(bestRole)
+                + " с оценкой " + bestScore.value()
+                + " — " + bestScore.reason());
+
         return bestRole;
     }
 
-    private double scoreRole(PlayerState player, RangerRole role) {
+    private String roleToText(RangerRole role) {
+        return switch (role) {
+            case SCOUT -> "разведчик";
+            case DRIVER -> "водитель";
+            case ENGINEER -> "инженер";
+            case HUNTER -> "охотник";
+        };
+    }
+
+    private AiScore scoreRole(PlayerState player, RangerRole role) {
         return switch (role) {
             case SCOUT -> scoutAi.scoreScout(player);
             case ENGINEER -> engineerAi.scoreEngineer(player);

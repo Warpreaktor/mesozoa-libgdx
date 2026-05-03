@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.ai;
 
+import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
@@ -43,32 +44,37 @@ public final class HunterAi {
      * @param player игрок, для которого оценивается полезность охотника
      * @return числовая оценка полезности охотника
      */
-    public double scoreHunter(PlayerState player) {
+    public AiScore scoreHunter(PlayerState player) {
         Optional<Dinosaur> target = nearestNeededHunterTarget(player, player.hunter);
 
         if (target.isEmpty()) {
-            simulation.log("охотник: оценка 10.0 — нет нужной цели для охоты или выслеживания");
-            return 10.0;
+            return new AiScore(10.0, "нет нужной цели для охоты или выслеживания");
         }
 
         Dinosaur dinosaur = target.get();
         int distance = player.hunter.manhattan(dinosaur.position);
 
         double score = 75.0 - Math.min(45.0, distance * 5.0);
+        String reason = "цель " + dinosaur.species.displayName
+                + ", способ " + dinosaur.species.captureMethod
+                + ", расстояние " + distance;
 
         if (dinosaur.species.captureMethod == CaptureMethod.TRACKING && distance <= 1) {
             score += 55.0;
+            reason += ", цель рядом для выслеживания";
         }
 
         if (dinosaur.species.captureMethod == CaptureMethod.HUNT && distance <= 2 && player.hunterBait > 0) {
             score += 55.0;
+            reason += ", цель в радиусе охоты и есть приманка";
         }
 
         if (dinosaur.species.captureMethod == CaptureMethod.HUNT && player.hunterBait <= 0) {
             score -= 40.0;
+            reason += ", но нет приманки";
         }
 
-        return score;
+        return new AiScore(score, reason);
     }
 
     /**

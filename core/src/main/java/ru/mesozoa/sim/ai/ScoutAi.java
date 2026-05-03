@@ -1,6 +1,6 @@
 package ru.mesozoa.sim.ai;
 
-import ru.mesozoa.sim.model.CaptureMethod;
+import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
@@ -19,23 +19,25 @@ public class ScoutAi {
      * Если на карте уже есть конкретная цель для охотника или инженера,
      * эти роли смогут перебить разведчика по весу.
      */
-    public double scoreScout(PlayerState player) {
-
+    public AiScore scoreScout(PlayerState player) {
         if (simulation.tileBag.isEmpty()) {
-            simulation.log("мешочек основных тайлов пуст, разведка невозможна");
-            return -100.0;
+            return new AiScore(
+                    -100.0,
+                    "мешочек основных тайлов пуст, разведка невозможна"
+            );
         }
 
         double score = 35.0;
+        String reason = "разведчик может открыть новый тайл";
 
         if (!hasVisibleNeededDinosaur(player)) {
             score += 25.0;
-            simulation.log("на карте нет нужных динозавров, стоит провести разведку");
+            reason += ", на карте нет нужных динозавров";
         } else {
-            simulation.log("на карте уже есть нужный динозавр, разведка не главный приоритет");
+            reason += ", но на карте уже есть нужный динозавр";
         }
 
-        return score;
+        return new AiScore(score, reason);
     }
 
     /**

@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.ai;
 
+import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
@@ -23,24 +24,48 @@ public class EngineerAi {
      * Инженер получает высокий вес, если на карте есть нужный S-динозавр,
      * который ловится ловушкой.
      */
-    public double scoreEngineer(PlayerState player) {
-        if (activeTrapCount(player) >= simulation.inventoryConfig.maxTrapsPerPlayer) {
-            return -50.0;
+    public AiScore scoreEngineer(PlayerState player) {
+        int activeTraps = activeTrapCount(player);
+        int maxTraps = simulation.inventoryConfig.maxTrapsPerPlayer;
+
+        if (activeTraps >= maxTraps) {
+            return new AiScore(
+                    -50.0,
+                    "лимит активных ловушек достигнут: " + activeTraps + "/" + maxTraps
+            );
         }
 
-        Optional<Dinosaur> target = nearestNeededDinosaur(player, player.engineer, CaptureMethod.TRAP);
+        Optional<Dinosaur> target = nearestNeededDinosaur(
+                player,
+                player.engineer,
+                CaptureMethod.TRAP
+        );
+
         if (target.isEmpty()) {
-            return 8.0;
+            return new AiScore(
+                    8.0,
+                    "нет нужного динозавра, который ловится ловушкой"
+            );
         }
 
-        int distance = player.engineer.manhattan(target.get().position);
+        Dinosaur dinosaur = target.get();
+        int distance = player.engineer.manhattan(dinosaur.position);
+
         double score = 80.0 - Math.min(45.0, distance * 6.0);
 
-        if (isAdjacentOrSame(player.engineer, target.get().position)) {
+        String reason = "есть ловушечная цель: "
+                + dinosaur.species.displayName
+                + ", расстояние: " + distance
+                + ", ловушек: " + activeTraps + "/" + maxTraps;
+
+        if (isAdjacentOrSame(player.engineer, dinosaur.position)) {
             score += 45.0;
+            reason += ", инженер рядом и может ставить ловушки";
+        } else {
+            reason += ", инженер должен приблизиться";
         }
 
-        return score;
+        return new AiScore(score, reason);
     }
 
     private Optional<Dinosaur> nearestNeededDinosaur(PlayerState player, Point from, CaptureMethod... methods) {
