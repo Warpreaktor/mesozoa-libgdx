@@ -18,6 +18,7 @@ import java.util.Map;
  * На столе существуют только те тайлы, которые игроки уже выложили.
  */
 public final class GameMap {
+
     private final LinkedHashMap<Point, Tile> placedTiles = new LinkedHashMap<>();
     public final Point base;
 

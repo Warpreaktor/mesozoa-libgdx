@@ -12,6 +12,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Matrix4;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
+import ru.mesozoa.sim.input.InputHandler;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.config.GameConfig;
@@ -28,6 +29,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import static ru.mesozoa.sim.config.GraphicsConfig.BASE_ZOOM;
+import static ru.mesozoa.sim.config.GraphicsConfig.MOUSE_WHEEL_ZOOM_STEP;
+
 public final class MesozoaVisualApp extends ApplicationAdapter {
 
     public static final long RANDOM_SEED = Long.MIN_VALUE;
@@ -35,10 +39,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private static final int HUD_WIDTH = 390;
 
     private static final int TILE_SIZE = 192;
-    private static final float BASE_ZOOM = 1.25f;
-    private static final float MIN_ZOOM = BASE_ZOOM * 0.30f;
-    private static final float MAX_ZOOM = BASE_ZOOM * 3.00f;
-    private static final float MOUSE_WHEEL_ZOOM_STEP = 1.12f;
 
     private static final float TRANSITION_STRIP = 10f;
     private static final float TRANSITION_INSET = 12f;
@@ -49,7 +49,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private static final int PIECE_GRID_SIZE = 4;
 
     private final long seed;
-    private float stepDelay;
+    public float stepDelay;
     private GameSimulation simulation;
 
     private ShapeRenderer shapes;
@@ -57,22 +57,25 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private BitmapFont font;
     private AssetCatalog assets;
 
-    private boolean paused = true;
-    private boolean showGrid = true;
-    private boolean showSpawnDebug = true;
-    private boolean showDebug = true;
+    public boolean paused = true;
+    public boolean showGrid = true;
+    public boolean showSpawnDebug = true;
+    public boolean showDebug = true;
     private float timer = 0f;
 
-    private float cameraX = 0f;
-    private float cameraY = 0f;
-    private float zoom = BASE_ZOOM;
+    public float cameraX = 0f;
+    public float cameraY = 0f;
+    public float zoom = BASE_ZOOM;
 
     private int restartCounter = 0;
     private long currentSeed = 0L;
 
+    private final InputHandler inputHandler;
+
     public MesozoaVisualApp(long seed, float stepDelay) {
         this.seed = seed;
         this.stepDelay = stepDelay;
+        this.inputHandler = new InputHandler(simulation, this);
     }
 
     @Override
@@ -91,7 +94,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
                 }
 
                 float factor = (float) Math.pow(MOUSE_WHEEL_ZOOM_STEP, -amountY);
-                zoomAtMouse(factor);
+                inputHandler.zoomAtMouse(factor);
                 return true;
             }
         });
@@ -99,7 +102,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         restart();
     }
 
-    private void restart() {
+    public void restart() {
         GameConfig config = new GameConfig();
         InventoryConfig inventoryConfig = new InventoryConfig();
         GameMechanicConfig gameMechanicConfig = new GameMechanicConfig();
@@ -133,14 +136,14 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch.setProjectionMatrix(projection);
     }
 
-    private void centerCameraOnBase() {
+    public void centerCameraOnBase() {
         cameraX = simulation.map.base.x;
         cameraY = simulation.map.base.y;
     }
 
     @Override
     public void render() {
-        handleInput();
+        inputHandler.handleInput();
         updateSimulation();
         drawFrame();
     }
@@ -167,101 +170,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         drawHud();
     }
 
-    private void handleInput() {
-        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) paused = !paused;
-
-        if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
-            if (isCtrlPressed()) {
-                simulation.stepRound();
-            } else {
-                simulation.stepOneTurn();
-            }
-        }
-
-        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) restart();
-        if (Gdx.input.isKeyJustPressed(Input.Keys.C)) centerCameraOnBase();
-
-        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) showGrid = !showGrid;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.K) || Gdx.input.isKeyJustPressed(Input.Keys.S)) {
-            showSpawnDebug = !showSpawnDebug;
-        }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.J) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
-            showDebug = !showDebug;
-        }
-
-        if (Gdx.input.isKeyJustPressed(Input.Keys.PLUS) || Gdx.input.isKeyJustPressed(Input.Keys.EQUALS)) {
-            stepDelay = Math.max(0.05f, stepDelay * 0.75f);
-        }
-        if (Gdx.input.isKeyJustPressed(Input.Keys.MINUS)) {
-            stepDelay = Math.min(2.0f, stepDelay * 1.25f);
-        }
-
-        updateCameraFromKeyboard();
-        updateCameraFromMouse();
-
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) Gdx.app.exit();
-    }
-
-    private boolean isCtrlPressed() {
-        return Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT)
-                || Gdx.input.isKeyPressed(Input.Keys.CONTROL_RIGHT);
-    }
-
-    private void updateCameraFromKeyboard() {
-        float dt = Gdx.graphics.getDeltaTime();
-        float cameraSpeedTilesPerSecond = 8f;
-
-        if (Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)) {
-            cameraSpeedTilesPerSecond = 16f;
-        }
-
-        float delta = cameraSpeedTilesPerSecond * dt;
-
-        if (Gdx.input.isKeyPressed(Input.Keys.A) || Gdx.input.isKeyPressed(Input.Keys.LEFT)) cameraX -= delta;
-        if (Gdx.input.isKeyPressed(Input.Keys.D) || Gdx.input.isKeyPressed(Input.Keys.RIGHT)) cameraX += delta;
-        if (Gdx.input.isKeyPressed(Input.Keys.W) || Gdx.input.isKeyPressed(Input.Keys.UP)) cameraY += delta;
-        if (Gdx.input.isKeyPressed(Input.Keys.S) || Gdx.input.isKeyPressed(Input.Keys.DOWN)) cameraY -= delta;
-    }
-
-    private void updateCameraFromMouse() {
-        int mouseX = Gdx.input.getX();
-        if (mouseX >= boardViewportWidth()) return;
-
-        boolean dragPressed =
-                Gdx.input.isButtonPressed(Input.Buttons.RIGHT)
-                        || Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
-
-        if (!dragPressed) return;
-
-        cameraX -= (float) Gdx.input.getDeltaX() / tilePixelSize();
-        cameraY += (float) Gdx.input.getDeltaY() / tilePixelSize();
-    }
-
-    private void zoomAtMouse(float factor) {
-        float oldZoom = zoom;
-        float newZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
-
-        if (Math.abs(newZoom - oldZoom) < 0.0001f) {
-            return;
-        }
-
-        float mouseX = Gdx.input.getX();
-        float mouseY = Gdx.graphics.getHeight() - Gdx.input.getY();
-
-        float worldXBefore = cameraX + (mouseX - boardCenterX()) / tilePixelSize();
-        float worldYBefore = cameraY + (mouseY - boardCenterY()) / tilePixelSize();
-
-        zoom = newZoom;
-
-        cameraX = worldXBefore - (mouseX - boardCenterX()) / tilePixelSize();
-        cameraY = worldYBefore - (mouseY - boardCenterY()) / tilePixelSize();
-    }
-
-    private float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private float tilePixelSize() {
+    public float tilePixelSize() {
         return TILE_SIZE * zoom;
     }
 
@@ -273,7 +182,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         return zoom / BASE_ZOOM * 100f;
     }
 
-    private int boardViewportWidth() {
+    public int boardViewportWidth() {
         return Math.max(100, Gdx.graphics.getWidth() - HUD_WIDTH);
     }
 
@@ -281,11 +190,11 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         return Gdx.graphics.getHeight();
     }
 
-    private float boardCenterX() {
+    public float boardCenterX() {
         return boardViewportWidth() / 2f;
     }
 
-    private float boardCenterY() {
+    public float boardCenterY() {
         return boardViewportHeight() / 2f;
     }
 

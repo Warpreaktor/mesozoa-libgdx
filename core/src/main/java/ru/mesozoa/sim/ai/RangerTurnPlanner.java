@@ -55,6 +55,7 @@ public final class RangerTurnPlanner {
         AiScore bestScore = new AiScore(Double.NEGATIVE_INFINITY, "нет оценки");
 
         for (RangerRole role : List.of(SCOUT, ENGINEER, HUNTER, DRIVER)) {
+
             if (alreadyUsedRoles.contains(role)) {
                 continue;
             }
