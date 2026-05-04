@@ -3,48 +3,52 @@ package ru.mesozoa.sim.input;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import ru.mesozoa.sim.MesozoaVisualApp;
-import ru.mesozoa.sim.simulation.GameSimulation;
 
 import static ru.mesozoa.sim.config.GraphicsConfig.MAX_ZOOM;
 import static ru.mesozoa.sim.config.GraphicsConfig.MIN_ZOOM;
 
 public class InputHandler {
 
-    private final GameSimulation simulation;
     private final MesozoaVisualApp mesozoaVisualApp;
 
-    public InputHandler(GameSimulation gameSimulation, MesozoaVisualApp mesozoaVisualApp) {
-        this.simulation = gameSimulation;
+    public InputHandler(MesozoaVisualApp mesozoaVisualApp) {
         this.mesozoaVisualApp = mesozoaVisualApp;
     }
 
     public void handleInput() {
-        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) mesozoaVisualApp.paused = !mesozoaVisualApp.paused;
+        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) mesozoaVisualApp.togglePause();
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.N)) {
             if (isCtrlPressed()) {
-                simulation.stepRound();
+                mesozoaVisualApp.stepRound();
             } else {
-                simulation.stepOneTurn();
+                mesozoaVisualApp.stepOneTurn();
             }
         }
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.R)) mesozoaVisualApp.restart();
         if (Gdx.input.isKeyJustPressed(Input.Keys.C)) mesozoaVisualApp.centerCameraOnBase();
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) mesozoaVisualApp.showGrid = !mesozoaVisualApp.showGrid;
+        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) {
+            mesozoaVisualApp.showGrid = !mesozoaVisualApp.showGrid;
+            mesozoaVisualApp.refreshHud();
+        }
         if (Gdx.input.isKeyJustPressed(Input.Keys.K) || Gdx.input.isKeyJustPressed(Input.Keys.S)) {
             mesozoaVisualApp.showSpawnDebug = !mesozoaVisualApp.showSpawnDebug;
+            mesozoaVisualApp.refreshHud();
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.J) || Gdx.input.isKeyJustPressed(Input.Keys.D)) {
             mesozoaVisualApp.showDebug = !mesozoaVisualApp.showDebug;
+            mesozoaVisualApp.refreshHud();
         }
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.PLUS) || Gdx.input.isKeyJustPressed(Input.Keys.EQUALS)) {
             mesozoaVisualApp.stepDelay = Math.max(0.05f, mesozoaVisualApp.stepDelay * 0.75f);
+            mesozoaVisualApp.refreshHud();
         }
         if (Gdx.input.isKeyJustPressed(Input.Keys.MINUS)) {
             mesozoaVisualApp.stepDelay = Math.min(2.0f, mesozoaVisualApp.stepDelay * 1.25f);
+            mesozoaVisualApp.refreshHud();
         }
 
         updateCameraFromKeyboard();
@@ -106,6 +110,7 @@ public class InputHandler {
 
         mesozoaVisualApp.cameraX = worldXBefore - (mouseX - mesozoaVisualApp.boardCenterX()) / mesozoaVisualApp.tilePixelSize();
         mesozoaVisualApp.cameraY = worldYBefore - (mouseY - mesozoaVisualApp.boardCenterY()) / mesozoaVisualApp.tilePixelSize();
+        mesozoaVisualApp.refreshHud();
     }
 
     private float clamp(float value, float min, float max) {

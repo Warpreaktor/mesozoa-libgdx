@@ -23,6 +23,7 @@ import ru.mesozoa.sim.view.BoardOccupancy;
 import ru.mesozoa.sim.view.BoardPiece;
 import ru.mesozoa.sim.view.Palette;
 import ru.mesozoa.sim.view.RussianFontFactory;
+import ru.mesozoa.sim.ui.MesozoaHudStage;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -60,6 +61,8 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private SpriteBatch batch;
     private BitmapFont font;
     private AssetCatalog assets;
+    private MesozoaHudStage hudStage;
+    private String nextStepLabel = "новый раунд";
 
     public boolean paused = true;
     public boolean showGrid = true;
@@ -87,6 +90,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch = new SpriteBatch();
         font = RussianFontFactory.create(16);
         assets = new AssetCatalog();
+        hudStage = new MesozoaHudStage(HUD_WIDTH);
         resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
         Gdx.input.setInputProcessor(new InputAdapter() {
@@ -111,11 +115,12 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         GameMechanicConfig gameMechanicConfig = new GameMechanicConfig();
         currentSeed = nextSimulationSeed();
         simulation = new GameSimulation(config, inventoryConfig, gameMechanicConfig, currentSeed);
-        inputHandler = new InputHandler(simulation, this);
+        inputHandler = new InputHandler(this);
         paused = true;
         timer = 0f;
         zoom = BASE_ZOOM;
         centerCameraOnBase();
+        refreshHud();
     }
 
     private long nextSimulationSeed() {
@@ -138,6 +143,10 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         Matrix4 projection = new Matrix4().setToOrtho2D(0, 0, width, height);
         shapes.setProjectionMatrix(projection);
         batch.setProjectionMatrix(projection);
+
+        if (hudStage != null) {
+            hudStage.resize(width, height);
+        }
     }
 
     public void centerCameraOnBase() {
@@ -158,6 +167,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             if (timer >= stepDelay) {
                 timer = 0f;
                 simulation.stepOneTurn();
+                refreshHud();
             }
         }
     }
@@ -172,6 +182,51 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         drawTraps();
         drawPieces();
         drawHud();
+    }
+
+    /**
+     * Выполняет один пошаговый ход симуляции и обновляет UI-панель.
+     */
+    public void stepOneTurn() {
+        simulation.stepOneTurn();
+        refreshHud();
+    }
+
+    /**
+     * Выполняет полный раунд симуляции и обновляет UI-панель.
+     */
+    public void stepRound() {
+        simulation.stepRound();
+        refreshHud();
+    }
+
+    /**
+     * Переключает паузу автопрогона и обновляет состояние HUD.
+     */
+    public void togglePause() {
+        paused = !paused;
+        refreshHud();
+    }
+
+    /**
+     * Обновляет Scene2D HUD только после изменения игрового состояния или настроек.
+     *
+     * Рендер больше не должен заново вычислять содержимое панели каждый кадр.
+     */
+    public void refreshHud() {
+        if (hudStage == null || simulation == null) {
+            return;
+        }
+
+        nextStepLabel = simulation.nextStepLabel();
+        hudStage.update(
+                simulation,
+                nextStepLabel,
+                paused,
+                showDebug,
+                zoomPercent(),
+                stepDelay
+        );
     }
 
     public float tilePixelSize() {
@@ -867,42 +922,9 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     }
 
     private void drawHud() {
-        drawHudPanel();
-
-        batch.begin();
-
-        float x = boardViewportWidth() + 18;
-        float y = Gdx.graphics.getHeight() - 24;
-
-        font.draw(batch, "Мезозоя Visual Simulator", x, y);
-        y -= 22;
-        font.draw(batch, "Раунд: " + simulation.round + (paused ? " [PAUSE]" : ""), x, y);
-        y -= 18;
-        font.draw(batch, "Выложено тайлов: " + simulation.map.openedCount(), x, y);
-        y -= 18;
-        font.draw(batch, "Основных тайлов: " + simulation.tileBag.remainingMain(), x, y);
-        y -= 18;
-        font.draw(batch, "Доп. тайлов: " + simulation.tileBag.remainingExtra(), x, y);
-        y -= 18;
-        font.draw(batch, "Динозавров: " + aliveDinos() + " / всего " + simulation.dinosaurs.size(), x, y);
-        y -= 18;
-        font.draw(batch, "Масштаб: " + Math.round(zoomPercent()) + "%", x, y);
-        y -= 18;
-        font.draw(batch, "Скорость: " + String.format(Locale.US, "%.2f", stepDelay) + " сек/ход", x, y);
-        y -= 24;
-
-        if (showDebug) {
-            font.draw(batch, "Лог:", x, y);
-            y -= 18;
-
-            for (String line : simulation.log) {
-                if (y < 22) break;
-                font.draw(batch, trim(line, 47), x, y);
-                y -= 16;
-            }
+        if (hudStage != null) {
+            hudStage.render(Gdx.graphics.getDeltaTime());
         }
-
-        batch.end();
     }
 
     private void drawHudPanel() {
@@ -939,6 +961,9 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         batch.dispose();
         font.dispose();
         assets.dispose();
+        if (hudStage != null) {
+            hudStage.dispose();
+        }
     }
 
     private record Slot(int row, int col, double distanceToCenter) {

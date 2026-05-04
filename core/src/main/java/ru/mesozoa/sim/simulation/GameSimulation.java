@@ -1,13 +1,12 @@
 package ru.mesozoa.sim.simulation;
 
 import ru.mesozoa.sim.action.RangerActionExecutor;
+import ru.mesozoa.sim.ranger.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.*;
-import ru.mesozoa.sim.ranger.RangerPlan;
-import ru.mesozoa.sim.ranger.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.report.GameResult;
 import ru.mesozoa.sim.tile.Tile;
 import ru.mesozoa.sim.tile.TileBag;
@@ -121,26 +120,12 @@ public final class GameSimulation {
                 }
             }
 
-            RangerPlan plan = rangerTurnPlanner.chooseNextPlanForTurn(player, activePlayerUsedRoles);
-            if (plan == null) {
-                log("Игрок " + player.id + ": активация пропущена — нет полезного плана");
-                activePlayerActionIndex++;
+            RangerRole role = rangerTurnPlanner.chooseNextRangerForTurn(player, activePlayerUsedRoles);
 
-                if (activePlayerActionIndex >= 2) {
-                    finishCurrentPlayerTurn();
-                }
+            log("Действие игрока " + player.id + ": " + roleToText(role));
+            rangerActionExecutor.playRole(player, role, 2);
 
-                updateResult();
-                checkGameOverAfterPartialStep();
-                return;
-            }
-
-            log("Действие игрока " + player.id + ": "
-                    + plan.ranger().displayName()
-                    + " — " + plan.reason());
-            rangerActionExecutor.executePlan(player, plan);
-
-            activePlayerUsedRoles.add(plan.role());
+            activePlayerUsedRoles.add(role);
             activePlayerActionIndex++;
 
             if (activePlayerActionIndex >= 2) {
@@ -170,6 +155,27 @@ public final class GameSimulation {
         while (!gameOver && roundStarted) {
             stepOneTurn();
         }
+    }
+
+    /**
+     * Возвращает игрока, чьи данные сейчас логичнее всего показывать в HUD.
+     *
+     * Во время хода рейнджеров это активный игрок. Во время фазы динозавров или
+     * до старта раунда показывается первый игрок, чтобы панель инвентаря не
+     * исчезала и не превращалась в драматическую пустоту справа от карты.
+     *
+     * @return игрок для правой UI-панели или null, если игроки ещё не созданы
+     */
+    public PlayerState playerForHud() {
+        if (players.isEmpty()) {
+            return null;
+        }
+
+        if (activeRangerIndex >= 0 && activeRangerIndex < players.size()) {
+            return players.get(activeRangerIndex);
+        }
+
+        return players.get(0);
     }
 
     /**

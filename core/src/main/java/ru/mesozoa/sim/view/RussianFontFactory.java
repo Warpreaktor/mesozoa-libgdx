@@ -25,7 +25,8 @@ public final class RussianFontFactory {
                     + "₽"
                     + "→←↑↓"
                     + "×"
-                    + "·";
+                    + "·"
+                    + "✓□■●○▣▢";
 
     private RussianFontFactory() {
     }
