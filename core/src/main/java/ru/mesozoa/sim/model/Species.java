@@ -1,54 +1,34 @@
 package ru.mesozoa.sim.model;
 
-import java.util.List;
-
-import static ru.mesozoa.sim.model.Biome.CONIFEROUS_FOREST;
-import static ru.mesozoa.sim.model.Biome.MEADOW;
-import static ru.mesozoa.sim.model.Biome.SWAMP;
-
+/**
+ * Стабильный идентификатор вида динозавра.
+ *
+ * Видовые игровые параметры живут в {@link ru.mesozoa.sim.dinosaur.Dinosaur}:
+ * так конкретная фишка хранит ловкость, размер, рацион, метод поимки и био-тропу
+ * как часть своего состояния. Enum остаётся компактным ID для заданий, спаунов,
+ * UI и сохранения ссылок на вид. Потому что если enum начнёт снова хранить всё,
+ * мы опять получим два источника правды и маленький архитектурный палеонтологический ад.
+ */
 public enum Species {
-    GALLIMIMON(
-            "Галлимимон",
-            "G",
-            "gallimimon.png",
-            SizeClass.S,
-            DietType.HERBIVORE,
-            CaptureMethod.TRAP,
-            5,
-            0,
-            MEADOW,
-            List.of(MEADOW, SWAMP, CONIFEROUS_FOREST)),
-    DRIORNIS("Дриорнис", "D", "driornis.png", SizeClass.S, DietType.HERBIVORE, CaptureMethod.TRAP, 4, 0, Biome.BROADLEAF_FOREST, List.of(Biome.BROADLEAF_FOREST, Biome.FLOODPLAIN, MEADOW)),
-    CRYPTOGNATH("Криптогнат", "K", "cryptognath.png", SizeClass.S, DietType.SMALL_PREDATOR, CaptureMethod.TRAP, 5, 0, CONIFEROUS_FOREST, List.of(CONIFEROUS_FOREST, SWAMP, CONIFEROUS_FOREST)),
-    VELOCITAURUS("Велоцитаурус", "V", "velocitaurus.png", SizeClass.M, DietType.PREDATOR, CaptureMethod.HUNT, 5, 1, MEADOW, List.of(MEADOW, Biome.BROADLEAF_FOREST, CONIFEROUS_FOREST, Biome.RIVER)),
-    MONOCERATUS("Моноцератус", "M", "monoceratus.png", SizeClass.M, DietType.HERBIVORE, CaptureMethod.TRACKING, 2, 0, Biome.FLOODPLAIN, List.of(Biome.FLOODPLAIN, Biome.RIVER, MEADOW, CONIFEROUS_FOREST)),
-    VOCAREZAUROLOPH("Вокарезауролоф", "W", "vocarezauroloph.png", SizeClass.M, DietType.HERBIVORE, CaptureMethod.TRACKING, 3, 0, Biome.RIVER, List.of(Biome.RIVER, MEADOW, Biome.BROADLEAF_FOREST, Biome.FLOODPLAIN));
+    GALLIMIMON("Галлимимон", "G", "gallimimon.png"),
+    DRIORNIS("Дриорнис", "D", "driornis.png"),
+    CRYPTOGNATH("Криптогнат", "K", "cryptognath.png"),
+    VELOCITAURUS("Велоцитаурус", "V", "velocitaurus.png"),
+    MONOCERATUS("Моноцератус", "M", "monoceratus.png"),
+    VOCAREZAUROLOPH("Вокарезауролоф", "W", "vocarezauroloph.png");
 
+    /** Отображаемое имя вида. */
     public final String displayName;
-    public final String shortCode;
-    public final String imagePath;
-    public final SizeClass size;
-    public final DietType diet;
-    public final CaptureMethod captureMethod;
-    public final int agility;
-    public final int huntRadius;
-    public final Biome spawnBiome;
-    public final List<Biome> bioTrail;
 
-    Species(String displayName, String shortCode, String imagePath, SizeClass size, DietType diet, CaptureMethod captureMethod, int agility, int huntRadius, Biome spawnBiome, List<Biome> bioTrail) {
+    /** Короткий код вида для компактных подписей. */
+    public final String shortCode;
+
+    /** Имя файла изображения фишки динозавра. */
+    public final String imagePath;
+
+    Species(String displayName, String shortCode, String imagePath) {
         this.displayName = displayName;
         this.shortCode = shortCode;
         this.imagePath = imagePath;
-        this.size = size;
-        this.diet = diet;
-        this.captureMethod = captureMethod;
-        this.agility = agility;
-        this.huntRadius = huntRadius;
-        this.spawnBiome = spawnBiome;
-        this.bioTrail = bioTrail;
-    }
-
-    public boolean isHerbivore() {
-        return diet == DietType.HERBIVORE;
     }
 }

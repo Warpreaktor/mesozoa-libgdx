@@ -173,7 +173,7 @@ public final class MesozoaHudStage {
 
             taskTable.add(label(status, statusStyle)).width(74).top();
             taskTable.add(label(species.displayName, "default")).growX().padRight(8).top();
-            taskTable.add(label(captureMethodText(species.captureMethod), "small")).width(90).right().top().row();
+            taskTable.add(label(captureMethodText(Dinosaur.captureMethodOf(species)), "small")).width(90).right().top().row();
         }
 
         parent.add(taskTable).growX().padBottom(8).row();

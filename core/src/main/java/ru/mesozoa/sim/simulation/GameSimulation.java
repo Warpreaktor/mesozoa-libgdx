@@ -392,7 +392,7 @@ public final class GameSimulation {
         trap.get().active = false;
 
         log("ДОСТАВЛЕН: водитель игрока " + player.id
-                + " вывез " + dinosaur.species.displayName
+                + " вывез " + dinosaur.displayName
                 + " #" + dinosaur.id + " на базу");
         return true;
     }

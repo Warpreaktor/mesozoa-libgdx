@@ -884,7 +884,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         }
 
         String label = piece.type == BoardPiece.Type.DINOSAUR
-                ? piece.dinosaur.species.shortCode + piece.dinosaur.id
+                ? piece.dinosaur.shortCode + piece.dinosaur.id
                 : piece.role.assetPrefix.substring(0, 1).toUpperCase(Locale.ROOT);
 
         font.draw(batch, label, rect.x() + rect.size() * 0.18f, rect.y() + rect.size() * 0.70f);
@@ -892,7 +892,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     private Texture pieceTexture(BoardPiece piece) {
         if (piece.type == BoardPiece.Type.DINOSAUR) {
-            return assets.get("dinos/" + piece.dinosaur.species.imagePath);
+            return assets.get("dinos/" + piece.dinosaur.imagePath);
         }
 
         return assets.get(piece.role.imagePath(piece.player.color));

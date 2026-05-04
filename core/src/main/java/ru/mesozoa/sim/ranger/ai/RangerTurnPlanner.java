@@ -169,7 +169,7 @@ public final class RangerTurnPlanner {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
-                .anyMatch(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.HUNT);
+                .anyMatch(dinosaur -> dinosaur.captureMethod == CaptureMethod.HUNT);
     }
 
     /**
@@ -182,7 +182,7 @@ public final class RangerTurnPlanner {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
-                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.HUNT)
+                .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.HUNT)
                 .map(dinosaur -> hunterAi.bestHuntAmbushPointFor(player, dinosaur))
                 .flatMap(Optional::stream)
                 .min(Comparator.comparingInt(point -> point.manhattan(player.hunterRanger.position())));
@@ -216,7 +216,7 @@ public final class RangerTurnPlanner {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> simulation.map.canPlaceTrap(point))
                 .filter(point -> player.traps.stream().noneMatch(trap -> trap.active && trap.position.equals(point)))
@@ -239,7 +239,7 @@ public final class RangerTurnPlanner {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> allowedMethods.contains(d.species.captureMethod))
+                .filter(d -> allowedMethods.contains(d.captureMethod))
                 .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
     }
 

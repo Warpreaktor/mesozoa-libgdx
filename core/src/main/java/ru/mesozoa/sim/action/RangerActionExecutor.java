@@ -103,7 +103,7 @@ public final class RangerActionExecutor {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> allowedMethods.contains(d.species.captureMethod))
+                .filter(d -> allowedMethods.contains(d.captureMethod))
                 .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
     }
 }

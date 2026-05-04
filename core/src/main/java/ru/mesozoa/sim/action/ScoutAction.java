@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.action;
 
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
@@ -224,7 +225,7 @@ public class ScoutAction {
      */
     private double missingSpawnBiomeScore(MainTile drawn, Set<Species> missingSpecies) {
         for (Species species : missingSpecies) {
-            if (species.spawnBiome == drawn.biome) {
+            if (Dinosaur.spawnBiomeOf(species) == drawn.biome) {
                 return drawn.hasExpansion()
                         ? MISSING_SPAWN_BIOME_BONUS
                         : MISSING_SPAWN_BIOME_BONUS * 0.35;
@@ -299,7 +300,7 @@ public class ScoutAction {
         }
 
         double score = 0.0;
-        boolean missingBiome = missingSpecies.stream().anyMatch(species -> species.spawnBiome == drawn.biome);
+        boolean missingBiome = missingSpecies.stream().anyMatch(species -> Dinosaur.spawnBiomeOf(species) == drawn.biome);
 
         for (Direction baseDirection : drawn.baseExpansionDirections) {
             Direction direction = baseDirection.rotateClockwiseQuarterTurns(rotationQuarterTurns);

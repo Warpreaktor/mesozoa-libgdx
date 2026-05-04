@@ -92,7 +92,7 @@ public class EngineerAi {
             return new AiScore(
                     SCORE_CAPTURED_DINO_EXTRACTION,
                     "динозавр в ловушке ждёт вывоза, но водитель не имеет дороги: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
                             + " на " + dinosaur.position
             );
         }
@@ -102,7 +102,7 @@ public class EngineerAi {
             return new AiScore(
                     SCORE_IMMEDIATE_TRAP_PLACEMENT,
                     "инженер рядом с легальной клеткой ловушки для цели: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
             );
         }
 
@@ -114,7 +114,7 @@ public class EngineerAi {
             return new AiScore(
                     score,
                     "видимая S-цель для ловушек: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
                             + ", расстояние до клетки засады: " + distance
                             + ", ловушек: " + activeTraps + "/" + simulation.inventoryConfig.maxTrapsPerPlayer
             );
@@ -125,7 +125,7 @@ public class EngineerAi {
             return new AiScore(
                     SCORE_BAD_TRAP_LAYOUT,
                     "лимит ловушек занят, но ловушки не перекрывают путь S-цели: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
             );
         }
 
@@ -134,7 +134,7 @@ public class EngineerAi {
             return new AiScore(
                     SCORE_HUNTER_SUPPORT_ROAD,
                     "есть цель охотника без дорожной поддержки водителя: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
                             + " на " + dinosaur.position
             );
         }
@@ -293,7 +293,7 @@ public class EngineerAi {
 
         return player.task.stream()
                 .filter(species -> !player.captured.contains(species))
-                .anyMatch(species -> species.captureMethod != CaptureMethod.HUNT);
+                .anyMatch(species -> Dinosaur.captureMethodOf(species) != CaptureMethod.HUNT);
     }
 
     /**
@@ -362,7 +362,7 @@ public class EngineerAi {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .filter(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
                         .anyMatch(point -> isUsableTrapPoint(player, point)))
                 .min(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())));
@@ -381,7 +381,7 @@ public class EngineerAi {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
-                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING)
+                .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)));
     }
@@ -451,9 +451,9 @@ public class EngineerAi {
 
         for (Species species : player.task) {
             if (player.captured.contains(species)) continue;
-            if (species.captureMethod == CaptureMethod.HUNT) continue;
-            result.add(species.spawnBiome);
-            result.addAll(species.bioTrail);
+            if (Dinosaur.captureMethodOf(species) == CaptureMethod.HUNT) continue;
+            result.add(Dinosaur.spawnBiomeOf(species));
+            result.addAll(Dinosaur.bioTrailOf(species));
         }
 
         return result;
@@ -474,7 +474,7 @@ public class EngineerAi {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> allowedMethods.contains(d.species.captureMethod))
+                .filter(d -> allowedMethods.contains(d.captureMethod))
                 .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
     }
 
@@ -519,7 +519,7 @@ public class EngineerAi {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))
                 .min(Comparator.comparingInt(point -> from == null ? 0 : point.manhattan(from)));

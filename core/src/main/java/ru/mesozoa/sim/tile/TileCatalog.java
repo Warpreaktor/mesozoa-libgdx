@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.tile;
 
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.model.Biome;
 import ru.mesozoa.sim.model.Species;
@@ -218,7 +219,7 @@ public final class TileCatalog {
             for (int i = 0; i < tileBlueprints.size(); i++) {
                 TileBlueprint blueprint = tileBlueprints.get(i);
 
-                if (blueprint.spawnSpecies == null && blueprint.biome == species.spawnBiome) {
+                if (blueprint.spawnSpecies == null && blueprint.biome == Dinosaur.spawnBiomeOf(species)) {
                     candidates.add(i);
                 }
             }

@@ -150,7 +150,7 @@ public class HunterAction {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
-                .anyMatch(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.HUNT);
+                .anyMatch(dinosaur -> dinosaur.captureMethod == CaptureMethod.HUNT);
     }
 
     /**
@@ -359,7 +359,7 @@ public class HunterAction {
         Optional<HuntCard> second = player.activeHunt.drawCard();
 
         simulation.log("Охотник игрока " + player.id
-                + " начал засаду на " + dinosaur.species.displayName
+                + " начал засаду на " + dinosaur.displayName
                 + " #" + dinosaur.id
                 + " в клетке " + baitPosition
                 + "; стартовые карты: " + cardText(first) + ", " + cardText(second)
@@ -376,7 +376,7 @@ public class HunterAction {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> d.species.captureMethod == CaptureMethod.HUNT)
+                .filter(d -> d.captureMethod == CaptureMethod.HUNT)
                 .map(dinosaur -> hunterAi.bestHuntAmbushPointFor(player, dinosaur)
                         .map(point -> new HuntPlan(dinosaur, point)))
                 .flatMap(Optional::stream)
@@ -391,7 +391,7 @@ public class HunterAction {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> allowedMethods.contains(d.species.captureMethod))
+                .filter(d -> allowedMethods.contains(d.captureMethod))
                 .sorted(Comparator.comparingInt(d -> d.position.manhattan(from)))
                 .findFirst();
     }
@@ -409,7 +409,7 @@ public class HunterAction {
         dinosaur.captured = true;
         player.captured.add(dinosaur.species);
         simulation.log("ПОЙМАН: игрок " + player.id + " поймал "
-                + dinosaur.species.displayName + " (" + method + ")");
+                + dinosaur.displayName + " (" + method + ")");
     }
 
     /** Форматирует карту охоты для лога. */

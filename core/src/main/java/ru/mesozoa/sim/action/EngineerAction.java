@@ -329,7 +329,7 @@ public class EngineerAction {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))
                 .min(Comparator.comparingInt(point -> from == null ? 0 : point.manhattan(from)));
@@ -362,7 +362,7 @@ public class EngineerAction {
         simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())))
                 .forEach(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
                         .filter(point -> isInTrapPlacementRange(player.engineerRanger.position(), point))
@@ -391,7 +391,7 @@ public class EngineerAction {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
-                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING)
+                .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
@@ -413,9 +413,9 @@ public class EngineerAction {
 
         for (Species species : player.task) {
             if (player.captured.contains(species)) continue;
-            if (species.captureMethod == CaptureMethod.HUNT) continue;
-            result.add(species.spawnBiome);
-            result.addAll(species.bioTrail);
+            if (Dinosaur.captureMethodOf(species) == CaptureMethod.HUNT) continue;
+            result.add(Dinosaur.spawnBiomeOf(species));
+            result.addAll(Dinosaur.bioTrailOf(species));
         }
 
         return result;

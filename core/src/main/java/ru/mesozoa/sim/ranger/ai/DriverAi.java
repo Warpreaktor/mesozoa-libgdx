@@ -46,7 +46,7 @@ public class DriverAi {
             return new AiScore(
                     SCORE_READY_EXTRACTION,
                     "динозавр в ловушке готов к вывозу: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
                             + " на " + dinosaur.position
             );
         }
@@ -57,7 +57,7 @@ public class DriverAi {
             return new AiScore(
                     SCORE_TRAPPED_DINO_WITHOUT_ROUTE,
                     "динозавр в ловушке ждёт вывоза, но дороги нет: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
                             + " на " + dinosaur.position
             );
         }

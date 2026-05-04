@@ -99,7 +99,7 @@ public final class HunterAi {
             Dinosaur dinosaur = trackingTarget.get();
             return new AiScore(
                     SCORE_TRACKING_READY,
-                    "охотник стоит на клетке цели выслеживания: " + dinosaur.species.displayName
+                    "охотник стоит на клетке цели выслеживания: " + dinosaur.displayName
             );
         }
 
@@ -109,7 +109,7 @@ public final class HunterAi {
             return new AiScore(
                     SCORE_TRACKING_REACHABLE_NOW,
                     "охотник может дойти до цели выслеживания за текущую активацию: "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
                             + ", расстояние по пути: " + distance
             );
         }
@@ -152,7 +152,7 @@ public final class HunterAi {
         if (hunterPosition.equals(plan.baitPosition())) {
             return new AiScore(
                     SCORE_HUNT_AMBUSH_READY,
-                    "охотник на клетке засады для " + plan.dinosaur().species.displayName
+                    "охотник на клетке засады для " + plan.dinosaur().displayName
                             + ", ожидаемый приход через " + turnsText(turns)
             );
         }
@@ -160,7 +160,7 @@ public final class HunterAi {
         if (distance != UNREACHABLE_DISTANCE && distance <= HUNTER_ACTION_POINTS) {
             return new AiScore(
                     SCORE_HUNT_AMBUSH_REACHABLE_NOW,
-                    "охотник может занять клетку засады для " + plan.dinosaur().species.displayName
+                    "охотник может занять клетку засады для " + plan.dinosaur().displayName
                             + " за текущую активацию; расстояние: " + distance
                             + ", ожидаемый приход через " + turnsText(turns)
             );
@@ -169,14 +169,14 @@ public final class HunterAi {
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
                     25.0,
-                    "клетка засады видна, но путь охотника не найден: " + plan.dinosaur().species.displayName
+                    "клетка засады видна, но путь охотника не найден: " + plan.dinosaur().displayName
             );
         }
 
         double score = 75.0 - Math.min(35.0, distance * 4.0);
         return new AiScore(
                 score,
-                "охотник идёт к клетке засады для " + plan.dinosaur().species.displayName
+                "охотник идёт к клетке засады для " + plan.dinosaur().displayName
                         + "; расстояние: " + distance
                         + ", ожидаемый приход через " + turnsText(turns)
         );
@@ -260,7 +260,7 @@ public final class HunterAi {
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
                     25.0,
-                    "цель выслеживания видна, но путь до неё не найден: " + dinosaur.species.displayName
+                    "цель выслеживания видна, но путь до неё не найден: " + dinosaur.displayName
             );
         }
 
@@ -268,7 +268,7 @@ public final class HunterAi {
         return new AiScore(
                 score,
                 "видимая цель выслеживания: "
-                        + dinosaur.species.displayName
+                        + dinosaur.displayName
                         + ", расстояние по пути: " + distance
         );
     }
@@ -296,7 +296,7 @@ public final class HunterAi {
         EnumSet<Species> result = EnumSet.noneOf(Species.class);
 
         for (Species species : player.task) {
-            if (!player.captured.contains(species) && isHunterCaptureMethod(species.captureMethod)) {
+            if (!player.captured.contains(species) && isHunterCaptureMethod(Dinosaur.captureMethodOf(species))) {
                 result.add(species);
             }
         }
@@ -314,7 +314,7 @@ public final class HunterAi {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> d.species.captureMethod == CaptureMethod.HUNT)
+                .filter(d -> d.captureMethod == CaptureMethod.HUNT)
                 .map(dinosaur -> bestHuntAmbushPointFor(player, dinosaur)
                         .map(point -> new HuntPlan(dinosaur, point)))
                 .flatMap(Optional::stream)
@@ -335,7 +335,7 @@ public final class HunterAi {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
-                .filter(d -> allowedMethods.contains(d.species.captureMethod))
+                .filter(d -> allowedMethods.contains(d.captureMethod))
                 .min(Comparator.comparingInt(d -> normalizedPathDistance(from, d.position)));
     }
 
@@ -410,7 +410,7 @@ public final class HunterAi {
      * @return список возможных клеток засады
      */
     public List<Point> huntAmbushCandidatesFor(Dinosaur dinosaur) {
-        if (dinosaur == null || dinosaur.species.captureMethod != CaptureMethod.HUNT) {
+        if (dinosaur == null || dinosaur.captureMethod != CaptureMethod.HUNT) {
             return List.of();
         }
         return simulation.dinosaurAi.predictDinosaurBioTrailRoute(dinosaur, 5).stream()

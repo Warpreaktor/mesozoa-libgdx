@@ -1,7 +1,5 @@
 package ru.mesozoa.sim.dinosaur;
 
-import ru.mesozoa.sim.dinosaur.profile.DinosaurProfile;
-import ru.mesozoa.sim.dinosaur.profile.DinosaurProfiles;
 import ru.mesozoa.sim.map.PathFinder;
 import ru.mesozoa.sim.model.Biome;
 import ru.mesozoa.sim.model.Direction;
@@ -49,18 +47,17 @@ public final class DinosaurAi {
             return Optional.empty();
         }
 
-        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
         Tile currentTile = simulation.map.tile(dinosaur.position);
 
         if (currentTile == null) {
             return Optional.empty();
         }
 
-        Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, dinosaur.trailIndex);
+        Biome nextBiome = dinosaur.nextBioTrailBiome(currentTile.biome);
         Optional<List<Point>> path = findDinosaurPathToReachableBiome(
                 dinosaur.position,
                 nextBiome,
-                profile
+                dinosaur
         );
 
         if (path.isEmpty() || path.get().size() < 2) {
@@ -77,16 +74,16 @@ public final class DinosaurAi {
      * непроходимыми.
      *
      * @param point проверяемая клетка
-     * @param profile профиль вида
+     * @param dinosaur динозавр, чьи правила проходимости используются
      * @return true, если динозавр может находиться на этой клетке
      */
-    public boolean canDinosaurStandOn(Point point, DinosaurProfile profile) {
+    public boolean canDinosaurStandOn(Point point, Dinosaur dinosaur) {
         if (point == null || !simulation.map.isPlaced(point) || simulation.map.isBase(point)) {
             return false;
         }
 
         Biome biome = tileBiome(point);
-        return profile.canEnter(biome);
+        return dinosaur.canEnter(biome);
     }
 
     /**
@@ -95,15 +92,15 @@ public final class DinosaurAi {
      *
      * @param start стартовая клетка
      * @param targetBiome целевой биом
-     * @param profile профиль вида
+     * @param dinosaur динозавр, чьи правила проходимости используются
      * @return путь до целевого биома или пустой результат
      */
     public Optional<List<Point>> findDinosaurPathToReachableBiome(
             Point start,
             Biome targetBiome,
-            DinosaurProfile profile
+            Dinosaur dinosaur
     ) {
-        if (!canDinosaurStandOn(start, profile)) {
+        if (!canDinosaurStandOn(start, dinosaur)) {
             return Optional.empty();
         }
 
@@ -123,7 +120,7 @@ public final class DinosaurAi {
                 return Optional.of(PathFinder.restorePath(previous, current));
             }
 
-            if (currentDistance >= profile.agility()) {
+            if (currentDistance >= dinosaur.agility) {
                 continue;
             }
 
@@ -132,7 +129,7 @@ public final class DinosaurAi {
                     continue;
                 }
 
-                if (!canDinosaurStandOn(neighbor, profile)) {
+                if (!canDinosaurStandOn(neighbor, dinosaur)) {
                     continue;
                 }
 
@@ -156,24 +153,23 @@ public final class DinosaurAi {
         if (dinosaur == null || target == null) return Integer.MAX_VALUE;
         if (dinosaur.position.equals(target)) return 0;
 
-        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
-        int distance = dinosaurPathDistance(dinosaur.position, target, profile);
+        int distance = dinosaurPathDistance(dinosaur.position, target, dinosaur);
         if (distance == Integer.MAX_VALUE) return Integer.MAX_VALUE;
 
         Tile currentTile = simulation.map.tile(dinosaur.position);
         Tile targetTile = simulation.map.tile(target);
         if (currentTile == null || targetTile == null) return Integer.MAX_VALUE;
 
-        int currentIndex = profile.trailIndexOf(currentTile.biome);
-        int targetIndex = profile.trailIndexOf(targetTile.biome);
+        int currentIndex = dinosaur.trailIndexOf(currentTile.biome);
+        int targetIndex = dinosaur.trailIndexOf(targetTile.biome);
         if (currentIndex < 0 || targetIndex < 0) return Integer.MAX_VALUE;
 
-        int routeSteps = Math.floorMod(targetIndex - currentIndex, dinosaur.species.bioTrail.size());
+        int routeSteps = Math.floorMod(targetIndex - currentIndex, dinosaur.bioTrailSize());
         if (routeSteps == 0) {
             routeSteps = 1;
         }
 
-        int agility = Math.max(1, profile.agility());
+        int agility = Math.max(1, dinosaur.agility);
         int distanceTurns = Math.max(1, (int) Math.ceil(distance / (double) agility));
         return Math.max(routeSteps, distanceTurns);
     }
@@ -183,11 +179,11 @@ public final class DinosaurAi {
      *
      * @param start стартовая клетка
      * @param target целевая клетка
-     * @param profile профиль вида
+     * @param dinosaur динозавр, чьи правила проходимости используются
      * @return число шагов или Integer.MAX_VALUE
      */
-    public int dinosaurPathDistance(Point start, Point target, DinosaurProfile profile) {
-        if (!canDinosaurStandOn(start, profile) || !canDinosaurStandOn(target, profile)) {
+    public int dinosaurPathDistance(Point start, Point target, Dinosaur dinosaur) {
+        if (!canDinosaurStandOn(start, dinosaur) || !canDinosaurStandOn(target, dinosaur)) {
             return Integer.MAX_VALUE;
         }
 
@@ -207,7 +203,7 @@ public final class DinosaurAi {
 
             for (Point neighbor : current.neighbors4()) {
                 if (distance.containsKey(neighbor)) continue;
-                if (!canDinosaurStandOn(neighbor, profile)) continue;
+                if (!canDinosaurStandOn(neighbor, dinosaur)) continue;
 
                 distance.put(neighbor, currentDistance + 1);
                 queue.addLast(neighbor);
@@ -226,26 +222,25 @@ public final class DinosaurAi {
      * @param dinosaur перемещаемый динозавр
      */
     public void moveByBioTrail(Dinosaur dinosaur) {
-        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
         Tile currentTile = simulation.map.tile(dinosaur.position);
 
         if (currentTile == null) {
             return;
         }
 
-        Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, dinosaur.trailIndex);
+        Biome nextBiome = dinosaur.nextBioTrailBiome(currentTile.biome);
         Optional<List<Point>> path = findDinosaurPathToReachableBiome(
                 dinosaur.position,
                 nextBiome,
-                profile
+                dinosaur
         );
 
         if (path.isPresent()) {
-            moveDinosaurAlongBioTrailPath(dinosaur, profile, nextBiome, path.get());
+            moveDinosaurAlongBioTrailPath(dinosaur, nextBiome, path.get());
             return;
         }
 
-        moveDinosaurInRandomDirection(dinosaur, profile, nextBiome);
+        moveDinosaurInRandomDirection(dinosaur, nextBiome);
     }
 
     /**
@@ -260,7 +255,6 @@ public final class DinosaurAi {
             return List.of();
         }
 
-        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
         Tile currentTile = simulation.map.tile(dinosaur.position);
         if (currentTile == null) {
             return List.of();
@@ -278,7 +272,7 @@ public final class DinosaurAi {
 
         for (Point neighbor : dinosaur.position.neighbors4()) {
             if (!simulation.map.canPlaceTrap(neighbor)) continue;
-            if (!canDinosaurStandOn(neighbor, profile)) continue;
+            if (!canDinosaurStandOn(neighbor, dinosaur)) continue;
             result.add(neighbor);
         }
 
@@ -286,7 +280,7 @@ public final class DinosaurAi {
             return new ArrayList<>(result);
         }
 
-        Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, dinosaur.trailIndex);
+        Biome nextBiome = dinosaur.nextBioTrailBiome(currentTile.biome);
         simulation.map.entries().stream()
                 .filter(entry -> entry.getValue().biome == nextBiome)
                 .map(entry -> entry.getKey())
@@ -310,7 +304,6 @@ public final class DinosaurAi {
             return List.of();
         }
 
-        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
         Point position = dinosaur.position;
         int trailIndex = dinosaur.trailIndex;
         ArrayList<Point> route = new ArrayList<>();
@@ -321,8 +314,8 @@ public final class DinosaurAi {
                 break;
             }
 
-            Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, trailIndex);
-            Optional<List<Point>> path = findDinosaurPathToReachableBiome(position, nextBiome, profile);
+            Biome nextBiome = dinosaur.nextBioTrailBiome(currentTile.biome, trailIndex);
+            Optional<List<Point>> path = findDinosaurPathToReachableBiome(position, nextBiome, dinosaur);
             if (path.isEmpty() || path.get().size() < 2) {
                 break;
             }
@@ -335,7 +328,7 @@ public final class DinosaurAi {
             route.add(nextPosition);
             position = nextPosition;
 
-            int newTrailIndex = profile.trailIndexOf(nextBiome);
+            int newTrailIndex = dinosaur.trailIndexOf(nextBiome);
             if (newTrailIndex >= 0) {
                 trailIndex = newTrailIndex;
             }
@@ -346,7 +339,6 @@ public final class DinosaurAi {
 
     private void moveDinosaurAlongBioTrailPath(
             Dinosaur dinosaur,
-            DinosaurProfile profile,
             Biome nextBiome,
             List<Point> path
     ) {
@@ -355,32 +347,26 @@ public final class DinosaurAi {
         }
 
         dinosaur.position = path.get(path.size() - 1);
-        int newTrailIndex = profile.trailIndexOf(nextBiome);
-        if (newTrailIndex >= 0) {
-            dinosaur.trailIndex = newTrailIndex;
-        }
+        dinosaur.updateTrailIndex(nextBiome);
     }
 
-    private void moveDinosaurInRandomDirection(Dinosaur dinosaur, DinosaurProfile profile, Biome nextBiome) {
+    private void moveDinosaurInRandomDirection(Dinosaur dinosaur, Biome nextBiome) {
         Direction direction = Direction.values()[simulation.random.nextInt(Direction.values().length)];
         Point next = direction.from(dinosaur.position);
 
-        if (canDinosaurStandOn(next, profile)) {
+        if (canDinosaurStandOn(next, dinosaur)) {
             dinosaur.position = next;
             Tile tile = simulation.map.tile(next);
             if (tile != null) {
-                int newTrailIndex = profile.trailIndexOf(tile.biome);
-                if (newTrailIndex >= 0) {
-                    dinosaur.trailIndex = newTrailIndex;
-                }
+                dinosaur.updateTrailIndex(tile.biome);
             }
-            simulation.log(dinosaur.species.displayName + " #" + dinosaur.id
+            simulation.log(dinosaur.displayName + " #" + dinosaur.id
                     + " не нашёл рядом биом " + nextBiome.displayName
                     + " и шагнул " + direction + " на " + next);
             return;
         }
 
-        simulation.log(dinosaur.species.displayName + " #" + dinosaur.id
+        simulation.log(dinosaur.displayName + " #" + dinosaur.id
                 + " не нашёл доступный " + nextBiome.displayName
                 + " и остался на месте: " + direction + " закрыт или непроходим");
     }

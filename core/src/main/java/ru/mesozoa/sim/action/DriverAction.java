@@ -106,7 +106,7 @@ public class DriverAction {
 
         if (!simulation.canDriverExtractTrappedDinosaur(player, dinosaur)) {
             simulation.log("Водитель игрока " + player.id
-                    + " не может вывезти " + dinosaur.species.displayName
+                    + " не может вывезти " + dinosaur.displayName
                     + ": нет связанной дороги до ловушки и обратно на базу");
             return;
         }

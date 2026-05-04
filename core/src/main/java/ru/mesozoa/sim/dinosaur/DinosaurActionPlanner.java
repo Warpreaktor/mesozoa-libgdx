@@ -44,7 +44,7 @@ public final class DinosaurActionPlanner {
             dinosaurAi.moveByBioTrail(dinosaur);
 
             if (!before.equals(dinosaur.position)) {
-                simulation.log(dinosaur.species.displayName + " #" + dinosaur.id + " " + before + " -> " + dinosaur.position);
+                simulation.log(dinosaur.displayName + " #" + dinosaur.id + " " + before + " -> " + dinosaur.position);
                 checkTrapCapture(dinosaur);
                 resolveHuntAmbush(dinosaur);
             }
@@ -65,7 +65,7 @@ public final class DinosaurActionPlanner {
      * @param dinosaur только что переместившийся динозавр
      */
     private void resolveHuntAmbush(Dinosaur dinosaur) {
-        if (dinosaur.species.captureMethod != CaptureMethod.HUNT) return;
+        if (dinosaur.captureMethod != CaptureMethod.HUNT) return;
         if (dinosaur.lastPosition == null || dinosaur.lastPosition.equals(dinosaur.position)) return;
 
         for (PlayerState player : simulation.players) {
@@ -78,7 +78,7 @@ public final class DinosaurActionPlanner {
             }
 
             int dinosaurRoll = simulation.random.nextInt(6) + 1;
-            int dinosaurScore = dinosaurRoll + dinosaur.species.agility;
+            int dinosaurScore = dinosaurRoll + dinosaur.agility;
             int hunterScore = player.activeHunt.preparationScore();
 
             if (hunterScore > dinosaurScore) {
@@ -87,7 +87,7 @@ public final class DinosaurActionPlanner {
                 player.activeHunt = null;
                 simulation.result.huntCaptures++;
                 simulation.log("ПОЙМАН: охотник игрока " + player.id
-                        + " усыпил " + dinosaur.species.displayName
+                        + " усыпил " + dinosaur.displayName
                         + " #" + dinosaur.id
                         + " в засаде; подготовка " + hunterScore
                         + " против " + dinosaurScore
@@ -97,7 +97,7 @@ public final class DinosaurActionPlanner {
 
             player.hunterRanger.setPosition(simulation.map.base);
             player.activeHunt = null;
-            simulation.log("ПРОВАЛ ОХОТЫ: " + dinosaur.species.displayName
+            simulation.log("ПРОВАЛ ОХОТЫ: " + dinosaur.displayName
                     + " #" + dinosaur.id
                     + " обошёл засаду игрока " + player.id
                     + "; подготовка " + hunterScore
@@ -113,7 +113,7 @@ public final class DinosaurActionPlanner {
      * @param dinosaur динозавр, который только что переместился
      */
     private void checkTrapCapture(Dinosaur dinosaur) {
-        if (dinosaur.species.captureMethod != CaptureMethod.TRAP) return;
+        if (dinosaur.captureMethod != CaptureMethod.TRAP) return;
         if (dinosaur.lastPosition == null || dinosaur.lastPosition.equals(dinosaur.position)) return;
 
         for (PlayerState player : simulation.players) {
@@ -126,7 +126,7 @@ public final class DinosaurActionPlanner {
                     trap.trappedDinosaurId = dinosaur.id;
                     simulation.result.trapCaptures++;
                     simulation.log("В ЛОВУШКЕ: игрок " + player.id + " поймал "
-                            + dinosaur.species.displayName
+                            + dinosaur.displayName
                             + " #" + dinosaur.id
                             + "; нужен водитель для вывоза на базу");
                     return;
