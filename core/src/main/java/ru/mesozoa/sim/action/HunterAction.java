@@ -8,6 +8,7 @@ import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.ranger.RangerPlan;
+import ru.mesozoa.sim.ranger.ai.HunterAi;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.Comparator;
@@ -38,6 +39,7 @@ public class HunterAction {
 
     private final GameSimulation simulation;
     private final RangerActionExecutor rangerActionExecutor;
+    private final HunterAi hunterAi;
 
     /**
      * Создаёт исполнитель действий охотника.
@@ -50,6 +52,7 @@ public class HunterAction {
 
         this.simulation = simulation;
         this.rangerActionExecutor = rangerActionExecutor;
+        this.hunterAi = new HunterAi(simulation);
     }
 
     /**
@@ -167,7 +170,7 @@ public class HunterAction {
 
         Optional<Dinosaur> target = dinosaurById(hunt.dinosaurId);
         int turnsUntilArrival = target
-                .map(dinosaur -> simulation.estimateDinosaurTurnsTo(dinosaur, hunt.baitPosition))
+                .map(dinosaur -> simulation.dinosaurAi.estimateDinosaurTurnsTo(dinosaur, hunt.baitPosition))
                 .orElse(Integer.MAX_VALUE);
 
         if (shouldRelocateAmbush(player, hunt, turnsUntilArrival)) {
@@ -374,11 +377,11 @@ public class HunterAction {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.HUNT)
-                .map(dinosaur -> simulation.bestHuntAmbushPointFor(player, dinosaur)
+                .map(dinosaur -> hunterAi.bestHuntAmbushPointFor(player, dinosaur)
                         .map(point -> new HuntPlan(dinosaur, point)))
                 .flatMap(Optional::stream)
                 .min(Comparator
-                        .comparingInt((HuntPlan plan) -> simulation.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition()))
+                        .comparingInt((HuntPlan plan) -> simulation.dinosaurAi.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition()))
                         .thenComparingInt(plan -> player.hunterRanger.position().manhattan(plan.baitPosition())));
     }
 

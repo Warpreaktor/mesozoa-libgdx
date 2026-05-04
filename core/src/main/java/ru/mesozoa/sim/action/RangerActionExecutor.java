@@ -1,6 +1,7 @@
 package ru.mesozoa.sim.action;
 
 import ru.mesozoa.sim.dinosaur.Dinosaur;
+import ru.mesozoa.sim.map.PathFinder;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.ranger.Ranger;
 import ru.mesozoa.sim.ranger.RangerPlan;
@@ -80,7 +81,12 @@ public final class RangerActionExecutor {
             if (position.equals(target)) break;
 
             Point next = role == RangerRole.SCOUT
-                    ? simulation.stepTowardPlaced(position, target)
+                    ? PathFinder.stepTowardPlaced(
+                            simulation.map,
+                            position,
+                            target,
+                            point -> PathFinder.isScoutPassable(simulation.map, point)
+                    )
                     : simulation.map.stepGroundRangerToward(position, target);
             if (next.equals(position)) break;
 

@@ -7,11 +7,10 @@ import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
-import ru.mesozoa.sim.dinosaur.profile.DinosaurProfile;
-import ru.mesozoa.sim.dinosaur.profile.DinosaurProfiles;
+import ru.mesozoa.sim.dinosaur.DinosaurAi;
+import ru.mesozoa.sim.dinosaur.DinosaurActionPlanner;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.report.GameResult;
-import ru.mesozoa.sim.tile.Tile;
 import ru.mesozoa.sim.tile.TileBag;
 
 import java.util.ArrayDeque;
@@ -21,9 +20,6 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.EnumSet;
 import java.util.Set;
-import java.util.HashMap;
-import java.util.List;
-import java.util.LinkedHashSet;
 
 /**
  * Класс отвечает за подсчёт очков, за очередность ходов игрока и за прочими общими(системными) игровыми механиками.
@@ -53,6 +49,12 @@ public final class GameSimulation {
 
     private RangerActionExecutor rangerActionExecutor;
     private RangerTurnPlanner rangerTurnPlanner;
+
+    /** AI и прогнозы движения динозавров. */
+    public DinosaurAi dinosaurAi;
+
+    /** Исполнитель фазы «Динозавры живут». */
+    private DinosaurActionPlanner dinosaurActionPlanner;
 
     private boolean roundStarted = false;
     private int activeRangerIndex = 0;
@@ -96,6 +98,8 @@ public final class GameSimulation {
         map = GameMap.createWithBase();
         tileBag = TileBag.createDefault(gameConfig, random);
 
+        dinosaurAi = new DinosaurAi(this);
+        dinosaurActionPlanner = new DinosaurActionPlanner(this, dinosaurAi);
         rangerTurnPlanner = new RangerTurnPlanner(this);
         rangerActionExecutor = new RangerActionExecutor(this, rangerTurnPlanner);
 
@@ -159,7 +163,7 @@ public final class GameSimulation {
         }
 
         log("Ход динозавров");
-        dinosaurPhase();
+        dinosaurActionPlanner.dinosaurPhase();
         updateResult();
         finishRound();
     }
@@ -310,114 +314,6 @@ public final class GameSimulation {
     }
 
     /**
-     * Проверяет, вошёл ли M-хищник на клетку активной приманки и чем закончилась охота.
-     *
-     * @param dinosaur только что переместившийся динозавр
-     */
-    private void resolveHuntAmbush(Dinosaur dinosaur) {
-        if (dinosaur.species.captureMethod != CaptureMethod.HUNT) return;
-        if (dinosaur.lastPosition == null || dinosaur.lastPosition.equals(dinosaur.position)) return;
-
-        for (PlayerState player : players) {
-            if (player.activeHunt == null) continue;
-            if (player.activeHunt.dinosaurId != dinosaur.id) continue;
-            if (!player.activeHunt.baitPosition.equals(dinosaur.position)) continue;
-            if (!player.needs(dinosaur.species)) {
-                player.activeHunt = null;
-                continue;
-            }
-
-            int dinosaurRoll = random.nextInt(6) + 1;
-            int dinosaurScore = dinosaurRoll + dinosaur.species.agility;
-            int hunterScore = player.activeHunt.preparationScore();
-
-            if (hunterScore > dinosaurScore) {
-                dinosaur.captured = true;
-                player.captured.add(dinosaur.species);
-                player.activeHunt = null;
-                result.huntCaptures++;
-                log("ПОЙМАН: охотник игрока " + player.id
-                        + " усыпил " + dinosaur.species.displayName
-                        + " #" + dinosaur.id
-                        + " в засаде; подготовка " + hunterScore
-                        + " против " + dinosaurScore
-                        + " (1d6=" + dinosaurRoll + ")");
-                return;
-            }
-
-            player.hunterRanger.setPosition(map.base);
-            player.activeHunt = null;
-            log("ПРОВАЛ ОХОТЫ: " + dinosaur.species.displayName
-                    + " #" + dinosaur.id
-                    + " обошёл засаду игрока " + player.id
-                    + "; подготовка " + hunterScore
-                    + " против " + dinosaurScore
-                    + " (1d6=" + dinosaurRoll + "). Охотник вернулся на базу");
-            return;
-        }
-    }
-
-    /**
-     * Возвращает биом обычного тайла или null для базы/закрытой клетки.
-     */
-    private Biome tileBiome(Point point) {
-        Tile tile = map.tile(point);
-        return tile == null ? null : tile.biome;
-    }
-
-    public Point stepTowardPlaced(Point from, Point target) {
-        Point direct = from.stepToward(target);
-        if (map.isPlaced(direct) && isPassable(direct)) return direct;
-
-        return map.placedNeighbors(from).stream()
-                .filter(this::isPassable)
-                .min(Comparator.comparingInt(p -> p.manhattan(target)))
-                .orElse(from);
-    }
-
-    private boolean isPassable(Point point) {
-        if (map.isBase(point)) {
-            return true;
-        }
-
-        Tile tile = map.tile(point);
-        return tile != null && !tile.biome.blocksMostMovement();
-    }
-
-    /**
-     * Проверяет срабатывание ловушки после перемещения динозавра.
-     *
-     * Ловушка только обездвиживает динозавра на карте. Вид засчитывается игроку
-     * позже, когда водитель сможет приехать по дорожной сети, забрать клетку с
-     * ловушкой и вернуться на базу. Иначе ловушка превращалась в телепорт добычи
-     * в инвентарь, а это уже не настолка, а налоговая оптимизация.
-     *
-     * @param dinosaur динозавр, который только что переместился
-     */
-    private void checkTrapCapture(Dinosaur dinosaur) {
-        if (dinosaur.species.captureMethod != CaptureMethod.TRAP) return;
-        if (dinosaur.lastPosition == null || dinosaur.lastPosition.equals(dinosaur.position)) return;
-
-        for (PlayerState player : players) {
-            if (!player.needs(dinosaur.species)) continue;
-
-            for (Trap trap : player.traps) {
-                if (trap.canCatchDinosaur() && trap.position.equals(dinosaur.position)) {
-                    dinosaur.trapped = true;
-                    dinosaur.trappedByPlayerId = player.id;
-                    trap.trappedDinosaurId = dinosaur.id;
-                    result.trapCaptures++;
-                    log("В ЛОВУШКЕ: игрок " + player.id + " поймал "
-                            + dinosaur.species.displayName
-                            + " #" + dinosaur.id
-                            + "; нужен водитель для вывоза на базу");
-                    return;
-                }
-            }
-        }
-    }
-
-    /**
      * Ищет ближайшего нужного динозавра, который уже сидит в ловушке игрока и ждёт вывоза.
      *
      * @param player игрок, для которого ищется задача водителя
@@ -515,14 +411,6 @@ public final class GameSimulation {
                 .findFirst();
     }
 
-    private void stealBaitIfPossible(Dinosaur dinosaur) {
-        for (PlayerState player : players) {
-            if (player.hunterBait > 0 && player.hunterRanger.position().equals(dinosaur.position)) {
-                player.hunterBait--;
-                log("Криптогнат украл приманку у игрока " + player.id);
-            }
-        }
-    }
 
     private void updateResult() {
         result.rounds = round;

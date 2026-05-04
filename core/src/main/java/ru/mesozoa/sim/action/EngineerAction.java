@@ -330,7 +330,7 @@ public class EngineerAction {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
-                .flatMap(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream())
+                .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))
                 .min(Comparator.comparingInt(point -> from == null ? 0 : point.manhattan(from)));
     }
@@ -364,7 +364,7 @@ public class EngineerAction {
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
                 .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())))
-                .forEach(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream()
+                .forEach(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
                         .filter(point -> isInTrapPlacementRange(player.engineerRanger.position(), point))
                         .filter(point -> isUsableTrapPoint(player, point))
                         .forEach(result::add));

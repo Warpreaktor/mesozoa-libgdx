@@ -183,7 +183,7 @@ public final class RangerTurnPlanner {
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.HUNT)
-                .map(dinosaur -> simulation.bestHuntAmbushPointFor(player, dinosaur))
+                .map(dinosaur -> hunterAi.bestHuntAmbushPointFor(player, dinosaur))
                 .flatMap(Optional::stream)
                 .min(Comparator.comparingInt(point -> point.manhattan(player.hunterRanger.position())));
     }
@@ -217,7 +217,7 @@ public final class RangerTurnPlanner {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
-                .flatMap(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream())
+                .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> simulation.map.canPlaceTrap(point))
                 .filter(point -> player.traps.stream().noneMatch(trap -> trap.active && trap.position.equals(point)))
                 .filter(point -> simulation.dinosaurs.stream()

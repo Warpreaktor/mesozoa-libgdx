@@ -1,23 +1,15 @@
 package ru.mesozoa.sim.ranger.ai;
 
 import ru.mesozoa.sim.dinosaur.Dinosaur;
-import ru.mesozoa.sim.dinosaur.profile.DinosaurProfile;
-import ru.mesozoa.sim.dinosaur.profile.DinosaurProfiles;
 import ru.mesozoa.sim.model.AiScore;
-import ru.mesozoa.sim.model.Biome;
 import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.simulation.GameSimulation;
-import ru.mesozoa.sim.tile.Tile;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -155,7 +147,7 @@ public final class HunterAi {
     private AiScore scoreHuntAmbushPlan(PlayerState player, HuntPlan plan) {
         Point hunterPosition = player.hunterRanger.position();
         int distance = hunterPathDistance(hunterPosition, plan.baitPosition());
-        int turns = simulation.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition());
+        int turns = simulation.dinosaurAi.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition());
 
         if (hunterPosition.equals(plan.baitPosition())) {
             return new AiScore(
@@ -318,17 +310,23 @@ public final class HunterAi {
     }
 
     /** Выбирает лучшую засаду на видимого M-хищника. */
-    private Optional<HuntPlan> bestHuntPlan(PlayerState player) {
+    public Optional<HuntPlan> bestHuntPlan(PlayerState player) {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.HUNT)
-                .map(dinosaur -> simulation.bestHuntAmbushPointFor(player, dinosaur)
+                .map(dinosaur -> bestHuntAmbushPointFor(player, dinosaur)
                         .map(point -> new HuntPlan(dinosaur, point)))
                 .flatMap(Optional::stream)
                 .min(Comparator
-                        .comparingInt((HuntPlan plan) -> simulation.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition()))
-                        .thenComparingInt(plan -> hunterPathDistance(player.hunterRanger.position(), plan.baitPosition())));
+                        .comparingInt((HuntPlan plan) -> simulation.dinosaurAi.estimateDinosaurTurnsTo(
+                                plan.dinosaur(),
+                                plan.baitPosition()
+                        ))
+                        .thenComparingInt(plan -> hunterPathDistance(
+                                player.hunterRanger.position(),
+                                plan.baitPosition()
+                        )));
     }
 
     /** Ищет ближайшего нужного игроку динозавра с одним из указанных способов поимки. */
@@ -385,10 +383,6 @@ public final class HunterAi {
     /**
      * Выбирает лучшую клетку для охотничьей засады на конкретного M-хищника.
      *
-     * AI старается не бросать приманку прямо под нос хищнику. Лучше выбрать
-     * клетку био-тропы, куда он придёт через пару ходов: охотник успеет добрать
-     * карты подготовки, но не устроит недельный фестиваль лежания в траве.
-     *
      * @param player игрок, чей охотник планирует засаду
      * @param dinosaur целевой M-хищник
      * @return лучшая клетка для приманки или Optional.empty(), если охота невозможна
@@ -402,53 +396,34 @@ public final class HunterAi {
                 .filter(point -> isLegalHuntAmbushPoint(player, point))
                 .min(Comparator
                         .comparingInt((Point point) -> huntAmbushTimingPenalty(dinosaur, point))
-                        .thenComparingInt(point -> map.groundRangerPathDistance(player.hunterRanger.position(), point))
+                        .thenComparingInt(point -> simulation.map.groundRangerPathDistance(
+                                player.hunterRanger.position(),
+                                point
+                        ))
                         .thenComparingInt(point -> point.manhattan(dinosaur.position)));
     }
 
     /**
      * Возвращает клетки, где охотник может ждать M-хищника с приманкой.
      *
-     * Список включает не только ближайший шаг, но и более поздние клетки био-тропы.
-     * Для охоты это важно: если ставить приманку на следующий ход хищника, охотник
-     * часто успевает взять только стартовые карты и снова героически позорится.
-     *
      * @param dinosaur хищник, под маршрут которого ищутся клетки
      * @return список возможных клеток засады
      */
     public List<Point> huntAmbushCandidatesFor(Dinosaur dinosaur) {
-        if (dinosaur == null || dinosaur.captured || dinosaur.trapped || dinosaur.removed) {
+        if (dinosaur == null || dinosaur.species.captureMethod != CaptureMethod.HUNT) {
             return List.of();
         }
-        if (dinosaur.species.captureMethod != CaptureMethod.HUNT) {
-            return List.of();
-        }
-
-        LinkedHashSet<Point> result = new LinkedHashSet<>();
-        predictDinosaurBioTrailRoute(dinosaur, 5).stream()
+        return simulation.dinosaurAi.predictDinosaurBioTrailRoute(dinosaur, 5).stream()
                 .filter(point -> !point.equals(dinosaur.position))
                 .filter(simulation.map::canPlaceBait)
-                .forEach(result::add);
-
-        if (!result.isEmpty()) {
-            return new ArrayList<>(result);
-        }
-
-        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
-        for (Point neighbor : dinosaur.position.neighbors4()) {
-            if (!simulation.map.canPlaceBait(neighbor)) continue;
-            if (!canDinosaurStandOn(neighbor, profile)) continue;
-            result.add(neighbor);
-        }
-
-        return new ArrayList<>(result);
+                .toList();
     }
 
     /** Считает штраф тайминга для клетки засады. */
     private int huntAmbushTimingPenalty(Dinosaur dinosaur, Point point) {
         int turns = predictedDinosaurTurnTo(dinosaur, point, 5);
         if (turns == Integer.MAX_VALUE) {
-            turns = estimateDinosaurTurnsTo(dinosaur, point);
+            turns = simulation.dinosaurAi.estimateDinosaurTurnsTo(dinosaur, point);
         }
         if (turns == Integer.MAX_VALUE) return Integer.MAX_VALUE;
 
@@ -466,7 +441,7 @@ public final class HunterAi {
      * @return номер фазы динозавров, начиная с 1, или Integer.MAX_VALUE
      */
     private int predictedDinosaurTurnTo(Dinosaur dinosaur, Point point, int maxTurns) {
-        List<Point> route = predictDinosaurBioTrailRoute(dinosaur, maxTurns);
+        List<Point> route = simulation.dinosaurAi.predictDinosaurBioTrailRoute(dinosaur, maxTurns);
         for (int i = 0; i < route.size(); i++) {
             if (route.get(i).equals(point)) {
                 return i + 1;
@@ -475,55 +450,5 @@ public final class HunterAi {
         return Integer.MAX_VALUE;
     }
 
-    /**
-     * Прогнозирует несколько следующих клеток био-тропы динозавра без случайных шагов.
-     *
-     * Метод использует ту же deterministic-логику поиска ближайшего следующего биома,
-     * что и фактический ход динозавра. Если маршрут дальше требует случайного шага,
-     * прогноз останавливается: лучше честно не знать будущее, чем отправить охотника
-     * лежать в траве двадцать ходов ради красивой, но липовой математики.
-     *
-     * @param dinosaur динозавр, чей маршрут прогнозируется
-     * @param maxTurns максимум будущих фаз динозавров
-     * @return список прогнозируемых клеток в порядке посещения
-     */
-    public List<Point> predictDinosaurBioTrailRoute(Dinosaur dinosaur, int maxTurns) {
-        if (dinosaur == null || dinosaur.captured || dinosaur.trapped || dinosaur.removed || maxTurns <= 0) {
-            return List.of();
-        }
-
-        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
-        Point position = dinosaur.position;
-        int trailIndex = dinosaur.trailIndex;
-        ArrayList<Point> route = new ArrayList<>();
-
-        for (int i = 0; i < maxTurns; i++) {
-            Tile currentTile = simulation.map.tile(position);
-            if (currentTile == null) {
-                break;
-            }
-
-            Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, trailIndex);
-            Optional<List<Point>> path = findDinosaurPathToReachableBiome(position, nextBiome, profile);
-            if (path.isEmpty() || path.get().size() < 2) {
-                break;
-            }
-
-            Point nextPosition = path.get().get(path.get().size() - 1);
-            if (nextPosition.equals(position)) {
-                break;
-            }
-
-            route.add(nextPosition);
-            position = nextPosition;
-
-            int newTrailIndex = profile.trailIndexOf(nextBiome);
-            if (newTrailIndex >= 0) {
-                trailIndex = newTrailIndex;
-            }
-        }
-
-        return route;
-    }
 
 }
