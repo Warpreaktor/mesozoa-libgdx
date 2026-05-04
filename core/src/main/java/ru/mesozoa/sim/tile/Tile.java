@@ -9,36 +9,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Физический экземпляр тайла.
+ * Базовый класс физического тайла местности.
  *
- * Один объект Tile соответствует одной конкретной картонке из мешочка.
- * Пока тайл лежит в мешочке, он не имеет координат и не считается размещённым.
- * После выкладки на стол у него фиксируются позиция, поворот, направления переходов
- * и дороги в фактической ориентации.
+ * Tile хранит только свойства, общие для всех обычных тайлов на карте:
+ * биом, картинку, состояние размещения, дороги, мосты и текущую проходимость.
+ * Конкретные особенности вынесены в наследников:
+ * - MainTile содержит переходы автодостройки;
+ * - ExtraTile содержит спаун-маркер динозавра.
+ *
+ * Базовый тайл экспедиции по-прежнему живёт отдельно в BaseTile и не входит
+ * в мешочки. Потому что база — это штаб, а не картонка с болотом. Почти шок.
  */
-public final class Tile {
+public abstract class Tile {
 
     /** Биом обычного тайла местности: лес, луг, река, озеро, болото, горы или пойма. */
     public final Biome biome;
 
-    /** Вид динозавра, который появляется при первой выкладке этого тайла. */
-    public final Species spawnSpecies;
-
     /** Путь к картинке тайла в assets. */
     public final String imagePath;
-
-    /** Направления автодостройки в базовой ориентации физического тайла. */
-    public final List<Direction> baseExpansionDirections;
 
     /** Направления дорог в базовой ориентации физического тайла. */
     public final List<Direction> baseRoadDirections;
 
-    /** Фактические направления автодостройки после выкладки и поворота тайла. */
-    public List<Direction> expansionDirections;
-
-    /**
-     * Флаг мостика на тайле.
-     */
+    /** Флаг мостика на тайле. */
     public boolean hasBridge;
 
     /** Фактические направления дорог после выкладки и поворота тайла. */
@@ -53,9 +46,6 @@ public final class Tile {
     /** Открыт ли тайл на игровом поле. */
     public boolean opened;
 
-    /** Был ли уже использован спаун этого тайла. */
-    public boolean spawnUsed;
-
     /**
      * Может ли обычный наземный рейнджер стоять на этом тайле.
      *
@@ -67,26 +57,20 @@ public final class Tile {
      */
     private boolean groundPassable;
 
-    public Tile(
+    protected Tile(
             Biome biome,
-            Species spawnSpecies,
-            List<Direction> expansionDirections,
             boolean hasBridge,
             List<Direction> roadDirections,
             boolean groundPassable
     ) {
         this.biome = biome;
-        this.spawnSpecies = spawnSpecies;
         this.imagePath = "tiles/" + biome.imagePath;
-        this.baseExpansionDirections = List.copyOf(expansionDirections);
         this.baseRoadDirections = List.copyOf(roadDirections);
-        this.expansionDirections = List.copyOf(expansionDirections);
         this.hasBridge = hasBridge;
         this.roadDirections = new ArrayList<>(roadDirections);
         this.rotationQuarterTurns = 0;
         this.position = null;
         this.opened = false;
-        this.spawnUsed = false;
         this.groundPassable = groundPassable;
     }
 
@@ -100,16 +84,73 @@ public final class Tile {
         this.position = position;
         this.opened = true;
         this.rotationQuarterTurns = Math.floorMod(rotationQuarterTurns, 4);
-        this.expansionDirections = rotatedDirections(baseExpansionDirections, this.rotationQuarterTurns);
         this.roadDirections = new ArrayList<>(rotatedDirections(baseRoadDirections, this.rotationQuarterTurns));
+        onPlaced(this.rotationQuarterTurns);
     }
 
-    public boolean hasSpawn() {
-        return spawnSpecies != null;
+    /**
+     * Hook для наследников, которым нужно повернуть свои собственные направления
+     * при выкладке тайла.
+     *
+     * @param rotationQuarterTurns фактический поворот тайла
+     */
+    protected void onPlaced(int rotationQuarterTurns) {
+        // По умолчанию у тайла нет дополнительных направлений для поворота.
     }
 
+    /**
+     * Проверяет, содержит ли тайл переходы автодостройки.
+     *
+     * @return true только для MainTile с переходами
+     */
     public boolean hasExpansion() {
-        return !expansionDirections.isEmpty();
+        return false;
+    }
+
+    /**
+     * Возвращает фактические направления автодостройки после поворота.
+     *
+     * @return список переходов; у ExtraTile всегда пустой список
+     */
+    public List<Direction> expansionDirections() {
+        return List.of();
+    }
+
+    /**
+     * Проверяет, содержит ли тайл спаун-маркер динозавра.
+     *
+     * @return true только для ExtraTile со спаун-маркером
+     */
+    public boolean hasSpawn() {
+        return false;
+    }
+
+    /**
+     * Возвращает вид динозавра, отмеченный на спаун-маркере.
+     *
+     * @return вид динозавра или null, если спауна нет
+     */
+    public Species spawnSpecies() {
+        return null;
+    }
+
+    /**
+     * Отмечает спаун тайла как использованный.
+     *
+     * У MainTile метод ничего не делает, потому что основные тайлы не спаунят
+     * динозавров. Да, этому наконец выдали отдельную ответственность.
+     */
+    public void markSpawnUsed() {
+        // Нет спаун-маркера — нечего отмечать.
+    }
+
+    /**
+     * Проверяет, использован ли спаун-маркер тайла.
+     *
+     * @return true, если спаун уже сработал или если у тайла нет спауна
+     */
+    public boolean isSpawnUsed() {
+        return true;
     }
 
     public boolean hasRoadTo(Direction direction) {
@@ -160,7 +201,7 @@ public final class Tile {
         return -90f * rotationQuarterTurns;
     }
 
-    private List<Direction> rotatedDirections(List<Direction> directions, int rotationQuarterTurns) {
+    protected List<Direction> rotatedDirections(List<Direction> directions, int rotationQuarterTurns) {
         return directions.stream()
                 .map(direction -> direction.rotateClockwiseQuarterTurns(rotationQuarterTurns))
                 .toList();

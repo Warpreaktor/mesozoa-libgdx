@@ -23,15 +23,17 @@ public final class TileBag {
      * Из него разведчик вслепую вытягивает физический тайл и сразу выкладывает его
      * в неизвестную клетку, куда вошёл.
      */
-    private final ArrayList<Tile> mainTiles = new ArrayList<>();
+    private final ArrayList<MainTile> mainTiles = new ArrayList<>();
 
     /**
      * Дополнительный мешочек тайлов автодостройки.
      *
-     * Эти тайлы не являются спаун-тайлами и используются только для закрытия
-     * переходов, нарисованных на основных тайлах.
+     * Эти тайлы используются для закрытия переходов, нарисованных на основных
+     * тайлах. Часть дополнительных тайлов может быть помечена силуэтом
+     * динозавра: при автоматической выкладке такого тайла динозавр появляется
+     * на карте.
      */
-    private final ArrayList<Tile> extraTiles = new ArrayList<>();
+    private final ArrayList<ExtraTile> extraTiles = new ArrayList<>();
 
     /**
      * Источник случайности для перемешивания мешочков и вытягивания тайлов.
@@ -61,7 +63,7 @@ public final class TileBag {
     /**
      * Вытягивает случайный основной тайл.
      */
-    public Tile draw() {
+    public MainTile draw() {
         if (mainTiles.isEmpty()) return null;
         return mainTiles.remove(random.nextInt(mainTiles.size()));
     }
@@ -69,9 +71,9 @@ public final class TileBag {
     /**
      * Вытягивает дополнительный тайл указанного биома.
      */
-    public Tile drawExtraBiome(Biome biome) {
+    public ExtraTile drawExtraBiome(Biome biome) {
         for (int i = 0; i < extraTiles.size(); i++) {
-            Tile tile = extraTiles.get(i);
+            ExtraTile tile = extraTiles.get(i);
             if (tile.biome == biome) {
                 return extraTiles.remove(i);
             }

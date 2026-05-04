@@ -336,7 +336,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             font.draw(batch, shortBiome(tile.biome), sx + 4f * pixelScale(), sy + 16f * pixelScale());
 
             if (tile.hasSpawn() && showSpawnDebug) {
-                font.draw(batch, tile.spawnSpecies.shortCode, sx + size - 18f * pixelScale(), sy + size - 8f * pixelScale());
+                font.draw(batch, tile.spawnSpecies().shortCode, sx + size - 18f * pixelScale(), sy + size - 8f * pixelScale());
             }
         }
         batch.end();
@@ -403,7 +403,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             float sx = screenX(p);
             float sy = screenY(p);
 
-            for (Direction direction : tile.expansionDirections) {
+            for (Direction direction : tile.expansionDirections()) {
                 drawTransitionBase(sx, sy, direction);
             }
         }
@@ -420,7 +420,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             float sx = screenX(p);
             float sy = screenY(p);
 
-            for (Direction direction : tile.expansionDirections) {
+            for (Direction direction : tile.expansionDirections()) {
                 drawTransitionHatching(sx, sy, direction);
             }
         }

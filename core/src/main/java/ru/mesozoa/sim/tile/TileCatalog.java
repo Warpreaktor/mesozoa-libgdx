@@ -25,31 +25,34 @@ import static ru.mesozoa.sim.model.Direction.WEST;
  *
  * Важно:
  * - класс не должен добавлять "сверху" отдельную пачку спаун-тайлов;
- * - спаун — это маркировка уже существующего основного тайла;
+ * - основные тайлы отвечают только за исследование и переходы биомов;
+ * - спаун — это маркировка уже существующего дополнительного тайла;
  * - дополнительные тайлы считаются автоматически по количеству переходов на основных тайлах.
  *
  * После создания каталога списки считаются неизменяемыми.
  */
 public final class TileCatalog {
-    private final List<Tile> mainTiles;
-    private final List<Tile> extraTiles;
+    private final List<MainTile> mainTiles;
+    private final List<ExtraTile> extraTiles;
 
     public TileCatalog(GameConfig config, Random random) {
         ArrayList<TileBlueprint> main = expandToSingleTileBlueprints(baseMainTileBlueprints());
+        ArrayList<TileBlueprint> extra = expandToSingleTileBlueprints(generateExtraTileBlueprints(main));
 
-        markSpawnTiles(main, config.spawnTiles, random);
+        markSpawnTiles(extra, config.spawnTiles, random);
 
-        this.mainTiles = List.copyOf(toTiles(main));
-        this.extraTiles = List.copyOf(toTiles(generateExtraTileBlueprints(main)));
+        this.mainTiles = List.copyOf(toMainTiles(main));
+        this.extraTiles = List.copyOf(toExtraTiles(extra));
     }
 
     /**
      * Возвращает копию списка физических основных тайлов.
      *
-     * Список уже содержит конкретные экземпляры тайлов, часть которых случайно
-     * помечена спаунами динозавров. Пока эти тайлы лежат в мешочке, их position == null.
+     * Основные тайлы не содержат спаун-маркеров. Они отвечают за ручное
+     * исследование карты и за переходы, которые вытягивают дополнительные тайлы.
+     * Пока эти тайлы лежат в мешочке, их position == null.
      */
-    public List<Tile> getMainTiles() {
+    public List<MainTile> getMainTiles() {
         return List.copyOf(mainTiles);
     }
 
@@ -58,8 +61,10 @@ public final class TileCatalog {
      *
      * Количество дополнительных тайлов каждого биома вычисляется из основных тайлов:
      * один переход на основном тайле требует один дополнительный тайл того же биома.
+     * Именно среди этих дополнительных тайлов случайно расставляются спаун-маркеры
+     * динозавров.
      */
-    public List<Tile> getExtraTiles() {
+    public List<ExtraTile> getExtraTiles() {
         return List.copyOf(extraTiles);
     }
 
@@ -69,7 +74,7 @@ public final class TileCatalog {
      * Тут должны лежать только реальные основные тайлы игры:
      * обычные тайлы, тайлы с переходами, тайлы с диагональными переходами.
      *
-     * Спаунов здесь быть не должно: они наносятся позже случайной маркировкой.
+     * Спаунов здесь быть не должно: основные тайлы не рождают динозавров.
      */
     private static List<TileBlueprint> baseMainTileBlueprints() {
         return List.of(
@@ -165,8 +170,8 @@ public final class TileCatalog {
      *   8 отдельных TileBlueprint с count = 1.
      *
      * Это нужно, чтобы потом можно было случайно пометить спауном конкретный
-     * экземпляр тайла, а не всю группу целиком. Вот так и рождается бюрократия,
-     * но хотя бы полезная.
+     * дополнительный экземпляр тайла, а не всю группу целиком. Вот так и рождается
+     * бюрократия, но хотя бы полезная.
      */
     private static ArrayList<TileBlueprint> expandToSingleTileBlueprints(List<TileBlueprint> blueprints) {
         ArrayList<TileBlueprint> result = new ArrayList<>();
@@ -190,11 +195,12 @@ public final class TileCatalog {
     }
 
     /**
-     * Случайно маркирует уже существующие основные тайлы спаунами динозавров.
+     * Случайно маркирует уже существующие дополнительные тайлы спаунами динозавров.
      *
-     * Этот метод НЕ создаёт новые тайлы.
-     * Он заменяет часть уже существующих blueprint'ов на такие же blueprint'ы,
-     * но с заполненным spawnSpecies.
+     * Этот метод НЕ создаёт новые тайлы. Он заменяет часть уже существующих
+     * дополнительных blueprint'ов на такие же blueprint'ы, но с заполненным
+     * spawnSpecies. Основные тайлы сюда не передаются: динозавр должен появляться
+     * только на дополнительном тайле с силуэтом.
      */
     private static void markSpawnTiles(
             List<TileBlueprint> tileBlueprints,
@@ -235,6 +241,8 @@ public final class TileCatalog {
                         source.biome,
                         species,
                         source.expansionDirections,
+                        source.hasBridge,
+                        source.roadDirections,
                         1
                 ));
             }
@@ -243,19 +251,47 @@ public final class TileCatalog {
 
 
     /**
-     * Превращает blueprint-описания в конкретные физические тайлы.
+     * Превращает blueprint-описания в конкретные основные тайлы.
+     *
+     * MainTile никогда не получает спаун-маркер. Он отвечает только за ручное
+     * исследование карты и переходы, которые достраиваются ExtraTile.
      */
-    private static List<Tile> toTiles(List<TileBlueprint> blueprints) {
-        ArrayList<Tile> result = new ArrayList<>();
+    private static List<MainTile> toMainTiles(List<TileBlueprint> blueprints) {
+        ArrayList<MainTile> result = new ArrayList<>();
 
         for (TileBlueprint blueprint : blueprints) {
             if (blueprint.isEmpty()) continue;
 
             for (int i = 0; i < blueprint.count; i++) {
-                result.add(new Tile(
+                result.add(new MainTile(
+                        blueprint.biome,
+                        blueprint.expansionDirections,
+                        blueprint.hasBridge,
+                        blueprint.roadDirections,
+                        isGroundPassableByDefault(blueprint.biome, blueprint.hasBridge)
+                ));
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Превращает blueprint-описания в конкретные дополнительные тайлы.
+     *
+     * ExtraTile не имеет переходов, но может иметь спаун-маркер. Именно эти
+     * тайлы автоматически выкладываются по переходам MainTile.
+     */
+    private static List<ExtraTile> toExtraTiles(List<TileBlueprint> blueprints) {
+        ArrayList<ExtraTile> result = new ArrayList<>();
+
+        for (TileBlueprint blueprint : blueprints) {
+            if (blueprint.isEmpty()) continue;
+
+            for (int i = 0; i < blueprint.count; i++) {
+                result.add(new ExtraTile(
                         blueprint.biome,
                         blueprint.spawnSpecies,
-                        blueprint.expansionDirections,
                         blueprint.hasBridge,
                         blueprint.roadDirections,
                         isGroundPassableByDefault(blueprint.biome, blueprint.hasBridge)
@@ -302,8 +338,9 @@ public final class TileCatalog {
      * Если основной тайл биома "Река" имеет 2 перехода,
      * значит для него в дополнительный мешочек понадобится 2 тайла "Река".
      *
-     * Спаун-маркировка здесь не учитывается: дополнительные тайлы нужны только
-     * для автодостройки биома по направлениям.
+     * На этом шаге спаун-маркировка ещё не учитывается. Сначала считается набор
+     * физических дополнительных тайлов, а потом часть этих тайлов помечается
+     * силуэтами динозавров.
      */
     private static List<TileBlueprint> generateExtraTileBlueprints(List<TileBlueprint> mainTileBlueprints) {
         EnumMap<Biome, Integer> extraCountByBiome = new EnumMap<>(Biome.class);

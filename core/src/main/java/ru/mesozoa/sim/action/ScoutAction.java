@@ -6,6 +6,8 @@ import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.simulation.GameSimulation;
+import ru.mesozoa.sim.tile.ExtraTile;
+import ru.mesozoa.sim.tile.MainTile;
 import ru.mesozoa.sim.tile.Tile;
 
 import java.util.Comparator;
@@ -51,7 +53,7 @@ public class ScoutAction {
     }
 
     private void exploreOneTile(PlayerState player) {
-        Tile drawn = simulation.tileBag.draw();
+        MainTile drawn = simulation.tileBag.draw();
         if (drawn == null) return;
 
         Point placement = choosePlacementPoint(player);
@@ -60,14 +62,14 @@ public class ScoutAction {
         Tile placedTile = placeDrawnTile(player, drawn, placement, false);
         if (placedTile == null) return;
 
-        for (Direction direction : placedTile.expansionDirections) {
+        for (Direction direction : placedTile.expansionDirections()) {
             Point extraPoint = direction.from(placement);
 
             if (!simulation.map.canPlaceExpansion(extraPoint)) {
                 continue;
             }
 
-            Tile extra = simulation.tileBag.drawExtraBiome(placedTile.biome);
+            ExtraTile extra = simulation.tileBag.drawExtraBiome(placedTile.biome);
             if (extra == null) {
                 simulation.log("Нет доп. тайла для биома " + placedTile.biome.displayName);
                 continue;
@@ -100,9 +102,9 @@ public class ScoutAction {
             player.setPosition(RangerRole.SCOUT, placement);
         }
 
-        if (tile.hasSpawn() && !tile.spawnUsed) {
-            dinosaurAction.spawnDinosaur(tile.spawnSpecies, placement);
-            tile.spawnUsed = true;
+        if (automaticExpansion && tile.hasSpawn() && !tile.isSpawnUsed()) {
+            dinosaurAction.spawnDinosaur(tile.spawnSpecies(), placement);
+            tile.markSpawnUsed();
         }
 
         return tile;
