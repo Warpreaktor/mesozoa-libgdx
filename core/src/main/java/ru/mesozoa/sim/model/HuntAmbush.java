@@ -40,6 +40,15 @@ public final class HuntAmbush {
     private int preparationScore;
 
     /**
+     * Сколько активаций охотник уже провёл в этой засаде.
+     *
+     * Счётчик нужен, чтобы AI не лежал двадцать ходов на одной поляне,
+     * если хищник явно выбрал другой маршрут. Подготовка может быть отличной,
+     * но если динозавр не пришёл, это уже не охота, а пикник с транквилизатором.
+     */
+    private int ambushTurns;
+
+    /**
      * Создаёт новую активную засаду.
      *
      * @param playerId владелец засады
@@ -80,6 +89,18 @@ public final class HuntAmbush {
     /** @return true, если подготовка превысила лимит и охотник сорвал засаду */
     public boolean isOverPrepared() {
         return preparationScore > MAX_PREPARATION_SCORE;
+    }
+
+    /**
+     * Увеличивает количество активаций, проведённых в засаде.
+     */
+    public void advanceAmbushTurn() {
+        ambushTurns++;
+    }
+
+    /** @return сколько активаций охотник уже провёл в этой засаде */
+    public int ambushTurns() {
+        return ambushTurns;
     }
 
     /** @return количество карт, оставшихся в колоде */

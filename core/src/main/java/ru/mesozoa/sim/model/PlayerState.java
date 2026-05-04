@@ -8,6 +8,7 @@ import ru.mesozoa.sim.ranger.Scout;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -34,6 +35,14 @@ public final class PlayerState {
 
     /** Активная засада охотника на M-хищника или null, если охота не начата. */
     public HuntAmbush activeHunt;
+
+    /**
+     * Клетки, где охотник уже ждал хищника слишком долго и решил перенести засаду.
+     *
+     * Эти клетки временно исключаются из новых планов охоты, чтобы AI не бросал
+     * приманку в ту же самую траву сразу после признания, что идея была так себе.
+     */
+    public final Set<Point> rejectedHuntBaitPositions = new HashSet<>();
 
     /** Количество оставшейся мясной приманки для охоты. */
     public int hunterBait = 3;
@@ -106,6 +115,7 @@ public final class PlayerState {
             ranger.setPosition(base);
         }
         activeHunt = null;
+        rejectedHuntBaitPositions.clear();
     }
 
 

@@ -30,6 +30,12 @@ public class HunterAction {
     /** Смелая сумма, к которой AI стремится, если до прихода хищника ещё есть время. */
     private static final int STRONG_PREPARATION_TARGET = 9;
 
+    /** Максимум активаций в одной засаде без контакта с хищником. */
+    private static final int MAX_AMBUSH_TURNS_WITHOUT_CONTACT = 5;
+
+    /** Максимум приманки, который охотник может хранить. */
+    private static final int MAX_HUNTER_BAIT = 3;
+
     private final GameSimulation simulation;
     private final RangerActionExecutor rangerActionExecutor;
 
@@ -73,7 +79,15 @@ public class HunterAction {
      * точечное выслеживание, затем подготовка новой охоты на хищника.
      */
     private void action(PlayerState player, Point plannedTarget, int movementPoints) {
+        boolean hadActiveHunt = player.activeHunt != null;
         if (continueActiveHunt(player)) {
+            return;
+        }
+        if (hadActiveHunt && player.activeHunt == null) {
+            plannedTarget = null;
+        }
+
+        if (refillOrReturnForBait(player, movementPoints)) {
             return;
         }
 
@@ -101,6 +115,42 @@ public class HunterAction {
     }
 
     /**
+     * Пополняет приманку на базе или возвращает охотника к базе, если приманка закончилась.
+     *
+     * @param player игрок, чей охотник активируется
+     * @param movementPoints очки движения охотника
+     * @return true, если действие потрачено на пополнение или возврат
+     */
+    private boolean refillOrReturnForBait(PlayerState player, int movementPoints) {
+        if (player.hunterBait > 0) {
+            return false;
+        }
+        if (!hasVisibleNeededHuntTarget(player)) {
+            return false;
+        }
+
+        if (player.hunterRanger.position().equals(simulation.map.base)) {
+            player.hunterBait = MAX_HUNTER_BAIT;
+            player.rejectedHuntBaitPositions.clear();
+            simulation.log("Охотник игрока " + player.id
+                    + " пополнил приманку на базе: " + player.hunterBait + " / " + MAX_HUNTER_BAIT);
+            return true;
+        }
+
+        rangerActionExecutor.moveRoleToward(player, RangerRole.HUNTER, simulation.map.base, movementPoints);
+        simulation.log("Охотник игрока " + player.id + " возвращается на базу за приманкой");
+        return true;
+    }
+
+    /** Проверяет, есть ли на карте нужная цель для охоты с приманкой. */
+    private boolean hasVisibleNeededHuntTarget(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
+                .filter(dinosaur -> player.needs(dinosaur.species))
+                .anyMatch(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.HUNT);
+    }
+
+    /**
      * Продолжает уже начатую засаду: добирает карту или ждёт хищника.
      *
      * @param player игрок, чей охотник лежит в засаде
@@ -113,10 +163,17 @@ public class HunterAction {
         }
 
         player.hunterRanger.setPosition(hunt.baitPosition);
+        hunt.advanceAmbushTurn();
+
         Optional<Dinosaur> target = dinosaurById(hunt.dinosaurId);
         int turnsUntilArrival = target
                 .map(dinosaur -> simulation.estimateDinosaurTurnsTo(dinosaur, hunt.baitPosition))
                 .orElse(Integer.MAX_VALUE);
+
+        if (shouldRelocateAmbush(player, hunt, turnsUntilArrival)) {
+            abandonAmbushForRelocation(player, hunt, turnsUntilArrival);
+            return false;
+        }
 
         if (shouldDrawHuntCard(hunt, turnsUntilArrival)) {
             Optional<HuntCard> card = hunt.drawCard();
@@ -140,6 +197,50 @@ public class HunterAction {
                 + "; подготовка " + hunt.preparationScore()
                 + ", ожидаемый приход через " + turnsText(turnsUntilArrival));
         return true;
+    }
+
+    /**
+     * Проверяет, пора ли бросить текущую засаду и перенести приманку.
+     *
+     * Засада считается плохой, если хищник больше не имеет понятного пути к
+     * приманке или охотник уже слишком долго ждёт без контакта. Подготовка при
+     * переносе сбрасывается, но приманка возвращается в инвентарь.
+     *
+     * @param player игрок, чей охотник ждёт в засаде
+     * @param hunt активная засада
+     * @param turnsUntilArrival текущая оценка прихода хищника
+     * @return true, если засаду пора переносить
+     */
+    private boolean shouldRelocateAmbush(PlayerState player, HuntAmbush hunt, int turnsUntilArrival) {
+        if (dinosaurById(hunt.dinosaurId).isEmpty()) {
+            return true;
+        }
+
+        if (turnsUntilArrival == Integer.MAX_VALUE) {
+            return true;
+        }
+
+        return hunt.ambushTurns() >= MAX_AMBUSH_TURNS_WITHOUT_CONTACT
+                && turnsUntilArrival > 1;
+    }
+
+    /**
+     * Сбрасывает текущую засаду и помечает её клетку как неудачную.
+     *
+     * @param player игрок, чей охотник переносит засаду
+     * @param hunt активная засада
+     * @param turnsUntilArrival текущая оценка прихода хищника
+     */
+    private void abandonAmbushForRelocation(PlayerState player, HuntAmbush hunt, int turnsUntilArrival) {
+        player.rejectedHuntBaitPositions.add(hunt.baitPosition);
+        player.activeHunt = null;
+        player.hunterBait = Math.min(MAX_HUNTER_BAIT, player.hunterBait + 1);
+
+        simulation.log("Охотник игрока " + player.id
+                + " переносит засаду на " + hunt.species.displayName
+                + ": ждал " + hunt.ambushTurns()
+                + " активаций, ожидаемый приход " + turnsText(turnsUntilArrival)
+                + ". Подготовка сброшена, приманка возвращена");
     }
 
     /**

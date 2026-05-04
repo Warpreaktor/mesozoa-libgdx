@@ -26,7 +26,7 @@ import java.util.Locale;
 public final class MesozoaHudStage {
     private static final int PANEL_PADDING = 12;
     private static final int INNER_PADDING = 8;
-    private static final int MAX_LOG_LINES = 12;
+    private static final int MAX_LOG_LINES = 20;
     private static final int MAX_BAIT = 3;
 
     private final int hudWidth;
@@ -230,7 +230,7 @@ public final class MesozoaHudStage {
         int count = 0;
         for (String line : simulation.log) {
             if (count >= MAX_LOG_LINES) break;
-            logTable.add(wrappingLabel(trim(line, 56), "small")).growX().row();
+            logTable.add(wrappingLabel(line, "small")).growX().row();
             count++;
         }
 
@@ -238,7 +238,7 @@ public final class MesozoaHudStage {
         scrollPane.setFadeScrollBars(false);
         scrollPane.setScrollingDisabled(true, false);
 
-        panel.add(scrollPane).growX().height(230).row();
+        panel.add(scrollPane).growX().height(340).row();
     }
 
     private void addSectionTitle(String text) {

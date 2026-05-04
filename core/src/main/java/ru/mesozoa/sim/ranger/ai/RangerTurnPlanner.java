@@ -151,6 +151,10 @@ public final class RangerTurnPlanner {
             return Optional.of(player.activeHunt.baitPosition);
         }
 
+        if (player.hunterBait <= 0 && hasVisibleNeededHuntTarget(player)) {
+            return Optional.of(simulation.map.base);
+        }
+
         Optional<Point> huntAmbush = nearestHuntAmbushPoint(player);
         if (huntAmbush.isPresent()) {
             return huntAmbush;
@@ -158,6 +162,14 @@ public final class RangerTurnPlanner {
 
         return nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.TRACKING)
                 .map(dinosaur -> dinosaur.position);
+    }
+
+    /** Проверяет, есть ли на карте нужная цель для охоты с приманкой. */
+    private boolean hasVisibleNeededHuntTarget(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
+                .filter(dinosaur -> player.needs(dinosaur.species))
+                .anyMatch(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.HUNT);
     }
 
     /**
