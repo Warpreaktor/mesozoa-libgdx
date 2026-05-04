@@ -135,9 +135,45 @@ public final class RangerTurnPlanner {
         };
     }
 
+    /**
+     * Выбирает целевую клетку для охотника.
+     *
+     * Если охотник уже в засаде, целью остаётся клетка приманки. Для M-хищников
+     * целью становится не текущая позиция динозавра, а клетка будущей засады на
+     * его био-тропе. Иначе охотник снова полезет к Велоцитаурусу в лицо, а мы
+     * вроде как договорились, что это не документалка про естественный отбор.
+     *
+     * @param player игрок, чей охотник планируется
+     * @return клетка действия охотника
+     */
     private Optional<Point> hunterTarget(PlayerState player) {
-        return nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.TRACKING, CaptureMethod.HUNT)
+        if (player.activeHunt != null) {
+            return Optional.of(player.activeHunt.baitPosition);
+        }
+
+        Optional<Point> huntAmbush = nearestHuntAmbushPoint(player);
+        if (huntAmbush.isPresent()) {
+            return huntAmbush;
+        }
+
+        return nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.TRACKING)
                 .map(dinosaur -> dinosaur.position);
+    }
+
+    /**
+     * Ищет ближайшую выбранную AI клетку засады на M-хищника.
+     *
+     * @param player игрок, чей охотник планирует охоту
+     * @return клетка приманки или Optional.empty(), если охота пока невозможна
+     */
+    private Optional<Point> nearestHuntAmbushPoint(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
+                .filter(dinosaur -> player.needs(dinosaur.species))
+                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.HUNT)
+                .map(dinosaur -> simulation.bestHuntAmbushPointFor(player, dinosaur))
+                .flatMap(Optional::stream)
+                .min(Comparator.comparingInt(point -> point.manhattan(player.hunterRanger.position())));
     }
 
     private Optional<Point> engineerTarget(PlayerState player) {
@@ -152,7 +188,8 @@ public final class RangerTurnPlanner {
         Optional<Point> trapTarget = nearestTrapAmbushPoint(player);
         if (trapTarget.isPresent()) return trapTarget;
 
-        return hunterTarget(player);
+        return nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRACKING)
+                .map(dinosaur -> dinosaur.position);
     }
 
     /**

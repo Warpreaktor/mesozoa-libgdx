@@ -292,10 +292,6 @@ public final class GameSimulation {
         for (Dinosaur dinosaur : new ArrayList<>(dinosaurs)) {
             if (dinosaur.captured || dinosaur.trapped || dinosaur.removed) continue;
 
-            if (dinosaur.species == Species.VELOCITAURUS) {
-                huntWithVelocitaurus(dinosaur);
-            }
-
             Point before = dinosaur.position;
             dinosaur.lastPosition = before;
             moveByBioTrail(dinosaur);
@@ -303,33 +299,16 @@ public final class GameSimulation {
             if (!before.equals(dinosaur.position)) {
                 log(dinosaur.species.displayName + " #" + dinosaur.id + " " + before + " -> " + dinosaur.position);
                 checkTrapCapture(dinosaur);
+                resolveHuntAmbush(dinosaur);
             }
 
-            if (dinosaur.trapped) {
+            if (dinosaur.trapped || dinosaur.captured) {
                 continue;
             }
 
             if (dinosaur.species == Species.CRYPTOGNATH) {
                 stealBaitIfPossible(dinosaur);
             }
-
-            if (dinosaur.species == Species.VELOCITAURUS) {
-                attackRangerIfPossible(dinosaur);
-            }
-        }
-    }
-
-    private void huntWithVelocitaurus(Dinosaur hunter) {
-        Optional<Dinosaur> prey = dinosaurs.stream()
-                .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> d.species.size == SizeClass.S)
-                .filter(d -> d.position.manhattan(hunter.position) <= hunter.species.huntRadius)
-                .findFirst();
-
-        if (prey.isPresent() && random.nextDouble() < 0.55) {
-            prey.get().removed = true;
-            result.predatorKills++;
-            log("Велоцитаурус съел " + prey.get().species.displayName + " #" + prey.get().id);
         }
     }
 
@@ -431,6 +410,236 @@ public final class GameSimulation {
                 .forEach(result::add);
 
         return new ArrayList<>(result);
+    }
+
+    /**
+     * Выбирает лучшую клетку для охотничьей засады на конкретного M-хищника.
+     *
+     * AI старается не бросать приманку прямо под нос хищнику. Лучше выбрать
+     * клетку био-тропы, куда он придёт через пару ходов: охотник успеет добрать
+     * карты подготовки, но не устроит недельный фестиваль лежания в траве.
+     *
+     * @param player игрок, чей охотник планирует засаду
+     * @param dinosaur целевой M-хищник
+     * @return лучшая клетка для приманки или Optional.empty(), если охота невозможна
+     */
+    public Optional<Point> bestHuntAmbushPointFor(PlayerState player, Dinosaur dinosaur) {
+        if (player == null || dinosaur == null || player.hunterBait <= 0) {
+            return Optional.empty();
+        }
+
+        return huntAmbushCandidatesFor(dinosaur).stream()
+                .filter(point -> isLegalHuntAmbushPoint(player, point))
+                .min(Comparator
+                        .comparingInt((Point point) -> huntAmbushTimingPenalty(dinosaur, point))
+                        .thenComparingInt(point -> map.groundRangerPathDistance(player.hunterRanger.position(), point))
+                        .thenComparingInt(point -> point.manhattan(dinosaur.position)));
+    }
+
+    /**
+     * Возвращает клетки, где охотник может ждать M-хищника с приманкой.
+     *
+     * Список включает не только ближайший шаг, но и более поздние клетки био-тропы.
+     * Для охоты это важно: если ставить приманку на следующий ход хищника, охотник
+     * часто успевает взять только стартовые карты и снова героически позорится.
+     *
+     * @param dinosaur хищник, под маршрут которого ищутся клетки
+     * @return список возможных клеток засады
+     */
+    public List<Point> huntAmbushCandidatesFor(Dinosaur dinosaur) {
+        if (dinosaur == null || dinosaur.captured || dinosaur.trapped || dinosaur.removed) {
+            return List.of();
+        }
+        if (dinosaur.species.captureMethod != CaptureMethod.HUNT) {
+            return List.of();
+        }
+
+        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
+        Tile currentTile = map.tile(dinosaur.position);
+        if (currentTile == null) {
+            return List.of();
+        }
+
+        LinkedHashSet<Point> result = new LinkedHashSet<>();
+
+        predictDinosaurBioTrailDestination(dinosaur)
+                .filter(point -> !point.equals(dinosaur.position))
+                .filter(map::canPlaceBait)
+                .ifPresent(result::add);
+
+        map.entries().stream()
+                .filter(entry -> profile.canEnter(entry.getValue().biome))
+                .map(entry -> entry.getKey())
+                .filter(point -> !point.equals(dinosaur.position))
+                .filter(map::canPlaceBait)
+                .filter(point -> canDinosaurStandOn(point, profile))
+                .sorted(Comparator
+                        .comparingInt((Point point) -> estimateDinosaurTurnsTo(dinosaur, point))
+                        .thenComparingInt(point -> dinosaur.position.manhattan(point)))
+                .forEach(result::add);
+
+        if (!result.isEmpty()) {
+            return new ArrayList<>(result);
+        }
+
+        for (Point neighbor : dinosaur.position.neighbors4()) {
+            if (!map.canPlaceBait(neighbor)) continue;
+            if (!canDinosaurStandOn(neighbor, profile)) continue;
+            result.add(neighbor);
+        }
+
+        return new ArrayList<>(result);
+    }
+
+    /**
+     * Примерно оценивает, через сколько фаз динозавров хищник дойдёт до клетки.
+     *
+     * Учитывается не только расстояние, но и порядок био-тропы. Велоцитаурус из
+     * Луга не должен считаться готовым прийти в Хвойный лес за один ход только
+     * потому, что клетка рядом: сначала у него по маршруту Лиственный лес.
+     *
+     * @param dinosaur хищник
+     * @param target клетка с приманкой
+     * @return число фаз динозавров или Integer.MAX_VALUE, если путь не найден
+     */
+    public int estimateDinosaurTurnsTo(Dinosaur dinosaur, Point target) {
+        if (dinosaur == null || target == null) return Integer.MAX_VALUE;
+        if (dinosaur.position.equals(target)) return 0;
+
+        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
+        int distance = dinosaurPathDistance(dinosaur.position, target, profile);
+        if (distance == Integer.MAX_VALUE) return Integer.MAX_VALUE;
+
+        Tile currentTile = map.tile(dinosaur.position);
+        Tile targetTile = map.tile(target);
+        if (currentTile == null || targetTile == null) return Integer.MAX_VALUE;
+
+        int currentIndex = profile.trailIndexOf(currentTile.biome);
+        int targetIndex = profile.trailIndexOf(targetTile.biome);
+        if (currentIndex < 0 || targetIndex < 0) return Integer.MAX_VALUE;
+
+        int routeSteps = Math.floorMod(targetIndex - currentIndex, dinosaur.species.bioTrail.size());
+        if (routeSteps == 0) {
+            routeSteps = 1;
+        }
+
+        int agility = Math.max(1, profile.agility());
+        int distanceTurns = Math.max(1, (int) Math.ceil(distance / (double) agility));
+        return Math.max(routeSteps, distanceTurns);
+    }
+
+    /**
+     * Проверяет, есть ли у игрока активная охота на указанный вид.
+     *
+     * @param player игрок
+     * @param species вид из задания
+     * @return true, если охотник уже лежит в засаде на этот вид
+     */
+    public boolean hasActiveHuntForSpecies(PlayerState player, Species species) {
+        return player != null
+                && player.activeHunt != null
+                && player.activeHunt.species == species;
+    }
+
+    /** Проверяет, может ли указанная клетка быть клеткой охотничьей засады. */
+    private boolean isLegalHuntAmbushPoint(PlayerState player, Point point) {
+        if (point == null || !map.canPlaceBait(point)) return false;
+        if (!map.canGroundRangerStandOn(point)) return false;
+        if (map.groundRangerPathDistance(player.hunterRanger.position(), point) == Integer.MAX_VALUE) return false;
+
+        return dinosaurs.stream()
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                .noneMatch(dinosaur -> dinosaur.position.equals(point));
+    }
+
+    /** Считает штраф тайминга для клетки засады. */
+    private int huntAmbushTimingPenalty(Dinosaur dinosaur, Point point) {
+        int turns = estimateDinosaurTurnsTo(dinosaur, point);
+        if (turns == Integer.MAX_VALUE) return Integer.MAX_VALUE;
+
+        int desiredTurns = 2;
+        int earlyPenalty = turns < 1 ? 1000 : 0;
+        return earlyPenalty + Math.abs(turns - desiredTurns) * 10;
+    }
+
+    /** Считает расстояние по биомам, доступным конкретному динозавру. */
+    private int dinosaurPathDistance(Point start, Point target, DinosaurProfile profile) {
+        if (!canDinosaurStandOn(start, profile) || !canDinosaurStandOn(target, profile)) {
+            return Integer.MAX_VALUE;
+        }
+
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+        HashMap<Point, Integer> distance = new HashMap<>();
+
+        queue.add(start);
+        distance.put(start, 0);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            int currentDistance = distance.get(current);
+
+            if (current.equals(target)) {
+                return currentDistance;
+            }
+
+            for (Point neighbor : current.neighbors4()) {
+                if (distance.containsKey(neighbor)) continue;
+                if (!canDinosaurStandOn(neighbor, profile)) continue;
+
+                distance.put(neighbor, currentDistance + 1);
+                queue.addLast(neighbor);
+            }
+        }
+
+        return Integer.MAX_VALUE;
+    }
+
+    /**
+     * Проверяет, вошёл ли M-хищник на клетку активной приманки и чем закончилась охота.
+     *
+     * @param dinosaur только что переместившийся динозавр
+     */
+    private void resolveHuntAmbush(Dinosaur dinosaur) {
+        if (dinosaur.species.captureMethod != CaptureMethod.HUNT) return;
+        if (dinosaur.lastPosition == null || dinosaur.lastPosition.equals(dinosaur.position)) return;
+
+        for (PlayerState player : players) {
+            if (player.activeHunt == null) continue;
+            if (player.activeHunt.dinosaurId != dinosaur.id) continue;
+            if (!player.activeHunt.baitPosition.equals(dinosaur.position)) continue;
+            if (!player.needs(dinosaur.species)) {
+                player.activeHunt = null;
+                continue;
+            }
+
+            int dinosaurRoll = random.nextInt(6) + 1;
+            int dinosaurScore = dinosaurRoll + dinosaur.species.agility;
+            int hunterScore = player.activeHunt.preparationScore();
+
+            if (hunterScore > dinosaurScore) {
+                dinosaur.captured = true;
+                player.captured.add(dinosaur.species);
+                player.activeHunt = null;
+                result.huntCaptures++;
+                log("ПОЙМАН: охотник игрока " + player.id
+                        + " усыпил " + dinosaur.species.displayName
+                        + " #" + dinosaur.id
+                        + " в засаде; подготовка " + hunterScore
+                        + " против " + dinosaurScore
+                        + " (1d6=" + dinosaurRoll + ")");
+                return;
+            }
+
+            player.hunterRanger.setPosition(map.base);
+            player.activeHunt = null;
+            log("ПРОВАЛ ОХОТЫ: " + dinosaur.species.displayName
+                    + " #" + dinosaur.id
+                    + " обошёл засаду игрока " + player.id
+                    + "; подготовка " + hunterScore
+                    + " против " + dinosaurScore
+                    + " (1d6=" + dinosaurRoll + "). Охотник вернулся на базу");
+            return;
+        }
     }
 
     /**
@@ -781,20 +990,6 @@ public final class GameSimulation {
             if (player.hunterBait > 0 && player.hunterRanger.position().equals(dinosaur.position)) {
                 player.hunterBait--;
                 log("Криптогнат украл приманку у игрока " + player.id);
-            }
-        }
-    }
-
-    private void attackRangerIfPossible(Dinosaur dinosaur) {
-        for (PlayerState player : players) {
-            boolean hunterNearby = player.hunterRanger.position().manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
-            boolean engineerNearby = player.engineerRanger.position().manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
-            boolean driverNearby = player.driverRanger.position().manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
-
-            if ((hunterNearby || engineerNearby || driverNearby) && random.nextDouble() < 0.20) {
-                player.turnsSkipped = 1;
-                player.returnTeamToBase(map.base);
-                log("Велоцитаурус напал на команду игрока " + player.id);
             }
         }
     }

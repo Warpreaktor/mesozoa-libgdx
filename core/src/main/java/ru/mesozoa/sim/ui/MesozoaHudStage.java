@@ -199,6 +199,11 @@ public final class MesozoaHudStage {
         inventory.add(label("Приманка", "default")).growX();
         inventory.add(valueLabel(player.hunterBait + " / " + MAX_BAIT, player.hunterBait > 0 ? "good" : "danger")).width(118).right().row();
 
+        if (player.activeHunt != null) {
+            inventory.add(label("Охота", "small")).growX();
+            inventory.add(valueLabel("подг. " + player.activeHunt.preparationScore() + " / 10", "warning")).width(118).right().row();
+        }
+
         parent.add(inventory).growX().padBottom(8).row();
     }
 
@@ -298,6 +303,10 @@ public final class MesozoaHudStage {
             return "в ловушке";
         }
 
+        if (simulation.hasActiveHuntForSpecies(player, species)) {
+            return "в засаде";
+        }
+
         if (isVisibleNeededSpecies(simulation, species)) {
             return "на карте";
         }
@@ -311,6 +320,10 @@ public final class MesozoaHudStage {
         }
 
         if (isTrappedNeededSpecies(simulation, player, species)) {
+            return "warning";
+        }
+
+        if (simulation.hasActiveHuntForSpecies(player, species)) {
             return "warning";
         }
 

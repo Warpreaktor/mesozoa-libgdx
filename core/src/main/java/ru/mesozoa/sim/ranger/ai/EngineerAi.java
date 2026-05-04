@@ -39,7 +39,7 @@ public class EngineerAi {
     /** Вес ситуации, когда текущие ловушки уже заняли весь лимит и не помогают. */
     private static final double SCORE_BAD_TRAP_LAYOUT = 78.0;
 
-    /** Вес поддержки охотника дорогой к зоне охоты или выслеживания. */
+    /** Вес поддержки охотника дорогой к зоне выслеживания. */
     private static final double SCORE_HUNTER_SUPPORT_ROAD = 82.0;
 
     /** Вес строительства первой дороги из базы после старта разведки. */
@@ -139,7 +139,7 @@ public class EngineerAi {
             );
         }
 
-        if (hasNoRoadOutOfBase()) {
+        if (hasNoRoadOutOfBase(player)) {
             return new AiScore(
                     SCORE_FIRST_BASE_ROAD,
                     "карта уже раскрывается, но из базы ещё не построена ни одна дорога"
@@ -271,8 +271,29 @@ public class EngineerAi {
      *
      * @return true, если после первых открытий из базы ещё нет дороги
      */
-    private boolean hasNoRoadOutOfBase() {
-        return simulation.map.openedCount() > 1 && !simulation.map.hasRoadOutOfBase();
+    private boolean hasNoRoadOutOfBase(PlayerState player) {
+        return simulation.map.openedCount() > 1
+                && !simulation.map.hasRoadOutOfBase()
+                && hasRemainingRoadRelevantGoal(player);
+    }
+
+    /**
+     * Проверяет, остались ли у игрока цели, для которых дорожная сеть реально нужна.
+     * HUNT-хищники сюда не входят: охотник сам идёт в засаду, а водитель после
+     * транквилизатора не требуется. Иначе инженер опять будет строить автобан к
+     * кусту, где человек просто лежит с приманкой. Удобно, но бессмысленно.
+     *
+     * @param player игрок, чьи оставшиеся цели анализируются
+     * @return true, если есть TRAP/TRACKING-цели или динозавр в ловушке без вывоза
+     */
+    private boolean hasRemainingRoadRelevantGoal(PlayerState player) {
+        if (nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent()) {
+            return true;
+        }
+
+        return player.task.stream()
+                .filter(species -> !player.captured.contains(species))
+                .anyMatch(species -> species.captureMethod != CaptureMethod.HUNT);
     }
 
     /**
@@ -360,8 +381,7 @@ public class EngineerAi {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
-                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING
-                        || dinosaur.species.captureMethod == CaptureMethod.HUNT)
+                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)));
     }
@@ -431,6 +451,7 @@ public class EngineerAi {
 
         for (Species species : player.task) {
             if (player.captured.contains(species)) continue;
+            if (species.captureMethod == CaptureMethod.HUNT) continue;
             result.add(species.spawnBiome);
             result.addAll(species.bioTrail);
         }

@@ -31,6 +31,11 @@ public final class PlayerState {
     public final Hunter hunterRanger;
 
     public final List<Trap> traps = new ArrayList<>();
+
+    /** Активная засада охотника на M-хищника или null, если охота не начата. */
+    public HuntAmbush activeHunt;
+
+    /** Количество оставшейся мясной приманки для охоты. */
     public int hunterBait = 3;
     public int turnsSkipped = 0;
 
@@ -53,6 +58,15 @@ public final class PlayerState {
 
     public boolean needs(Species species) {
         return task.contains(species) && !captured.contains(species);
+    }
+
+    /**
+     * Проверяет, лежит ли охотник в активной засаде.
+     *
+     * @return true, если охотник уже начал фазу охоты с приманкой
+     */
+    public boolean hasActiveHunt() {
+        return activeHunt != null;
     }
 
     /**
@@ -91,6 +105,7 @@ public final class PlayerState {
         for (Ranger ranger : rangers()) {
             ranger.setPosition(base);
         }
+        activeHunt = null;
     }
 
 

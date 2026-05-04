@@ -234,6 +234,23 @@ public final class GameMap {
         return tile != null && tile.isGroundPassable();
     }
 
+    /**
+     * Возвращает длину кратчайшего пути обычного наземного рейнджера.
+     *
+     * Метод нужен AI охотника, чтобы не планировать засаду на клетке, до которой
+     * он физически не может дойти. Да, иногда даже героическому охотнику мешает
+     * банальная река, эта жалкая мокрая бюрократия природы.
+     *
+     * @param from стартовая клетка
+     * @param target целевая клетка
+     * @return количество шагов или Integer.MAX_VALUE, если пути нет
+     */
+    public int groundRangerPathDistance(Point from, Point target) {
+        List<Point> path = findGroundRangerPath(from, target);
+        if (path.isEmpty()) return Integer.MAX_VALUE;
+        return path.size() - 1;
+    }
+
 
     /**
      * Проверяет, можно ли поставить ловушку на указанную клетку.

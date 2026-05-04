@@ -391,8 +391,7 @@ public class EngineerAction {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
-                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING
-                        || dinosaur.species.captureMethod == CaptureMethod.HUNT)
+                .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
@@ -414,6 +413,7 @@ public class EngineerAction {
 
         for (Species species : player.task) {
             if (player.captured.contains(species)) continue;
+            if (species.captureMethod == CaptureMethod.HUNT) continue;
             result.add(species.spawnBiome);
             result.addAll(species.bioTrail);
         }

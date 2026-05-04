@@ -180,6 +180,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         drawTiles();
         drawPlacementFrontier();
         drawTraps();
+        drawHuntAmbushes();
         drawPieces();
         drawHud();
     }
@@ -790,6 +791,33 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
                 shapes.line(x, y, x + size * 0.55f, y + size * 0.55f);
                 shapes.line(x + size * 0.55f, y, x, y + size * 0.55f);
             }
+        }
+        shapes.end();
+    }
+
+    /**
+     * Рисует активные приманки охотника на карте.
+     *
+     * Для них пока нет отдельного ассета, поэтому используется простой маркер:
+     * маленький круг с точкой в центре. Да, это не музейная диорама, зато охотник
+     * наконец виден не только в логах, где люди обычно ничего не читают.
+     */
+    private void drawHuntAmbushes() {
+        float size = tilePixelSize();
+
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        for (PlayerState player : simulation.players) {
+            if (player.activeHunt == null || !isVisibleOnBoard(player.activeHunt.baitPosition)) continue;
+
+            Point point = player.activeHunt.baitPosition;
+            float cx = screenX(point) + size * 0.72f;
+            float cy = screenY(point) + size * 0.28f;
+            float radius = Math.max(4f, size * 0.08f);
+
+            shapes.setColor(0.95f, 0.75f, 0.20f, 0.95f);
+            shapes.circle(cx, cy, radius);
+            shapes.setColor(0.30f, 0.12f, 0.05f, 1f);
+            shapes.circle(cx, cy, radius * 0.45f);
         }
         shapes.end();
     }
