@@ -4,6 +4,7 @@ import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
 
 public final class Dinosaur {
+
     public final int id;
     public final Species species;
     public Point position;

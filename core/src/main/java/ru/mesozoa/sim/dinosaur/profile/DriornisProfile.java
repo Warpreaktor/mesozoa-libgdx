@@ -5,7 +5,7 @@ import ru.mesozoa.sim.model.Species;
 
 import java.util.List;
 
-/** Видовой профиль Дриорниса: Лиственный лес → Пойма → Луг. */
+/** Видовой профиль Дриорниса */
 public final class DriornisProfile extends AbstractBioTrailDinosaurProfile {
     public DriornisProfile() {
         super(Species.DRIORNIS, List.of(Biome.BROADLEAF_FOREST, Biome.FLOODPLAIN, Biome.MEADOW));

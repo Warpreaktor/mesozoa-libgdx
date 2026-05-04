@@ -11,6 +11,7 @@ import java.util.List;
 abstract class AbstractBioTrailDinosaurProfile implements DinosaurProfile {
 
     private final Species species;
+
     private final List<Biome> bioTrail;
 
     protected AbstractBioTrailDinosaurProfile(Species species, List<Biome> bioTrail) {

@@ -329,6 +329,41 @@ public final class GameSimulation {
     }
 
     /**
+     * Прогнозирует клетку, в которую динозавр придёт по био-тропе на ближайшем
+     * ходу, если такой маршрут уже существует на открытой карте.
+     * Метод намеренно не прогнозирует случайный шаг: ловушка должна ставиться
+     * на понятную клетку маршрута, а не на «авось он туда споткнётся», потому
+     *
+     * @param dinosaur динозавр, для которого строится прогноз
+     * @return конечная клетка ближайшего движения по био-тропе или Optional.empty()
+     */
+    public Optional<Point> predictDinosaurBioTrailDestination(Dinosaur dinosaur) {
+        if (dinosaur == null || dinosaur.captured || dinosaur.removed) {
+            return Optional.empty();
+        }
+
+        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
+        Tile currentTile = map.tile(dinosaur.position);
+
+        if (currentTile == null) {
+            return Optional.empty();
+        }
+
+        Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, dinosaur.trailIndex);
+        Optional<List<Point>> path = findDinosaurPathToReachableBiome(
+                dinosaur.position,
+                nextBiome,
+                profile
+        );
+
+        if (path.isEmpty() || path.get().size() < 2) {
+            return Optional.empty();
+        }
+
+        return Optional.of(path.get().get(path.get().size() - 1));
+    }
+
+    /**
      * Перемещает динозавра по его биологической тропе.
      *
      * Новая логика намеренно не уводит динозавра в туман войны. Если целевой
@@ -542,6 +577,7 @@ public final class GameSimulation {
 
     private void checkTrapCapture(Dinosaur dinosaur) {
         if (dinosaur.species.captureMethod != CaptureMethod.TRAP) return;
+        if (dinosaur.lastPosition == null || dinosaur.lastPosition.equals(dinosaur.position)) return;
 
         for (PlayerState player : players) {
             if (!player.needs(dinosaur.species)) continue;

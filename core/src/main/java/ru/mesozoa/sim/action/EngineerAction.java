@@ -3,7 +3,6 @@ package ru.mesozoa.sim.action;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.Biome;
 import ru.mesozoa.sim.model.CaptureMethod;
-import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
@@ -99,9 +98,9 @@ public class EngineerAction {
         Optional<Dinosaur> target = rangerActionExecutor.nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP);
 
         if (target.isPresent()) {
-            Point targetPosition = target.get().position;
-            if (!isInTrapPlacementRange(player.engineerRanger.position(), targetPosition)) {
-                moveEngineerToward(player, targetPosition, movementPoints);
+            Point trapPosition = predictedTrapPosition(target.get()).orElse(target.get().position);
+            if (!isInTrapPlacementRange(player.engineerRanger.position(), trapPosition)) {
+                moveEngineerToward(player, trapPosition, movementPoints);
             }
             return;
         }
@@ -247,7 +246,12 @@ public class EngineerAction {
         return Optional.ofNullable(player.scoutRanger.position());
     }
 
-    /** Выставляет ловушки в клетку инженера и соседние клетки, включая диагонали. */
+    /**
+     * Выставляет доступные ловушки на прогнозные клетки прихода нужных S-динозавров.
+     *
+     * @param player игрок, чей инженер ставит ловушки
+     * @return количество новых ловушек
+     */
     private int placeAvailableTrapsAroundEngineer(PlayerState player) {
         int available = Math.max(0, simulation.inventoryConfig.maxTrapsPerPlayer - activeTrapCount(player));
         if (available == 0) {
@@ -259,6 +263,7 @@ public class EngineerAction {
             if (placed >= available) break;
             if (!simulation.map.canPlaceTrap(candidate)) continue;
             if (hasActiveTrapAt(player, candidate)) continue;
+            if (hasLiveDinosaurAt(candidate)) continue;
 
             player.traps.add(new Trap(player.id, candidate));
             placed++;
@@ -279,10 +284,34 @@ public class EngineerAction {
     }
 
     /**
+     * Проверяет, стоит ли живой динозавр на выбранной клетке прямо сейчас.
+     *
+     * @param point клетка для проверки
+     * @return true, если клетка занята непойманным и не удалённым динозавром
+     */
+    private boolean hasLiveDinosaurAt(Point point) {
+        return simulation.dinosaurs.stream()
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                .anyMatch(dinosaur -> dinosaur.position.equals(point));
+    }
+
+    /**
+     * Возвращает прогнозную клетку ловушки для динозавра.
+     *
+     * @param dinosaur динозавр, для которого ищется клетка засады
+     * @return клетка будущего прихода, если она отличается от текущей позиции
+     */
+    private Optional<Point> predictedTrapPosition(Dinosaur dinosaur) {
+        return simulation.predictDinosaurBioTrailDestination(dinosaur)
+                .filter(point -> !point.equals(dinosaur.position));
+    }
+
+    /**
      * Кандидаты для установки ловушек.
      *
-     * Порядок важен: сначала клетки, связанные с нужными TRAP-целями,
-     * затем клетка инженера и все восемь соседей.
+     * Ловушка ставится только на прогнозную клетку прихода динозавра по
+     * био-тропе. Текущая клетка динозавра намеренно исключена: ловушка под
+     * лапами — это не засада, а бюрократический телепорт в клетку «пойман».
      */
     private List<Point> trapPlacementCandidates(PlayerState player) {
         LinkedHashSet<Point> result = new LinkedHashSet<>();
@@ -292,22 +321,9 @@ public class EngineerAction {
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
                 .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())))
-                .forEach(dinosaur -> {
-                    Point predicted = predictNextBioStep(dinosaur);
-                    if (predicted != null && isInTrapPlacementRange(player.engineerRanger.position(), predicted)) {
-                        result.add(predicted);
-                    }
-
-                    if (isInTrapPlacementRange(player.engineerRanger.position(), dinosaur.position)) {
-                        result.add(dinosaur.position);
-                    }
-                });
-
-        result.add(player.engineerRanger.position());
-
-        for (Direction direction : Direction.values()) {
-            result.add(direction.from(player.engineerRanger.position()));
-        }
+                .forEach(dinosaur -> predictedTrapPosition(dinosaur)
+                        .filter(point -> isInTrapPlacementRange(player.engineerRanger.position(), point))
+                        .ifPresent(result::add));
 
         return new ArrayList<>(result);
     }
@@ -361,14 +377,4 @@ public class EngineerAction {
         return dx <= 1 && dy <= 1;
     }
 
-    private Point predictNextBioStep(Dinosaur dinosaur) {
-        Point target = predictNextBioTarget(dinosaur);
-        if (target == null) return null;
-        return simulation.stepTowardPlaced(dinosaur.position, target);
-    }
-
-    private Point predictNextBioTarget(Dinosaur dinosaur) {
-        Biome nextBiome = dinosaur.species.bioTrail.get((dinosaur.trailIndex + 1) % dinosaur.species.bioTrail.size());
-        return simulation.map.nearestPlacedBiome(dinosaur.position, nextBiome);
-    }
 }
