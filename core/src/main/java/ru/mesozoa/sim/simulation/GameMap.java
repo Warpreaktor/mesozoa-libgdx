@@ -159,6 +159,106 @@ public final class GameMap {
     }
 
     /**
+     * Возвращает область карты, до которой обычная наземная команда может дойти от базы.
+     *
+     * Разведчик не должен тянуть исследование от собственной удалённой позиции,
+     * если остальная экспедиция туда не попадёт. Этот метод даёт AI карту
+     * реального плацдарма команды: база, дороги не обязательны, но горы и озёра
+     * без мостов по-прежнему разрывают связность. Да, география снова мешает
+     * красивым планам, какая неожиданность.
+     *
+     * @return множество клеток, связанных с базой наземной проходимостью
+     */
+    public Set<Point> groundNetworkFromBase() {
+        LinkedHashSet<Point> visited = new LinkedHashSet<>();
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+
+        queue.add(base);
+        visited.add(base);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            for (Point neighbor : groundRangerReachableNeighbors(current)) {
+                if (visited.add(neighbor)) {
+                    queue.addLast(neighbor);
+                }
+            }
+        }
+
+        return visited;
+    }
+
+    /**
+     * Считает, сколько соседей указанной клетки уже входит в наземный плацдарм от базы.
+     *
+     * Для разведчика это главный признак полезного фронтира: если новая клетка
+     * касается такой области, то найденный там динозавр хотя бы теоретически
+     * будет нужен команде, а не одинокому биноклю где-то за горной стеной.
+     *
+     * @param point проверяемая свободная или уже открытая клетка
+     * @return количество соседних клеток из наземной сети базы
+     */
+    public int groundNetworkSupportCount(Point point) {
+        if (point == null) return 0;
+
+        Set<Point> network = groundNetworkFromBase();
+        int result = 0;
+        for (Point neighbor : point.neighbors4()) {
+            if (network.contains(neighbor)) {
+                result++;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Проверяет, касается ли клетка наземной сети экспедиции от базы.
+     *
+     * @param point клетка для проверки
+     * @return true, если рядом есть клетка, достижимая обычной командой от базы
+     */
+    public boolean touchesGroundNetworkFromBase(Point point) {
+        return groundNetworkSupportCount(point) > 0;
+    }
+
+    /**
+     * Возвращает расстояние от клетки до ближайшей точки наземной сети базы.
+     *
+     * Метод использует манхэттенское расстояние и нужен только как мягкий штраф
+     * в AI разведчика. Это не pathfinding и не притворяется им, редкий случай
+     * честности в вычислениях.
+     *
+     * @param point клетка, для которой ищется ближайшая опора команды
+     * @return расстояние до сети или Integer.MAX_VALUE, если сети нет
+     */
+    public int distanceToGroundNetworkFromBase(Point point) {
+        if (point == null) return Integer.MAX_VALUE;
+
+        int best = Integer.MAX_VALUE;
+        for (Point networkPoint : groundNetworkFromBase()) {
+            best = Math.min(best, point.manhattan(networkPoint));
+        }
+        return best;
+    }
+
+    /**
+     * Ищет ближайшую к указанной клетке точку наземной сети базы.
+     *
+     * Если разведчик вскрыл непроходимый тайл, его фигурка остаётся на ближайшей
+     * рабочей кромке экспедиции, а не телепортируется на вершину горы, чтобы
+     * потом оттуда торжественно портить план всем остальным.
+     *
+     * @param point ориентир, рядом с которым нужна опорная клетка
+     * @return ближайшая точка наземной сети или пустой результат
+     */
+    public Optional<Point> nearestGroundNetworkPoint(Point point) {
+        if (point == null) return Optional.empty();
+
+        return groundNetworkFromBase().stream()
+                .min(Comparator.comparingInt(point::manhattan));
+    }
+
+    /**
      * Возвращает выложенных соседей клетки по четырём сторонам.
      *
      * База входит в результат, если она соседствует с указанной клеткой.

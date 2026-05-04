@@ -4,6 +4,7 @@ import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
+import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.tile.ExtraTile;
@@ -11,9 +12,43 @@ import ru.mesozoa.sim.tile.MainTile;
 import ru.mesozoa.sim.tile.Tile;
 
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
+/**
+ * Выполнение действия разведчика.
+ *
+ * Разведчик открывает основные тайлы и автоматически достраивает дополнительные
+ * тайлы по переходам. Важное ограничение AI: разведка теперь тянется от
+ * реального плацдарма экспедиции, а не от одинокой фигурки разведчика, которая
+ * решила устроить соло-поход за горную стену. Археология ошибок, сезон новый.
+ */
 public class ScoutAction {
+
+    /** Базовый бонус для клетки, которую команда может поддержать с земли. */
+    private static final double SUPPORTED_FRONTIER_BONUS = 1_000.0;
+
+    /** Штраф для фронтира, который не касается достижимой области команды. */
+    private static final double UNSUPPORTED_FRONTIER_PENALTY = -1_000.0;
+
+    /** Бонус за новый проходимый тайл, который расширяет рабочую область команды. */
+    private static final double PASSABLE_TILE_BONUS = 240.0;
+
+    /** Штраф за непроходимый основной тайл на фронтире команды. */
+    private static final double BLOCKING_TILE_PENALTY = -160.0;
+
+    /** Бонус за совпадение биома вытянутого тайла с ещё ненайденной целью. */
+    private static final double MISSING_SPAWN_BIOME_BONUS = 120.0;
+
+    /** Бонус за каждый переход, который достраивает дополнительный тайл возле команды. */
+    private static final double SUPPORTED_EXPANSION_BONUS = 55.0;
+
+    /** Штраф за переход, который улетает в область, не связанную с командой. */
+    private static final double UNSUPPORTED_EXPANSION_PENALTY = -35.0;
+
+    /** Штраф за каждый шаг удаления фронтира от базы. */
+    private static final double BASE_DISTANCE_PENALTY = 4.0;
 
     private final GameSimulation simulation;
     private final RangerActionExecutor rangerActionExecutor;
@@ -28,13 +63,28 @@ public class ScoutAction {
         this.dinosaurAction = dinosaurAction;
     }
 
-
+    /**
+     * Выполняет план разведчика и списывает все его очки действия.
+     *
+     * @param player игрок, чей разведчик активируется
+     * @param plan выбранный AI план разведчика
+     */
     public void action(PlayerState player, RangerPlan plan) {
         int movementPoints = plan.ranger().currentActionPoints();
         action(player, movementPoints);
         plan.ranger().spendActionPoints(movementPoints);
     }
 
+    /**
+     * Выполняет действие разведки с указанным числом очков действия.
+     *
+     * Если основные тайлы закончились, разведчик пытается вернуться к ближайшему
+     * фронтиру. Иначе он открывает один основной тайл на командно-полезной кромке
+     * карты, а не рядом с собственной последней авантюрой.
+     *
+     * @param player игрок, чей разведчик действует
+     * @param movementPoints доступные очки действия
+     */
     public void action(PlayerState player, int movementPoints) {
         if (simulation.tileBag.isEmpty()) {
             moveRoleTowardNearestFrontier(player, RangerRole.SCOUT, movementPoints);
@@ -44,6 +94,13 @@ public class ScoutAction {
         exploreOneTile(player);
     }
 
+    /**
+     * Двигает указанную роль к ближайшему свободному фронтиру карты.
+     *
+     * @param player игрок, чей рейнджер двигается
+     * @param role роль рейнджера
+     * @param movementPoints доступные очки движения
+     */
     private void moveRoleTowardNearestFrontier(PlayerState player, RangerRole role, int movementPoints) {
         Point start = player.positionOf(role);
         Point frontier = simulation.map.nearestUnexploredFrontier(start);
@@ -52,14 +109,24 @@ public class ScoutAction {
         rangerActionExecutor.moveRoleToward(player, role, frontier, movementPoints);
     }
 
+    /**
+     * Открывает один основной тайл и все его дополнительные переходы.
+     *
+     * Место и поворот основного тайла выбираются до выкладки: AI старается не
+     * создавать изолированные островки разведки, потому что динозавр за стеной
+     * гор — это не цель, а музейный экспонат для очень одинокого разведчика.
+     *
+     * @param player игрок, выполняющий разведку
+     */
     private void exploreOneTile(PlayerState player) {
         MainTile drawn = simulation.tileBag.draw();
         if (drawn == null) return;
 
-        Point placement = choosePlacementPoint(player);
+        Point placement = choosePlacementPoint(player, drawn);
         if (placement == null) return;
 
-        Tile placedTile = placeDrawnTile(player, drawn, placement, false);
+        int rotationQuarterTurns = chooseRotationQuarterTurns(player, drawn, placement);
+        Tile placedTile = placeDrawnTile(player, drawn, placement, false, rotationQuarterTurns);
         if (placedTile == null) return;
 
         for (Direction direction : placedTile.expansionDirections()) {
@@ -75,21 +142,208 @@ public class ScoutAction {
                 continue;
             }
 
-            placeDrawnTile(player, extra, extraPoint, true);
+            placeDrawnTile(player, extra, extraPoint, true, simulation.random.nextInt(4));
         }
     }
 
-    private Point choosePlacementPoint(PlayerState player) {
+    /**
+     * Выбирает лучшую свободную клетку для нового основного тайла.
+     *
+     * Приоритет теперь не "где ближе к разведчику", а "где это поможет всей
+     * экспедиции". Поэтому клетка рядом с наземно достижимой областью базы почти
+     * всегда лучше дальнего края карты за горами.
+     *
+     * @param player игрок, чьё задание учитывается
+     * @param drawn вытянутый основной тайл
+     * @return лучшая клетка выкладки или null, если выкладка невозможна
+     */
+    private Point choosePlacementPoint(PlayerState player, MainTile drawn) {
         List<Point> candidates = simulation.map.availablePlacementPoints();
         if (candidates.isEmpty()) return null;
 
+        Set<Species> missingSpecies = missingNeededSpecies(player);
+
         return candidates.stream()
-                .min(Comparator.comparingInt(p -> p.manhattan(player.scoutRanger.position())))
+                .max(Comparator
+                        .comparingDouble((Point point) -> scoutPlacementScore(player, drawn, point, missingSpecies))
+                        .thenComparingInt(point -> -point.manhattan(simulation.map.base))
+                        .thenComparingInt(point -> -point.manhattan(player.engineerRanger.position()))
+                        .thenComparingInt(point -> -point.manhattan(player.hunterRanger.position())))
                 .orElse(candidates.get(simulation.random.nextInt(candidates.size())));
     }
 
-    private Tile placeDrawnTile(PlayerState player, Tile tile, Point placement, boolean automaticExpansion) {
-        int rotationQuarterTurns = simulation.random.nextInt(4);
+    /**
+     * Рассчитывает полезность клетки для выкладки основного тайла разведчиком.
+     *
+     * @param player игрок, для которого строится разведка
+     * @param drawn вытянутый основной тайл
+     * @param point проверяемая свободная клетка
+     * @param missingSpecies виды задания, которых ещё нет на карте
+     * @return численная полезность клетки
+     */
+    private double scoutPlacementScore(
+            PlayerState player,
+            MainTile drawn,
+            Point point,
+            Set<Species> missingSpecies
+    ) {
+        int supportCount = simulation.map.groundNetworkSupportCount(point);
+        int distanceToGroundNetwork = simulation.map.distanceToGroundNetworkFromBase(point);
+
+        double score = supportCount > 0
+                ? SUPPORTED_FRONTIER_BONUS + supportCount * 45.0
+                : UNSUPPORTED_FRONTIER_PENALTY - distancePenalty(distanceToGroundNetwork, 75.0);
+
+        score += drawn.isGroundPassable() ? PASSABLE_TILE_BONUS : BLOCKING_TILE_PENALTY;
+        score += missingSpawnBiomeScore(drawn, missingSpecies);
+        score += bestExpansionScore(player, drawn, point, missingSpecies);
+        score -= point.manhattan(simulation.map.base) * BASE_DISTANCE_PENALTY;
+        score -= Math.min(point.manhattan(player.engineerRanger.position()), 12) * 1.5;
+        score -= Math.min(point.manhattan(player.hunterRanger.position()), 12) * 1.5;
+        return score;
+    }
+
+    /**
+     * Превращает расстояние до команды в ограниченный штраф.
+     *
+     * @param distance расстояние до наземной сети базы
+     * @param multiplier множитель штрафа
+     * @return штраф, безопасный для Integer.MAX_VALUE
+     */
+    private double distancePenalty(int distance, double multiplier) {
+        if (distance == Integer.MAX_VALUE) return 10_000.0;
+        return Math.min(distance, 20) * multiplier;
+    }
+
+    /**
+     * Даёт бонус тайлу, если его биом может вытянуть дополнительный спаун нужного вида.
+     *
+     * @param drawn вытянутый основной тайл
+     * @param missingSpecies виды задания, которых ещё не видно на карте
+     * @return бонус за поисковый биом
+     */
+    private double missingSpawnBiomeScore(MainTile drawn, Set<Species> missingSpecies) {
+        for (Species species : missingSpecies) {
+            if (species.spawnBiome == drawn.biome) {
+                return drawn.hasExpansion()
+                        ? MISSING_SPAWN_BIOME_BONUS
+                        : MISSING_SPAWN_BIOME_BONUS * 0.35;
+            }
+        }
+        return 0.0;
+    }
+
+    /**
+     * Выбирает поворот основного тайла, который лучше всего поддерживает командную разведку.
+     *
+     * @param player игрок, чьё задание учитывается
+     * @param drawn вытянутый основной тайл
+     * @param placement выбранная клетка выкладки
+     * @return количество поворотов по 90 градусов по часовой стрелке
+     */
+    private int chooseRotationQuarterTurns(PlayerState player, MainTile drawn, Point placement) {
+        Set<Species> missingSpecies = missingNeededSpecies(player);
+        int bestRotation = 0;
+        double bestScore = Double.NEGATIVE_INFINITY;
+
+        for (int rotation = 0; rotation < 4; rotation++) {
+            double score = expansionScoreForRotation(drawn, placement, missingSpecies, rotation);
+            if (score > bestScore) {
+                bestScore = score;
+                bestRotation = rotation;
+            }
+        }
+
+        return bestRotation;
+    }
+
+    /**
+     * Возвращает лучшую возможную оценку переходов основного тайла при любом повороте.
+     *
+     * @param player игрок, чьё задание учитывается
+     * @param drawn вытянутый основной тайл
+     * @param placement проверяемая клетка выкладки
+     * @param missingSpecies виды задания, которых ещё не видно на карте
+     * @return лучшая оценка переходов
+     */
+    private double bestExpansionScore(
+            PlayerState player,
+            MainTile drawn,
+            Point placement,
+            Set<Species> missingSpecies
+    ) {
+        double best = Double.NEGATIVE_INFINITY;
+        for (int rotation = 0; rotation < 4; rotation++) {
+            best = Math.max(best, expansionScoreForRotation(drawn, placement, missingSpecies, rotation));
+        }
+        return best == Double.NEGATIVE_INFINITY ? 0.0 : best;
+    }
+
+    /**
+     * Оценивает, насколько переходы тайла при конкретном повороте останутся полезными команде.
+     *
+     * @param drawn вытянутый основной тайл
+     * @param placement клетка выкладки основного тайла
+     * @param missingSpecies виды задания, которых ещё не видно на карте
+     * @param rotationQuarterTurns проверяемый поворот
+     * @return оценка переходов при этом повороте
+     */
+    private double expansionScoreForRotation(
+            MainTile drawn,
+            Point placement,
+            Set<Species> missingSpecies,
+            int rotationQuarterTurns
+    ) {
+        if (drawn.baseExpansionDirections.isEmpty()) {
+            return 0.0;
+        }
+
+        double score = 0.0;
+        boolean missingBiome = missingSpecies.stream().anyMatch(species -> species.spawnBiome == drawn.biome);
+
+        for (Direction baseDirection : drawn.baseExpansionDirections) {
+            Direction direction = baseDirection.rotateClockwiseQuarterTurns(rotationQuarterTurns);
+            Point extraPoint = direction.from(placement);
+
+            if (!simulation.map.canPlaceExpansion(extraPoint)) {
+                score -= 70.0;
+                continue;
+            }
+
+            boolean cardinalToMainTile = Math.abs(direction.dx) + Math.abs(direction.dy) == 1;
+            boolean supportedByMainTile = cardinalToMainTile && drawn.isGroundPassable();
+            boolean supportedByExistingTeam = simulation.map.touchesGroundNetworkFromBase(extraPoint);
+
+            if (supportedByMainTile || supportedByExistingTeam) {
+                score += SUPPORTED_EXPANSION_BONUS;
+                if (missingBiome) {
+                    score += 35.0;
+                }
+            } else {
+                score += UNSUPPORTED_EXPANSION_PENALTY;
+            }
+        }
+
+        return score;
+    }
+
+    /**
+     * Размещает вытянутый тайл на карте.
+     *
+     * @param player игрок, выполняющий разведку
+     * @param tile физический тайл
+     * @param placement координата размещения
+     * @param automaticExpansion true для автоматического дополнительного тайла
+     * @param rotationQuarterTurns поворот тайла по часовой стрелке
+     * @return размещённый тайл или null, если выкладка не удалась
+     */
+    private Tile placeDrawnTile(
+            PlayerState player,
+            Tile tile,
+            Point placement,
+            boolean automaticExpansion,
+            int rotationQuarterTurns
+    ) {
         tile.place(placement, rotationQuarterTurns);
 
         boolean placed = automaticExpansion
@@ -99,7 +353,7 @@ public class ScoutAction {
         if (!placed) return null;
 
         if (!automaticExpansion) {
-            player.setPosition(RangerRole.SCOUT, placement);
+            player.setPosition(RangerRole.SCOUT, scoutPositionAfterExploration(player, tile, placement));
         }
 
         if (automaticExpansion && tile.hasSpawn() && !tile.isSpawnUsed()) {
@@ -108,5 +362,47 @@ public class ScoutAction {
         }
 
         return tile;
+    }
+
+    /**
+     * Выбирает позицию фигурки разведчика после открытия основного тайла.
+     *
+     * Если открытый тайл непроходим для обычной команды, разведчик остаётся на
+     * ближайшей опорной клетке наземной сети. Так он не становится центром новой
+     * бесполезной экспедиции за горой или озером. Да, иногда бинокль работает и
+     * с берега, цивилизация выжила именно благодаря таким открытиям.
+     *
+     * @param player игрок, чей разведчик перемещается
+     * @param tile открытый тайл
+     * @param placement клетка открытого тайла
+     * @return новая позиция разведчика
+     */
+    private Point scoutPositionAfterExploration(PlayerState player, Tile tile, Point placement) {
+        if (tile.isGroundPassable() && simulation.map.canGroundRangerStandOn(placement)) {
+            return placement;
+        }
+
+        return simulation.map.nearestGroundNetworkPoint(placement)
+                .orElse(player.scoutRanger.position());
+    }
+
+    /**
+     * Возвращает виды из задания игрока, которых ещё нет на карте и которые не пойманы.
+     *
+     * @param player игрок, чьё задание анализируется
+     * @return набор пока ненайденных видов
+     */
+    private Set<Species> missingNeededSpecies(PlayerState player) {
+        EnumSet<Species> result = EnumSet.noneOf(Species.class);
+        result.addAll(player.task);
+        result.removeAll(player.captured);
+
+        for (var dinosaur : simulation.dinosaurs) {
+            if (!dinosaur.captured && !dinosaur.removed && player.needs(dinosaur.species)) {
+                result.remove(dinosaur.species);
+            }
+        }
+
+        return result;
     }
 }
