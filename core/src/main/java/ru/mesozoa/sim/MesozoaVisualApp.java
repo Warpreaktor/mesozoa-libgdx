@@ -3,6 +3,7 @@ package ru.mesozoa.sim;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.InputAdapter;
+import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
@@ -93,18 +94,21 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         hudStage = new MesozoaHudStage(HUD_WIDTH);
         resize(Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 
-        Gdx.input.setInputProcessor(new InputAdapter() {
-            @Override
-            public boolean scrolled(float amountX, float amountY) {
-                if (Gdx.input.getX() >= boardViewportWidth()) {
-                    return false;
-                }
+        Gdx.input.setInputProcessor(new InputMultiplexer(
+                new InputAdapter() {
+                    @Override
+                    public boolean scrolled(float amountX, float amountY) {
+                        if (Gdx.input.getX() >= boardViewportWidth()) {
+                            return false;
+                        }
 
-                float factor = (float) Math.pow(MOUSE_WHEEL_ZOOM_STEP, -amountY);
-                inputHandler.zoomAtMouse(factor);
-                return true;
-            }
-        });
+                        float factor = (float) Math.pow(MOUSE_WHEEL_ZOOM_STEP, -amountY);
+                        inputHandler.zoomAtMouse(factor);
+                        return true;
+                    }
+                },
+                hudStage.inputProcessor()
+        ));
 
         restart();
     }

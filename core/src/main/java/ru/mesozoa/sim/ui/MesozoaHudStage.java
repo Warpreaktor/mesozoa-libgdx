@@ -1,5 +1,6 @@
 package ru.mesozoa.sim.ui;
 
+import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane;
@@ -26,7 +27,6 @@ import java.util.Locale;
 public final class MesozoaHudStage {
     private static final int PANEL_PADDING = 12;
     private static final int INNER_PADDING = 8;
-    private static final int MAX_LOG_LINES = 20;
     private static final int MAX_BAIT = 3;
 
     private final int hudWidth;
@@ -115,6 +115,15 @@ public final class MesozoaHudStage {
      */
     public void resize(int width, int height) {
         stage.getViewport().update(width, height, true);
+    }
+
+    /**
+     * Возвращает input processor HUD, чтобы ScrollPane мог принимать колесо мыши.
+     *
+     * @return input processor Scene2D stage
+     */
+    public InputProcessor inputProcessor() {
+        return stage;
     }
 
     /** Освобождает ресурсы Scene2D HUD. */
@@ -227,16 +236,15 @@ public final class MesozoaHudStage {
         Table logTable = new Table(skin);
         logTable.defaults().left().growX().padBottom(2);
 
-        int count = 0;
         for (String line : simulation.log) {
-            if (count >= MAX_LOG_LINES) break;
-            logTable.add(wrappingLabel(line, "small")).growX().row();
-            count++;
+            logTable.add(wrappingLabel(line, logLineStyle(line))).growX().row();
         }
 
         ScrollPane scrollPane = new ScrollPane(logTable, skin);
         scrollPane.setFadeScrollBars(false);
         scrollPane.setScrollingDisabled(true, false);
+        scrollPane.setScrollbarsVisible(true);
+        scrollPane.setOverscroll(false, false);
 
         panel.add(scrollPane).growX().height(340).row();
     }
@@ -255,6 +263,20 @@ public final class MesozoaHudStage {
 
     private Label sectionLabel(String text) {
         return label(text, "section");
+    }
+
+    /**
+     * Выбирает визуальный стиль строки журнала.
+     *
+     * @param line строка журнала
+     * @return имя стиля label из skin
+     */
+    private String logLineStyle(String line) {
+        if (line != null && line.startsWith("РАУНД-")) {
+            return "round";
+        }
+
+        return "small";
     }
 
     /**

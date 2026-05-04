@@ -49,9 +49,12 @@ public final class MesozoaSkinFactory {
         skin.add("good", new Label.LabelStyle(defaultFont, new Color(0.52f, 0.90f, 0.55f, 1f)));
         skin.add("warning", new Label.LabelStyle(defaultFont, new Color(0.95f, 0.78f, 0.35f, 1f)));
         skin.add("danger", new Label.LabelStyle(defaultFont, new Color(0.95f, 0.46f, 0.38f, 1f)));
+        skin.add("round", new Label.LabelStyle(titleFont, new Color(0.98f, 0.86f, 0.50f, 1f)));
 
         ScrollPane.ScrollPaneStyle scrollPaneStyle = new ScrollPane.ScrollPaneStyle();
         scrollPaneStyle.background = skin.newDrawable("white", new Color(0.07f, 0.08f, 0.09f, 0.62f));
+        scrollPaneStyle.vScroll = skin.newDrawable("white", new Color(0.10f, 0.11f, 0.12f, 0.95f));
+        scrollPaneStyle.vScrollKnob = skin.newDrawable("white", new Color(0.38f, 0.45f, 0.42f, 0.95f));
         skin.add("default", scrollPaneStyle);
 
         skin.add("hud-background", skin.newDrawable("white", new Color(0.075f, 0.085f, 0.095f, 0.98f)), Drawable.class);

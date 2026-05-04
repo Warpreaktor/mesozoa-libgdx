@@ -229,7 +229,7 @@ public final class GameSimulation {
         activePlayerUsedRoles = EnumSet.noneOf(RangerRole.class);
         activePlayerActionIndex = 0;
         roundStarted = true;
-        log("Раунд " + round);
+        log("РАУНД-" + round);
     }
 
     private boolean prepareCurrentPlayerTurn(PlayerState player) {
@@ -420,8 +420,17 @@ public final class GameSimulation {
         result.completedPlayers = (int) players.stream().filter(PlayerState::isComplete).count();
     }
 
+    /**
+     * Добавляет сообщение в журнал партии.
+     *
+     * Журнал хранит заметно больше строк, чем помещается в HUD: правый лог теперь
+     * прокручивается, поэтому старые события можно дочитать, а не гадать по
+     * обрывкам, как археолог по одному зубу динозавра.
+     *
+     * @param message текст сообщения
+     */
     public void log(String message) {
         log.addFirst(message);
-        while (log.size() > 18) log.removeLast();
+        while (log.size() > 500) log.removeLast();
     }
 }
