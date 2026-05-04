@@ -9,6 +9,7 @@ import ru.mesozoa.sim.simulation.GameSimulation;
 public class DriverAction {
 
     private final GameSimulation simulation;
+
     private final RangerActionExecutor rangerActionExecutor;
 
     public DriverAction(GameSimulation simulation,
@@ -23,11 +24,6 @@ public class DriverAction {
         int movementPoints = plan.ranger().currentActionPoints();
         action(player, target, movementPoints);
         plan.ranger().spendActionPoints(movementPoints);
-    }
-
-    public void action(PlayerState player, int movementPoints) {
-        Point target = chooseDriverTarget(player);
-        action(player, target, movementPoints);
     }
 
     private void action(PlayerState player, Point target, int movementPoints) {
