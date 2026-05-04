@@ -18,16 +18,12 @@ import java.util.Map;
 
 /**
  * Динамическое игровое поле.
- *
- * Центр карты определяется тайлов BaseTile
+ * Центр карты определяется по BaseTile
  */
 public final class GameMap {
 
     /**
      * Обычные тайлы местности, выложенные игроками на стол.
-     *
-     * Базовый тайл здесь не хранится, потому что это отдельный объект карты,
-     * а не тайл биома из мешочка.
      */
     private final LinkedHashMap<Point, Tile> placedTiles = new LinkedHashMap<>();
 
@@ -51,10 +47,6 @@ public final class GameMap {
      */
     public static GameMap createWithBase() {
         return new GameMap(new BaseTile());
-    }
-
-    public boolean inBounds(Point p) {
-        return true;
     }
 
     /**
@@ -121,7 +113,7 @@ public final class GameMap {
     }
 
     public boolean canPlaceExpansion(Point p) {
-        return !isPlaced(p) && inBounds(p);
+        return !isPlaced(p);
     }
 
     private boolean isAdjacentToPlacedTile(Point p) {
@@ -652,38 +644,10 @@ public final class GameMap {
         return best;
     }
 
-    public Point nearestClosed(Point from) {
-        return nearestUnexploredFrontier(from);
-    }
-
     /**
      * Количество открытых клеток карты, включая отдельный базовый тайл.
      */
     public int openedCount() {
         return placedTiles.size() + 1;
-    }
-
-    public int minX() {
-        return Math.min(base.x, placedTiles.keySet().stream().mapToInt(p -> p.x).min().orElse(base.x));
-    }
-
-    public int maxX() {
-        return Math.max(base.x, placedTiles.keySet().stream().mapToInt(p -> p.x).max().orElse(base.x));
-    }
-
-    public int minY() {
-        return Math.min(base.y, placedTiles.keySet().stream().mapToInt(p -> p.y).min().orElse(base.y));
-    }
-
-    public int maxY() {
-        return Math.max(base.y, placedTiles.keySet().stream().mapToInt(p -> p.y).max().orElse(base.y));
-    }
-
-    public int widthInTiles() {
-        return maxX() - minX() + 1;
-    }
-
-    public int heightInTiles() {
-        return maxY() - minY() + 1;
     }
 }
