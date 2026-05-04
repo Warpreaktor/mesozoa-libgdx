@@ -56,20 +56,24 @@ public final class Tile {
     /** Был ли уже использован спаун этого тайла. */
     public boolean spawnUsed;
 
-    public Tile(Biome biome, Species spawnSpecies) {
-        this(biome, spawnSpecies, List.of(), false, List.of());
-    }
-
-    public Tile(Biome biome, Species spawnSpecies, List<Direction> expansionDirections) {
-        this(biome, spawnSpecies, expansionDirections, false, List.of());
-    }
+    /**
+     * Может ли обычный наземный рейнджер стоять на этом тайле.
+     *
+     * Это состояние конкретного тайла, а не свойство биома.
+     * Например, тайл реки по умолчанию непроходим, но после постройки моста
+     * становится проходимым, оставаясь при этом биомом RIVER.
+     *
+     * Разведчик это ограничение игнорирует.
+     */
+    private boolean groundPassable;
 
     public Tile(
             Biome biome,
             Species spawnSpecies,
             List<Direction> expansionDirections,
             boolean hasBridge,
-            List<Direction> roadDirections
+            List<Direction> roadDirections,
+            boolean groundPassable
     ) {
         this.biome = biome;
         this.spawnSpecies = spawnSpecies;
@@ -83,6 +87,7 @@ public final class Tile {
         this.position = null;
         this.opened = false;
         this.spawnUsed = false;
+        this.groundPassable = groundPassable;
     }
 
     /**
@@ -124,14 +129,27 @@ public final class Tile {
     }
 
     /**
-     * Строит мост на тайле.
+     * Добавляет мост на тайл.
      *
-     * @return true, если мост был построен; false, если мост уже существовал
+     * Мост меняет состояние конкретного тайла: он остаётся своим биомом,
+     * но становится проходимым для наземных рейнджеров и доступным для дорожной логики.
      */
     public boolean addBridge() {
-        if (hasBridge) return false;
-        hasBridge = true;
+        this.hasBridge = true;
+        this.groundPassable = true;
         return true;
+    }
+
+    /**
+     * Проверяет, может ли обычный наземный рейнджер стоять на этом тайле.
+     *
+     * Используется охотником, инженером и другими наземными специалистами.
+     * Разведчик ходит по отдельным правилам.
+     *
+     * @return true, если тайл проходим для наземного рейнджера
+     */
+    public boolean isGroundPassable() {
+        return groundPassable;
     }
 
     /**

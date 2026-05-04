@@ -257,12 +257,43 @@ public final class TileCatalog {
                         blueprint.spawnSpecies,
                         blueprint.expansionDirections,
                         blueprint.hasBridge,
-                        blueprint.roadDirections
+                        blueprint.roadDirections,
+                        isGroundPassableByDefault(blueprint.biome, blueprint.hasBridge)
                 ));
             }
         }
 
         return result;
+    }
+
+    /**
+     * Определяет стартовую проходимость физического тайла для наземных рейнджеров.
+     *
+     * Это не свойство биома как такового, а правило начальной генерации тайла.
+     * После начала игры состояние конкретного тайла может измениться:
+     * например, инженер построит мост на реке, и тайл станет проходимым.
+     *
+     * @param biome биом создаваемого тайла
+     * @param hasBridge есть ли мост на тайле уже при создании
+     * @return true, если созданный тайл должен быть проходимым для наземных рейнджеров
+     */
+    private static boolean isGroundPassableByDefault(Biome biome, boolean hasBridge) {
+        if (hasBridge) {
+            return true;
+        }
+
+        return switch (biome) {
+            case LANDING,
+                    BROADLEAF_FOREST,
+                    CONIFEROUS_FOREST,
+                    MEADOW -> true;
+
+            case FLOODPLAIN,
+                    RIVER,
+                    SWAMP,
+                    LAKE,
+                    MOUNTAIN -> false;
+        };
     }
 
     /**

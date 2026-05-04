@@ -166,6 +166,135 @@ public final class GameMap {
         return result;
     }
 
+
+    /**
+     * Возвращает соседние клетки, куда может перейти инженер пешком.
+     *
+     * Инженер не использует дороги как ограничение движения, но он не может
+     * заходить в болото, горы и озёра без построенного моста. База считается
+     * обычной стартовой клеткой для пешего перемещения.
+     */
+    public List<Point> engineerReachableNeighbors(Point from) {
+        ArrayList<Point> result = new ArrayList<>();
+
+        if (!canEngineerStandOn(from)) {
+            return result;
+        }
+
+        for (Point neighbor : from.neighbors4()) {
+            if (canEngineerStandOn(neighbor)) {
+                result.add(neighbor);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Возвращает следующий шаг инженера к цели.
+     *
+     * Если до самой цели пока нельзя добраться, метод выбирает ближайшую
+     * достижимую клетку в сторону цели. Это важно для ситуаций, когда инженер
+     * должен подойти к краю озера или реки, чтобы построить мост, а не
+     * бездарно топтаться база-лес-база, как герой плохого туториала.
+     */
+    public Point stepEngineerToward(Point from, Point target) {
+        List<Point> exactPath = findEngineerPath(from, target);
+        if (!exactPath.isEmpty()) {
+            return exactPath.size() < 2 ? from : exactPath.get(1);
+        }
+
+        Point closestReachable = nearestEngineerReachablePointTo(from, target);
+        if (closestReachable == null || closestReachable.equals(from)) {
+            return from;
+        }
+
+        List<Point> approachPath = findEngineerPath(from, closestReachable);
+        if (approachPath.isEmpty() || approachPath.size() < 2) {
+            return from;
+        }
+
+        return approachPath.get(1);
+    }
+
+    /**
+     * Проверяет, может ли инженер стоять на указанной клетке.
+     */
+    public boolean canEngineerStandOn(Point point) {
+        if (point == null || !isPlaced(point)) return false;
+        if (isBase(point)) return true;
+
+        Tile tile = tile(point);
+        if (tile == null) return false;
+        if (tile.biome == Biome.MOUNTAIN || tile.biome == Biome.SWAMP) return false;
+        if (tile.biome == Biome.LAKE) return tile.hasBridge;
+        return true;
+    }
+
+    private List<Point> findEngineerPath(Point from, Point target) {
+        if (from == null || target == null) return List.of();
+        if (from.equals(target)) return canEngineerStandOn(from) ? List.of(from) : List.of();
+        if (!canEngineerStandOn(from) || !canEngineerStandOn(target)) return List.of();
+
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+        HashMap<Point, Point> previous = new HashMap<>();
+
+        queue.add(from);
+        previous.put(from, null);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            if (current.equals(target)) break;
+
+            for (Point neighbor : engineerReachableNeighbors(current)) {
+                if (previous.containsKey(neighbor)) continue;
+                previous.put(neighbor, current);
+                queue.addLast(neighbor);
+            }
+        }
+
+        if (!previous.containsKey(target)) return List.of();
+
+        ArrayList<Point> path = new ArrayList<>();
+        Point step = target;
+        while (step != null) {
+            path.add(step);
+            step = previous.get(step);
+        }
+
+        Collections.reverse(path);
+        return path;
+    }
+
+    private Point nearestEngineerReachablePointTo(Point from, Point target) {
+        if (from == null || target == null || !canEngineerStandOn(from)) return null;
+
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+        LinkedHashSet<Point> visited = new LinkedHashSet<>();
+        Point best = from;
+        int bestDistance = from.manhattan(target);
+
+        queue.add(from);
+        visited.add(from);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            int distance = current.manhattan(target);
+            if (distance < bestDistance) {
+                best = current;
+                bestDistance = distance;
+            }
+
+            for (Point neighbor : engineerReachableNeighbors(current)) {
+                if (visited.add(neighbor)) {
+                    queue.addLast(neighbor);
+                }
+            }
+        }
+
+        return best;
+    }
+
     /**
      * Возвращает соседние клетки, куда может проехать водитель.
      *
@@ -346,8 +475,40 @@ public final class GameMap {
      * @return true, если мост был построен
      */
     public boolean buildBridge(Point point) {
-        if (!canBuildBridge(point)) return false;
+        if (!canBuildBridge(point)) {
+            return false;
+        }
         return tile(point).addBridge();
+    }
+
+
+    /**
+     * Проверяет, может ли инженер построить мост из своей клетки на указанном тайле.
+     *
+     * Мост можно поставить на текущей клетке инженера или на соседней клетке
+     * по стороне. Это нужно прежде всего для озёр: инженер не может стоять на
+     * озере без моста, но должен иметь возможность построить мост с берега.
+     */
+    public boolean canBuildBridgeFrom(Point engineerPosition, Point bridgePoint) {
+        if (engineerPosition == null || bridgePoint == null) return false;
+        if (!canEngineerStandOn(engineerPosition)) return false;
+        if (!isPlaced(bridgePoint)) return false;
+
+        boolean sameCell = engineerPosition.equals(bridgePoint);
+        boolean cardinalNeighbor = engineerPosition.manhattan(bridgePoint) == 1;
+        if (!sameCell && !cardinalNeighbor) return false;
+
+        return canBuildBridge(bridgePoint);
+    }
+
+    /**
+     * Строит мост из клетки инженера на указанном тайле.
+     *
+     * @return true, если мост был построен
+     */
+    public boolean buildBridgeFrom(Point engineerPosition, Point bridgePoint) {
+        if (!canBuildBridgeFrom(engineerPosition, bridgePoint)) return false;
+        return buildBridge(bridgePoint);
     }
 
     private boolean canHoldRoad(Tile tile) {

@@ -307,7 +307,11 @@ public class EngineerAi {
      * @return true, если инженер далеко от разведчика и ему полезно приблизиться
      */
     private boolean shouldFollowScoutForFutureConstruction(PlayerState player) {
-        return player.engineer.manhattan(player.scout) > NEAR_SCOUT_DISTANCE;
+        if (player.engineer.manhattan(player.scout) <= NEAR_SCOUT_DISTANCE) {
+            return false;
+        }
+
+        return canEngineerMakeProgressToward(player, player.scout);
     }
 
     /**
@@ -386,8 +390,45 @@ public class EngineerAi {
         return simulation.map.entries().stream()
                 .filter(entry -> neededBiomes.contains(entry.getValue().biome))
                 .filter(entry -> !simulation.map.hasDriverPath(simulation.map.base, entry.getKey()))
+                .filter(entry -> canEngineerMakeProgressToward(player, entry.getKey()))
                 .min(Comparator.comparingInt(entry -> player.engineer.manhattan(entry.getKey())))
                 .map(entry -> entry.getValue().biome);
+    }
+
+    /**
+     * Проверяет, может ли инженер реально продвинуться к указанной цели.
+     *
+     * Метод использует инженерную навигацию карты, а не манхэттенскую линейку.
+     * Если цель недостижима напрямую, карта всё равно может вернуть шаг к
+     * ближайшей достижимой клетке, откуда инженер сможет построить мост или
+     * продолжить дорогу.
+     *
+     * @param player игрок, чей инженер оценивается
+     * @param target цель инфраструктурного движения
+     * @return true, если инженер может сделать хотя бы один полезный шаг
+     */
+    private boolean canEngineerMakeProgressToward(PlayerState player, Point target) {
+        Point next = simulation.map.stepEngineerToward(player.engineer, target);
+        return !next.equals(player.engineer) || canEngineerBuildNearCurrentPositionToward(player, target);
+    }
+
+    /**
+     * Проверяет, может ли инженер не двигаясь выполнить стройку рядом с собой.
+     *
+     * Это не даёт AI занизить инженера в ситуации, когда путь до цели ещё не
+     * существует, но рядом можно поставить мост или проложить следующую дорогу.
+     *
+     * @param player игрок, чей инженер оценивается
+     * @param target цель, в сторону которой нужна инфраструктура
+     * @return true, если рядом есть полезная стройка
+     */
+    private boolean canEngineerBuildNearCurrentPositionToward(PlayerState player, Point target) {
+        Point direct = player.engineer.stepToward(target);
+        if (simulation.map.canBuildBridgeFrom(player.engineer, direct)) return true;
+
+        return player.engineer.neighbors4().stream()
+                .anyMatch(point -> simulation.map.canBuildRoadBetween(player.engineer, point)
+                        || simulation.map.canBuildBridgeFrom(player.engineer, point));
     }
 
     /**

@@ -58,13 +58,15 @@ public class EngineerAction {
             return;
         }
 
-        moveEngineerTowardInfrastructureTarget(player, movementPoints);
+        boolean moved = moveEngineerTowardInfrastructureTarget(player, movementPoints);
 
         if (tryBuildInfrastructure(player)) {
             return;
         }
 
-        rangerActionExecutor.moveRoleToward(player, RangerRole.ENGINEER, player.scout, movementPoints);
+        if (!moved) {
+            simulation.log("Инженер игрока " + player.id + " не нашёл полезного инженерного действия");
+        }
     }
 
     private boolean hasNeededTrapTarget(PlayerState player) {
@@ -81,35 +83,58 @@ public class EngineerAction {
         if (target.isPresent()) {
             Point targetPosition = target.get().position;
             if (!isInTrapPlacementRange(player.engineer, targetPosition)) {
-                rangerActionExecutor.moveRoleToward(player, RangerRole.ENGINEER, targetPosition, movementPoints);
+                moveEngineerToward(player, targetPosition, movementPoints);
             }
             return;
         }
 
-        rangerActionExecutor.moveRoleToward(player, RangerRole.ENGINEER, player.scout, movementPoints);
+        moveEngineerToward(player, player.scout, movementPoints);
     }
 
     /**
      * Пытается выполнить полезную инфраструктурную работу рядом с инженером.
      *
-     * Сначала строится мост на текущей клетке, если она водная. Затем инженер
-     * пытается проложить дорогу в сторону ближайшей важной цели.
+     * Инженер строит только из своей клетки: дорогу — между своей клеткой и
+     * соседней клеткой по стороне, мост — на своей клетке.
      */
     private boolean tryBuildInfrastructure(PlayerState player) {
-        if (simulation.map.canBuildBridge(player.engineer)) {
-            simulation.map.buildBridge(player.engineer);
+        Optional<Point> target = bestInfrastructureTarget(player);
+        if (target.isEmpty()) return false;
+
+        if (tryBuildBridgeTowardTarget(player, target.get())) {
+            return true;
+        }
+
+        return tryBuildRoadTowardTarget(player, target.get());
+    }
+
+    /**
+     * Пытается построить мост рядом с инженером в сторону инфраструктурной цели.
+     *
+     * Сначала проверяется текущая клетка инженера, затем соседняя клетка в прямом
+     * направлении к цели, затем остальные соседние клетки по стороне.
+     */
+    private boolean tryBuildBridgeTowardTarget(PlayerState player, Point target) {
+        if (simulation.map.canBuildBridgeFrom(player.engineer, player.engineer)) {
+            simulation.map.buildBridgeFrom(player.engineer, player.engineer);
             simulation.log("Инженер игрока " + player.id + " построил мост на " + player.engineer);
             return true;
         }
 
-        Optional<Point> target = bestInfrastructureTarget(player);
-        if (target.isEmpty()) return false;
+        Point direct = player.engineer.stepToward(target);
+        if (simulation.map.canBuildBridgeFrom(player.engineer, direct)) {
+            simulation.map.buildBridgeFrom(player.engineer, direct);
+            simulation.log("Инженер игрока " + player.id + " построил мост на " + direct);
+            return true;
+        }
 
-        Point next = simulation.stepTowardPlaced(player.engineer, target.get());
-        if (!next.equals(player.engineer) && simulation.map.canBuildRoadBetween(player.engineer, next)) {
-            simulation.map.buildRoadBetween(player.engineer, next);
-            simulation.log("Инженер игрока " + player.id + " построил дорогу "
-                    + player.engineer + " -> " + next);
+        Optional<Point> bridgePoint = player.engineer.neighbors4().stream()
+                .filter(point -> simulation.map.canBuildBridgeFrom(player.engineer, point))
+                .min(Comparator.comparingInt(point -> point.manhattan(target)));
+
+        if (bridgePoint.isPresent()) {
+            simulation.map.buildBridgeFrom(player.engineer, bridgePoint.get());
+            simulation.log("Инженер игрока " + player.id + " построил мост на " + bridgePoint.get());
             return true;
         }
 
@@ -117,18 +142,66 @@ public class EngineerAction {
     }
 
     /**
+     * Пытается построить дорогу из клетки инженера в соседнюю клетку по стороне.
+     *
+     * Кандидат выбирается среди соседних клеток, где дорогу действительно можно
+     * построить, с предпочтением клетки, которая ближе к инфраструктурной цели.
+     */
+    private boolean tryBuildRoadTowardTarget(PlayerState player, Point target) {
+        Optional<Point> nextRoadPoint = player.engineer.neighbors4().stream()
+                .filter(point -> simulation.map.canBuildRoadBetween(player.engineer, point))
+                .min(Comparator.comparingInt(point -> point.manhattan(target)));
+
+        if (nextRoadPoint.isEmpty()) {
+            return false;
+        }
+
+        simulation.map.buildRoadBetween(player.engineer, nextRoadPoint.get());
+        simulation.log("Инженер игрока " + player.id + " построил дорогу "
+                + player.engineer + " -> " + nextRoadPoint.get());
+        return true;
+    }
+
+    /**
      * Перемещает инженера к ближайшей инфраструктурной цели.
      *
-     * Если явной цели нет, инженер подтягивается к разведчику.
+     * Если точная цель недостижима из-за воды или гор, инженер всё равно идёт
+     * к ближайшей достижимой клетке, откуда сможет строить мост или продолжать
+     * дорогу. Это убирает старую гениальную схему база-лес-база.
      */
-    private void moveEngineerTowardInfrastructureTarget(PlayerState player, int movementPoints) {
+    private boolean moveEngineerTowardInfrastructureTarget(PlayerState player, int movementPoints) {
         Optional<Point> target = bestInfrastructureTarget(player);
-        rangerActionExecutor.moveRoleToward(
-                player,
-                RangerRole.ENGINEER,
-                target.orElse(player.scout),
-                movementPoints
-        );
+        return moveEngineerToward(player, target.orElse(player.scout), movementPoints);
+    }
+
+    /**
+     * Перемещает инженера по его собственным правилам проходимости.
+     *
+     * Инженер не заходит в болото, горы и озёра без моста. Для движения
+     * используется BFS-логика карты, а не жадный шаг, который мог уводить его
+     * вперёд и тут же возвращать обратно вторым очком движения.
+     */
+    private boolean moveEngineerToward(PlayerState player, Point target, int movementPoints) {
+        Point before = player.engineer;
+        Point position = player.engineer;
+
+        for (int i = 0; i < movementPoints; i++) {
+            if (position.equals(target)) break;
+
+            Point next = simulation.map.stepEngineerToward(position, target);
+            if (next.equals(position)) break;
+
+            position = next;
+        }
+
+        player.engineer = position;
+
+        if (!before.equals(position)) {
+            simulation.log("Инженер игрока " + player.id + " переместился " + before + " -> " + position);
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -237,6 +310,7 @@ public class EngineerAction {
                 .min(Comparator.comparingInt(dinosaur -> player.engineer.manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
     }
+
 
     private Optional<Point> nearestUnconnectedNeededBiomePoint(PlayerState player) {
         Set<Biome> neededBiomes = remainingNeededBiomes(player);
