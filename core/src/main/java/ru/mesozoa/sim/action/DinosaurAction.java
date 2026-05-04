@@ -17,6 +17,6 @@ public class DinosaurAction {
         Dinosaur dino = new Dinosaur(simulation.nextDinoId++, species, position);
         simulation.dinosaurs.add(dino);
         simulation.result.firstSpawnRound.putIfAbsent(species, simulation.round);
-        simulation.log("СПАУН: " + species.displayName + " на " + position);
+        simulation.log("СПАУН: " + species.displayName);
     }
 }

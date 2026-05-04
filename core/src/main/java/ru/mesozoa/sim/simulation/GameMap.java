@@ -168,26 +168,14 @@ public final class GameMap {
 
 
     /**
-     * Возвращает соседние клетки, куда может перейти инженер пешком.
+     * Возвращает соседние клетки, куда может перейти обычный наземный рейнджер.
      *
-     * Инженер не использует дороги как ограничение движения, но он не может
-     * заходить в болото, горы и озёра без построенного моста. База считается
-     * обычной стартовой клеткой для пешего перемещения.
+     * Проходимость берётся из состояния конкретного тайла. Это важно для мостов:
+     * биом может оставаться рекой или озером, но сам тайл после постройки моста
+     * становится проходимым.
      */
     public List<Point> engineerReachableNeighbors(Point from) {
-        ArrayList<Point> result = new ArrayList<>();
-
-        if (!canEngineerStandOn(from)) {
-            return result;
-        }
-
-        for (Point neighbor : from.neighbors4()) {
-            if (canEngineerStandOn(neighbor)) {
-                result.add(neighbor);
-            }
-        }
-
-        return result;
+        return groundRangerReachableNeighbors(from);
     }
 
     /**
@@ -219,34 +207,37 @@ public final class GameMap {
 
     /**
      * Проверяет, может ли инженер стоять на указанной клетке.
+     *
+     * @deprecated Используй {@link #canGroundRangerStandOn(Point)}.
      */
+    @Deprecated(forRemoval = true)
     public boolean canEngineerStandOn(Point point) {
-        if (point == null || !isPlaced(point)) return false;
-        if (isBase(point)) return true;
-
-        Tile tile = tile(point);
-        if (tile == null) return false;
-        if (tile.biome == Biome.MOUNTAIN || tile.biome == Biome.SWAMP) return false;
-        if (tile.biome == Biome.LAKE) return tile.hasBridge;
-        return true;
+        return canGroundRangerStandOn(point);
     }
 
     /**
      * Возвращает соседние клетки для обычного наземного рейнджера.
      *
-     * Переходный метод: пока старая карта ещё хранит инженерную навигацию,
-     * наземные рейнджеры используют те же ограничения. Разведчик сюда не попадает.
+     * Разведчик сюда не попадает: он перемещается по собственным правилам.
      */
     public List<Point> groundRangerReachableNeighbors(Point from) {
-        return engineerReachableNeighbors(from);
+        ArrayList<Point> result = new ArrayList<>();
+
+        if (!canGroundRangerStandOn(from)) {
+            return result;
+        }
+
+        for (Point neighbor : from.neighbors4()) {
+            if (canGroundRangerStandOn(neighbor)) {
+                result.add(neighbor);
+            }
+        }
+
+        return result;
     }
 
     /**
      * Возвращает следующий шаг обычного наземного рейнджера к цели.
-     *
-     * Переходный метод поверх инженерной BFS-навигации. Позже правила ног лучше
-     * полностью переименовать из engineer в groundRanger, чтобы код перестал
-     * притворяться, что только инженер умеет ходить.
      */
     public Point stepGroundRangerToward(Point from, Point target) {
         return stepEngineerToward(from, target);
@@ -255,10 +246,45 @@ public final class GameMap {
     /**
      * Проверяет, может ли обычный наземный рейнджер стоять на клетке.
      *
-     * Сейчас это совместимый фасад над canEngineerStandOn(...).
+     * База проходима для рейнджеров. Для обычных тайлов используется состояние
+     * самого тайла: мост или другие будущие эффекты могут менять проходимость
+     * конкретной клетки без изменения её биома.
      */
     public boolean canGroundRangerStandOn(Point point) {
-        return canEngineerStandOn(point);
+        if (point == null || !isPlaced(point)) return false;
+        if (isBase(point)) return true;
+
+        Tile tile = tile(point);
+        return tile != null && tile.isGroundPassable();
+    }
+
+
+    /**
+     * Проверяет, можно ли поставить ловушку на указанную клетку.
+     *
+     * База экспедиции считается непроходимой зоной для динозавров, поэтому
+     * ловушки там не имеют игрового смысла и запрещены. Иначе инженер начинает
+     * превращать штаб в капканный склад, что, конечно, по-своему эффективно,
+     * но только против здравого смысла.
+     *
+     * @param point клетка для установки ловушки
+     * @return true, если клетка открыта и не является базой
+     */
+    public boolean canPlaceTrap(Point point) {
+        return point != null && isPlaced(point) && !isBase(point);
+    }
+
+    /**
+     * Проверяет, можно ли разместить приманку на указанной клетке.
+     *
+     * Приманку нельзя класть на базе: динозавры не заходят на базовый тайл,
+     * поэтому такая охота превращается в пикник у штаба, а не в засаду.
+     *
+     * @param point клетка, где охотник собирается использовать приманку
+     * @return true, если клетка открыта и не является базой
+     */
+    public boolean canPlaceBait(Point point) {
+        return point != null && isPlaced(point) && !isBase(point);
     }
 
     private List<Point> findEngineerPath(Point from, Point target) {

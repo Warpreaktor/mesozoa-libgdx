@@ -91,6 +91,10 @@ public class HunterAction {
                 if (player.hunterBait <= 0) return false;
 
                 if (player.hunter.manhattan(dinosaur.position) <= 2) {
+                    if (!simulation.map.canPlaceBait(player.hunter)) {
+                        return false;
+                    }
+
                     double chance = simulation.random.nextBoolean()
                             ? simulation.gameMechanicConfig.huntBaseSuccess
                             : simulation.gameMechanicConfig.huntPreparedSuccess;

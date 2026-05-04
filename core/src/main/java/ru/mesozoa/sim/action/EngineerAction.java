@@ -47,11 +47,22 @@ public class EngineerAction {
      */
     public void action(PlayerState player, RangerPlan plan) {
         int movementPoints = plan.ranger().currentActionPoints();
-        action(player, movementPoints);
+        action(player, plan.target(), movementPoints);
         plan.ranger().spendActionPoints(movementPoints);
     }
 
     public void action(PlayerState player, int movementPoints) {
+        action(player, null, movementPoints);
+    }
+
+    /**
+     * Выполняет действие инженера с учётом цели, выбранной AI-планировщиком.
+     *
+     * Раньше AI выбирал инженера по конкретной причине, но само действие заново
+     * искало цель и иногда забывало, зачем его вообще позвали. Теперь плановая
+     * цель используется как главный ориентир для дороги, моста или перемещения.
+     */
+    private void action(PlayerState player, Point plannedTarget, int movementPoints) {
         if (hasNeededTrapTarget(player)) {
             moveEngineerTowardTrapTarget(player, movementPoints);
             int placed = placeAvailableTrapsAroundEngineer(player);
@@ -61,13 +72,13 @@ public class EngineerAction {
             return;
         }
 
-        if (tryBuildInfrastructure(player)) {
+        if (tryBuildInfrastructure(player, plannedTarget)) {
             return;
         }
 
-        boolean moved = moveEngineerTowardInfrastructureTarget(player, movementPoints);
+        boolean moved = moveEngineerTowardInfrastructureTarget(player, plannedTarget, movementPoints);
 
-        if (tryBuildInfrastructure(player)) {
+        if (tryBuildInfrastructure(player, plannedTarget)) {
             return;
         }
 
@@ -104,8 +115,8 @@ public class EngineerAction {
      * Инженер строит только из своей клетки: дорогу — между своей клеткой и
      * соседней клеткой по стороне, мост — на своей клетке.
      */
-    private boolean tryBuildInfrastructure(PlayerState player) {
-        Optional<Point> target = bestInfrastructureTarget(player);
+    private boolean tryBuildInfrastructure(PlayerState player, Point plannedTarget) {
+        Optional<Point> target = bestInfrastructureTarget(player, plannedTarget);
         if (target.isEmpty()) return false;
 
         if (tryBuildBridgeTowardTarget(player, target.get())) {
@@ -175,8 +186,8 @@ public class EngineerAction {
      * к ближайшей достижимой клетке, откуда сможет строить мост или продолжать
      * дорогу. Это убирает старую гениальную схему база-лес-база.
      */
-    private boolean moveEngineerTowardInfrastructureTarget(PlayerState player, int movementPoints) {
-        Optional<Point> target = bestInfrastructureTarget(player);
+    private boolean moveEngineerTowardInfrastructureTarget(PlayerState player, Point plannedTarget, int movementPoints) {
+        Optional<Point> target = bestInfrastructureTarget(player, plannedTarget);
         return moveEngineerToward(player, target.orElse(player.scout), movementPoints);
     }
 
@@ -194,7 +205,7 @@ public class EngineerAction {
         for (int i = 0; i < movementPoints; i++) {
             if (position.equals(target)) break;
 
-            Point next = simulation.map.stepEngineerToward(position, target);
+            Point next = simulation.map.stepGroundRangerToward(position, target);
             if (next.equals(position)) break;
 
             position = next;
@@ -203,7 +214,7 @@ public class EngineerAction {
         player.setPosition(RangerRole.ENGINEER, position);
 
         if (!before.equals(position)) {
-            simulation.log("Инженер игрока " + player.id + " переместился " + before + " -> " + position);
+            simulation.log("Инженер игрока " + player.id + " переместился");
             return true;
         }
 
@@ -219,7 +230,11 @@ public class EngineerAction {
      * 3. открытый нужный биом без дороги;
      * 4. разведчик.
      */
-    private Optional<Point> bestInfrastructureTarget(PlayerState player) {
+    private Optional<Point> bestInfrastructureTarget(PlayerState player, Point plannedTarget) {
+        if (plannedTarget != null) {
+            return Optional.of(plannedTarget);
+        }
+
         Optional<Point> capturedTarget = nearestCapturedNeededDinosaurWithoutDriverAccess(player);
         if (capturedTarget.isPresent()) return capturedTarget;
 
@@ -242,7 +257,7 @@ public class EngineerAction {
         int placed = 0;
         for (Point candidate : trapPlacementCandidates(player)) {
             if (placed >= available) break;
-            if (!simulation.map.isPlaced(candidate)) continue;
+            if (!simulation.map.canPlaceTrap(candidate)) continue;
             if (hasActiveTrapAt(player, candidate)) continue;
 
             player.traps.add(new Trap(player.id, candidate));

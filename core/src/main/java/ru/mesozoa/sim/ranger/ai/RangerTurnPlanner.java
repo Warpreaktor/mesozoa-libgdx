@@ -111,17 +111,6 @@ public final class RangerTurnPlanner {
         return selected;
     }
 
-    /**
-     * Совместимый старый метод выбора роли.
-     *
-     * @deprecated Используй {@link #chooseNextPlanForTurn(PlayerState, Set)}.
-     */
-    @Deprecated(forRemoval = true)
-    public RangerRole chooseNextRangerForTurn(PlayerState player, Set<RangerRole> alreadyUsedRoles) {
-        RangerPlan plan = chooseNextPlanForTurn(player, alreadyUsedRoles);
-        return plan == null ? null : plan.role();
-    }
-
     private RangerPlan planRole(PlayerState player, RangerRole role) {
         AiScore score = scoreRole(player, role);
         Ranger ranger = player.rangerFor(role);

@@ -2,6 +2,7 @@ package ru.mesozoa.sim.simulation;
 
 import ru.mesozoa.sim.action.RangerActionExecutor;
 import ru.mesozoa.sim.ranger.ai.RangerTurnPlanner;
+import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
@@ -124,12 +125,20 @@ public final class GameSimulation {
                 }
             }
 
-            RangerRole role = rangerTurnPlanner.chooseNextRangerForTurn(player, activePlayerUsedRoles);
+            RangerPlan plan = rangerTurnPlanner.chooseNextPlanForTurn(player, activePlayerUsedRoles);
 
-            log("Действие игрока " + player.id + ": " + roleToText(role));
-            rangerActionExecutor.playRole(player, role, 2);
+            if (plan == null) {
+                log("Игрок " + player.id + ": нет полезной активации, ход игрока завершён");
+                finishCurrentPlayerTurn();
+                updateResult();
+                checkGameOverAfterPartialStep();
+                return;
+            }
 
-            activePlayerUsedRoles.add(role);
+            log("Действие игрока " + player.id + ": " + roleToText(plan.role()));
+            rangerActionExecutor.executePlan(player, plan);
+
+            activePlayerUsedRoles.add(plan.role());
             activePlayerActionIndex++;
 
             if (activePlayerActionIndex >= 2) {

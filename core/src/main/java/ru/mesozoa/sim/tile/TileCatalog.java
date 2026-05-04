@@ -286,12 +286,12 @@ public final class TileCatalog {
             case LANDING,
                     BROADLEAF_FOREST,
                     CONIFEROUS_FOREST,
-                    MEADOW -> true;
-
-            case FLOODPLAIN,
+                    MEADOW,
+                    FLOODPLAIN,
                     RIVER,
-                    SWAMP,
-                    LAKE,
+                    SWAMP -> true;
+
+            case LAKE,
                     MOUNTAIN -> false;
         };
     }
