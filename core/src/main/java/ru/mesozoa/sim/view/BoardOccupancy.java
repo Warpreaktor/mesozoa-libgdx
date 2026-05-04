@@ -16,7 +16,7 @@ import java.util.Map;
  * Временная карта занятости клеток для отрисовки.
  *
  * Модель игры по-прежнему хранит позиции в самих объектах:
- * Dinosaur.position, PlayerState.scout/driver/engineer/hunter.
+ * Dinosaur.position и позиции объектов рейнджеров внутри PlayerState.
  * Этот класс просто собирает их в Map<Point, List<BoardPiece>> на один кадр.
  */
 public final class BoardOccupancy {

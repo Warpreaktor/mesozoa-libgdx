@@ -567,7 +567,7 @@ public final class GameSimulation {
 
     private void stealBaitIfPossible(Dinosaur dinosaur) {
         for (PlayerState player : players) {
-            if (player.hunterBait > 0 && player.hunter.equals(dinosaur.position)) {
+            if (player.hunterBait > 0 && player.hunterRanger.position().equals(dinosaur.position)) {
                 player.hunterBait--;
                 log("Криптогнат украл приманку у игрока " + player.id);
             }
@@ -576,9 +576,9 @@ public final class GameSimulation {
 
     private void attackRangerIfPossible(Dinosaur dinosaur) {
         for (PlayerState player : players) {
-            boolean hunterNearby = player.hunter.manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
-            boolean engineerNearby = player.engineer.manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
-            boolean driverNearby = player.driver.manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
+            boolean hunterNearby = player.hunterRanger.position().manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
+            boolean engineerNearby = player.engineerRanger.position().manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
+            boolean driverNearby = player.driverRanger.position().manhattan(dinosaur.position) <= dinosaur.species.huntRadius;
 
             if ((hunterNearby || engineerNearby || driverNearby) && random.nextDouble() < 0.20) {
                 player.turnsSkipped = 1;

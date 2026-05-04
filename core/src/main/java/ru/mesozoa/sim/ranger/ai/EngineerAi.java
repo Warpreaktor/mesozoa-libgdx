@@ -108,7 +108,7 @@ public class EngineerAi {
         if (hasVisibleTrapTargetAndAvailableTraps(player, trapTarget)) {
             Dinosaur dinosaur = trapTarget.get();
             int activeTraps = activeTrapCount(player);
-            int distance = player.engineer.manhattan(dinosaur.position);
+            int distance = player.engineerRanger.position().manhattan(dinosaur.position);
             double score = SCORE_VISIBLE_TRAP_TARGET - Math.min(35.0, distance * 4.0);
             return new AiScore(
                     score,
@@ -154,7 +154,7 @@ public class EngineerAi {
         }
 
         if (shouldFollowScoutForFutureConstruction(player)) {
-            int distance = player.engineer.manhattan(player.scout);
+            int distance = player.engineerRanger.position().manhattan(player.scoutRanger.position());
             double score = SCORE_FOLLOW_SCOUT + Math.min(18.0, distance * 3.0);
             return new AiScore(
                     score,
@@ -215,7 +215,7 @@ public class EngineerAi {
     private boolean canPlaceUsefulTrapNow(PlayerState player, Optional<Dinosaur> trapTarget) {
         return trapTarget.isPresent()
                 && activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer
-                && isAdjacentOrSame(player.engineer, trapTarget.get().position);
+                && isAdjacentOrSame(player.engineerRanger.position(), trapTarget.get().position);
     }
 
     /**
@@ -307,11 +307,11 @@ public class EngineerAi {
      * @return true, если инженер далеко от разведчика и ему полезно приблизиться
      */
     private boolean shouldFollowScoutForFutureConstruction(PlayerState player) {
-        if (player.engineer.manhattan(player.scout) <= NEAR_SCOUT_DISTANCE) {
+        if (player.engineerRanger.position().manhattan(player.scoutRanger.position()) <= NEAR_SCOUT_DISTANCE) {
             return false;
         }
 
-        return canEngineerMakeProgressToward(player, player.scout);
+        return canEngineerMakeProgressToward(player, player.scoutRanger.position());
     }
 
     /**
@@ -324,7 +324,7 @@ public class EngineerAi {
      * @return true, если инженер рядом с разведчиком
      */
     private boolean isEngineerAlreadyNearScout(PlayerState player) {
-        return player.engineer.manhattan(player.scout) <= NEAR_SCOUT_DISTANCE;
+        return player.engineerRanger.position().manhattan(player.scoutRanger.position()) <= NEAR_SCOUT_DISTANCE;
     }
 
     /**
@@ -341,7 +341,7 @@ public class EngineerAi {
                 .filter(dinosaur -> dinosaur.captured)
                 .filter(dinosaur -> player.captured.contains(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineer.manhattan(dinosaur.position)));
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)));
     }
 
     /**
@@ -351,7 +351,7 @@ public class EngineerAi {
      * @return ближайший живой нужный динозавр с CaptureMethod.TRAP
      */
     private Optional<Dinosaur> nearestNeededTrapTarget(PlayerState player) {
-        return nearestNeededDinosaur(player, player.engineer, CaptureMethod.TRAP);
+        return nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP);
     }
 
     /**
@@ -371,7 +371,7 @@ public class EngineerAi {
                 .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING
                         || dinosaur.species.captureMethod == CaptureMethod.HUNT)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineer.manhattan(dinosaur.position)));
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)));
     }
 
     /**
@@ -391,7 +391,7 @@ public class EngineerAi {
                 .filter(entry -> neededBiomes.contains(entry.getValue().biome))
                 .filter(entry -> !simulation.map.hasDriverPath(simulation.map.base, entry.getKey()))
                 .filter(entry -> canEngineerMakeProgressToward(player, entry.getKey()))
-                .min(Comparator.comparingInt(entry -> player.engineer.manhattan(entry.getKey())))
+                .min(Comparator.comparingInt(entry -> player.engineerRanger.position().manhattan(entry.getKey())))
                 .map(entry -> entry.getValue().biome);
     }
 
@@ -408,8 +408,8 @@ public class EngineerAi {
      * @return true, если инженер может сделать хотя бы один полезный шаг
      */
     private boolean canEngineerMakeProgressToward(PlayerState player, Point target) {
-        Point next = simulation.map.stepGroundRangerToward(player.engineer, target);
-        return !next.equals(player.engineer) || canEngineerBuildNearCurrentPositionToward(player, target);
+        Point next = simulation.map.stepGroundRangerToward(player.engineerRanger.position(), target);
+        return !next.equals(player.engineerRanger.position()) || canEngineerBuildNearCurrentPositionToward(player, target);
     }
 
     /**
@@ -423,12 +423,12 @@ public class EngineerAi {
      * @return true, если рядом есть полезная стройка
      */
     private boolean canEngineerBuildNearCurrentPositionToward(PlayerState player, Point target) {
-        Point direct = player.engineer.stepToward(target);
-        if (simulation.map.canBuildBridgeFrom(player.engineer, direct)) return true;
+        Point direct = player.engineerRanger.position().stepToward(target);
+        if (simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), direct)) return true;
 
-        return player.engineer.neighbors4().stream()
-                .anyMatch(point -> simulation.map.canBuildRoadBetween(player.engineer, point)
-                        || simulation.map.canBuildBridgeFrom(player.engineer, point));
+        return player.engineerRanger.position().neighbors4().stream()
+                .anyMatch(point -> simulation.map.canBuildRoadBetween(player.engineerRanger.position(), point)
+                        || simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), point));
     }
 
     /**

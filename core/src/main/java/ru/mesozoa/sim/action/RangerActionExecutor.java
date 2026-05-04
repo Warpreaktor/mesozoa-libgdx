@@ -52,7 +52,6 @@ public final class RangerActionExecutor {
         ranger.startActivation();
         ranger.play(plan, this, player);
         ranger.finishActivation();
-        player.syncLegacyPositionsFromRangers();
     }
 
     /**
@@ -72,22 +71,6 @@ public final class RangerActionExecutor {
             case HUNTER -> hunterAction.action(player, plan);
             case DRIVER -> driverAction.action(player, plan);
         }
-    }
-
-    /**
-     * Старый метод исполнения роли.
-     *
-     * @deprecated Используй {@link #executePlan(PlayerState, RangerPlan)}.
-     */
-    @Deprecated(forRemoval = true)
-    public void playRole(PlayerState player, RangerRole role, int movementPoints) {
-        RangerPlan plan = new RangerPlan(
-                player.rangerFor(role),
-                null,
-                new AiScore(0.0, "совместимый вызов старого playRole"),
-                null
-        );
-        executePlan(player, plan);
     }
 
     public void moveRoleToward(PlayerState player, RangerRole role, Point target, int movementPoints) {

@@ -3,8 +3,6 @@ package ru.mesozoa.sim.dinosaur.profile;
 import ru.mesozoa.sim.model.Biome;
 import ru.mesozoa.sim.model.Species;
 
-import java.util.List;
-
 /**
  * Описание биологического поведения конкретного вида динозавра.
  */

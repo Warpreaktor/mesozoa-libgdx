@@ -48,7 +48,7 @@ public class HunterAction {
 
         Optional<Dinosaur> target = rangerActionExecutor.nearestNeededDinosaur(
                 player,
-                player.hunter,
+                player.hunterRanger.position(),
                 CaptureMethod.TRACKING,
                 CaptureMethod.HUNT
         );
@@ -58,7 +58,7 @@ public class HunterAction {
             return;
         }
 
-        rangerActionExecutor.moveRoleToward(player, RangerRole.HUNTER, player.scout, movementPoints);
+        rangerActionExecutor.moveRoleToward(player, RangerRole.HUNTER, player.scoutRanger.position(), movementPoints);
     }
 
     private boolean attemptCapture(PlayerState player) {
@@ -66,12 +66,12 @@ public class HunterAction {
                 .filter(d -> !d.captured && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod != CaptureMethod.TRAP)
-                .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.hunter)))
+                .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.hunterRanger.position())))
                 .toList();
 
         for (Dinosaur dinosaur : needed) {
             if (dinosaur.species.captureMethod == CaptureMethod.TRACKING) {
-                if (player.hunter.manhattan(dinosaur.position) <= 1) {
+                if (player.hunterRanger.position().manhattan(dinosaur.position) <= 1) {
                     double chance = simulation.gameMechanicConfig.trackingBaseSuccess
                             + simulation.gameMechanicConfig.trackingStepBonus
                             * simulation.random.nextInt(simulation.gameMechanicConfig.trackingMaxSteps);
@@ -83,15 +83,15 @@ public class HunterAction {
                     return true;
                 }
 
-                player.setPosition(RangerRole.HUNTER, simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position));
+                player.setPosition(RangerRole.HUNTER, simulation.map.stepGroundRangerToward(player.hunterRanger.position(), dinosaur.position));
                 return true;
             }
 
             if (dinosaur.species.captureMethod == CaptureMethod.HUNT) {
                 if (player.hunterBait <= 0) return false;
 
-                if (player.hunter.manhattan(dinosaur.position) <= 2) {
-                    if (!simulation.map.canPlaceBait(player.hunter)) {
+                if (player.hunterRanger.position().manhattan(dinosaur.position) <= 2) {
+                    if (!simulation.map.canPlaceBait(player.hunterRanger.position())) {
                         return false;
                     }
 
@@ -108,7 +108,7 @@ public class HunterAction {
                     return true;
                 }
 
-                player.setPosition(RangerRole.HUNTER, simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position));
+                player.setPosition(RangerRole.HUNTER, simulation.map.stepGroundRangerToward(player.hunterRanger.position(), dinosaur.position));
                 return true;
             }
         }

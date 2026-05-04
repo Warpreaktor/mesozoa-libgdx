@@ -35,7 +35,7 @@ public class DriverAction {
             simulation.log("Водитель игрока " + player.id + " не нашёл цели движения");
             return;
         }
-        Point position = player.driver;
+        Point position = player.driverRanger.position();
 
         for (int i = 0; i < movementPoints; i++) {
             if (position.equals(target)) break;
@@ -46,7 +46,7 @@ public class DriverAction {
             position = next;
         }
 
-        if (position.equals(player.driver) && !position.equals(target)) {
+        if (position.equals(player.driverRanger.position()) && !position.equals(target)) {
             simulation.log("Водитель игрока " + player.id + " не нашёл дороги или моста к цели");
         }
 
@@ -54,12 +54,12 @@ public class DriverAction {
     }
 
     public Point chooseDriverTarget(PlayerState player) {
-        if (!player.driver.equals(player.hunter)) {
-            return player.hunter;
+        if (!player.driverRanger.position().equals(player.hunterRanger.position())) {
+            return player.hunterRanger.position();
         }
-        if (!player.driver.equals(player.engineer)) {
-            return player.engineer;
+        if (!player.driverRanger.position().equals(player.engineerRanger.position())) {
+            return player.engineerRanger.position();
         }
-        return player.scout;
+        return player.scoutRanger.position();
     }
 }

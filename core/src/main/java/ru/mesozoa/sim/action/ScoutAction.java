@@ -82,7 +82,7 @@ public class ScoutAction {
         if (candidates.isEmpty()) return null;
 
         return candidates.stream()
-                .min(Comparator.comparingInt(p -> p.manhattan(player.scout)))
+                .min(Comparator.comparingInt(p -> p.manhattan(player.scoutRanger.position())))
                 .orElse(candidates.get(simulation.random.nextInt(candidates.size())));
     }
 

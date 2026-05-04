@@ -30,22 +30,6 @@ public final class PlayerState {
     /** Фигурка охотника игрока. */
     public final Hunter hunterRanger;
 
-    /** @deprecated Переходный фасад старого кода. Используй scoutRanger или positionOf(...). */
-    @Deprecated(forRemoval = false)
-    public Point scout;
-
-    /** @deprecated Переходный фасад старого кода. Используй driverRanger или positionOf(...). */
-    @Deprecated(forRemoval = false)
-    public Point driver;
-
-    /** @deprecated Переходный фасад старого кода. Используй engineerRanger или positionOf(...). */
-    @Deprecated(forRemoval = false)
-    public Point engineer;
-
-    /** @deprecated Переходный фасад старого кода. Используй hunterRanger или positionOf(...). */
-    @Deprecated(forRemoval = false)
-    public Point hunter;
-
     public final List<Trap> traps = new ArrayList<>();
     public int hunterBait = 3;
     public int turnsSkipped = 0;
@@ -101,27 +85,13 @@ public final class PlayerState {
 
     public void setPosition(RangerRole role, Point position) {
         rangerFor(role).setPosition(position);
-        syncLegacyPositionsFromRangers();
     }
 
     public void returnTeamToBase(Point base) {
         for (Ranger ranger : rangers()) {
             ranger.setPosition(base);
         }
-        syncLegacyPositionsFromRangers();
     }
 
-    /**
-     * Синхронизирует старые публичные поля позиций с объектами фигурок.
-     *
-     * Пока часть UI/action/AI кода читает player.hunter и похожие поля напрямую,
-     * этот метод держит старый фасад в актуальном состоянии. Да, переходные слои
-     * не украшают архитектуру, но зато проект не разваливается как картонный мост.
-     */
-    public void syncLegacyPositionsFromRangers() {
-        scout = scoutRanger.position();
-        driver = driverRanger.position();
-        engineer = engineerRanger.position();
-        hunter = hunterRanger.position();
-    }
+
 }

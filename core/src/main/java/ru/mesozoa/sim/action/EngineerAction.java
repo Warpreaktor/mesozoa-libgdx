@@ -96,17 +96,17 @@ public class EngineerAction {
 
     /** Подводит инженера к ближайшей ловушечной цели, если она пока вне зоны установки. */
     private void moveEngineerTowardTrapTarget(PlayerState player, int movementPoints) {
-        Optional<Dinosaur> target = rangerActionExecutor.nearestNeededDinosaur(player, player.engineer, CaptureMethod.TRAP);
+        Optional<Dinosaur> target = rangerActionExecutor.nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP);
 
         if (target.isPresent()) {
             Point targetPosition = target.get().position;
-            if (!isInTrapPlacementRange(player.engineer, targetPosition)) {
+            if (!isInTrapPlacementRange(player.engineerRanger.position(), targetPosition)) {
                 moveEngineerToward(player, targetPosition, movementPoints);
             }
             return;
         }
 
-        moveEngineerToward(player, player.scout, movementPoints);
+        moveEngineerToward(player, player.scoutRanger.position(), movementPoints);
     }
 
     /**
@@ -133,25 +133,25 @@ public class EngineerAction {
      * направлении к цели, затем остальные соседние клетки по стороне.
      */
     private boolean tryBuildBridgeTowardTarget(PlayerState player, Point target) {
-        if (simulation.map.canBuildBridgeFrom(player.engineer, player.engineer)) {
-            simulation.map.buildBridgeFrom(player.engineer, player.engineer);
+        if (simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), player.engineerRanger.position())) {
+            simulation.map.buildBridgeFrom(player.engineerRanger.position(), player.engineerRanger.position());
             simulation.log("Инженер игрока " + player.id + " построил мост");
             return true;
         }
 
-        Point direct = player.engineer.stepToward(target);
-        if (simulation.map.canBuildBridgeFrom(player.engineer, direct)) {
-            simulation.map.buildBridgeFrom(player.engineer, direct);
+        Point direct = player.engineerRanger.position().stepToward(target);
+        if (simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), direct)) {
+            simulation.map.buildBridgeFrom(player.engineerRanger.position(), direct);
             simulation.log("Инженер игрока " + player.id + " построил мост");
             return true;
         }
 
-        Optional<Point> bridgePoint = player.engineer.neighbors4().stream()
-                .filter(point -> simulation.map.canBuildBridgeFrom(player.engineer, point))
+        Optional<Point> bridgePoint = player.engineerRanger.position().neighbors4().stream()
+                .filter(point -> simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), point))
                 .min(Comparator.comparingInt(point -> point.manhattan(target)));
 
         if (bridgePoint.isPresent()) {
-            simulation.map.buildBridgeFrom(player.engineer, bridgePoint.get());
+            simulation.map.buildBridgeFrom(player.engineerRanger.position(), bridgePoint.get());
             simulation.log("Инженер игрока " + player.id + " построил мост");
             return true;
         }
@@ -166,15 +166,15 @@ public class EngineerAction {
      * построить, с предпочтением клетки, которая ближе к инфраструктурной цели.
      */
     private boolean tryBuildRoadTowardTarget(PlayerState player, Point target) {
-        Optional<Point> nextRoadPoint = player.engineer.neighbors4().stream()
-                .filter(point -> simulation.map.canBuildRoadBetween(player.engineer, point))
+        Optional<Point> nextRoadPoint = player.engineerRanger.position().neighbors4().stream()
+                .filter(point -> simulation.map.canBuildRoadBetween(player.engineerRanger.position(), point))
                 .min(Comparator.comparingInt(point -> point.manhattan(target)));
 
         if (nextRoadPoint.isEmpty()) {
             return false;
         }
 
-        simulation.map.buildRoadBetween(player.engineer, nextRoadPoint.get());
+        simulation.map.buildRoadBetween(player.engineerRanger.position(), nextRoadPoint.get());
         simulation.log("Инженер игрока " + player.id + " построил дорогу");
         return true;
     }
@@ -188,7 +188,7 @@ public class EngineerAction {
      */
     private boolean moveEngineerTowardInfrastructureTarget(PlayerState player, Point plannedTarget, int movementPoints) {
         Optional<Point> target = bestInfrastructureTarget(player, plannedTarget);
-        return moveEngineerToward(player, target.orElse(player.scout), movementPoints);
+        return moveEngineerToward(player, target.orElse(player.scoutRanger.position()), movementPoints);
     }
 
     /**
@@ -199,8 +199,8 @@ public class EngineerAction {
      * вперёд и тут же возвращать обратно вторым очком движения.
      */
     private boolean moveEngineerToward(PlayerState player, Point target, int movementPoints) {
-        Point before = player.engineer;
-        Point position = player.engineer;
+        Point before = player.engineerRanger.position();
+        Point position = player.engineerRanger.position();
 
         for (int i = 0; i < movementPoints; i++) {
             if (position.equals(target)) break;
@@ -244,7 +244,7 @@ public class EngineerAction {
         Optional<Point> biomeTarget = nearestUnconnectedNeededBiomePoint(player);
         if (biomeTarget.isPresent()) return biomeTarget;
 
-        return Optional.ofNullable(player.scout);
+        return Optional.ofNullable(player.scoutRanger.position());
     }
 
     /** Выставляет ловушки в клетку инженера и соседние клетки, включая диагонали. */
@@ -291,22 +291,22 @@ public class EngineerAction {
                 .filter(d -> !d.captured && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
-                .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineer)))
+                .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())))
                 .forEach(dinosaur -> {
                     Point predicted = predictNextBioStep(dinosaur);
-                    if (predicted != null && isInTrapPlacementRange(player.engineer, predicted)) {
+                    if (predicted != null && isInTrapPlacementRange(player.engineerRanger.position(), predicted)) {
                         result.add(predicted);
                     }
 
-                    if (isInTrapPlacementRange(player.engineer, dinosaur.position)) {
+                    if (isInTrapPlacementRange(player.engineerRanger.position(), dinosaur.position)) {
                         result.add(dinosaur.position);
                     }
                 });
 
-        result.add(player.engineer);
+        result.add(player.engineerRanger.position());
 
         for (Direction direction : Direction.values()) {
-            result.add(direction.from(player.engineer));
+            result.add(direction.from(player.engineerRanger.position()));
         }
 
         return new ArrayList<>(result);
@@ -317,7 +317,7 @@ public class EngineerAction {
                 .filter(dinosaur -> dinosaur.captured)
                 .filter(dinosaur -> player.captured.contains(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineer.manhattan(dinosaur.position)))
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
     }
 
@@ -328,7 +328,7 @@ public class EngineerAction {
                 .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING
                         || dinosaur.species.captureMethod == CaptureMethod.HUNT)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineer.manhattan(dinosaur.position)))
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
     }
 
@@ -339,7 +339,7 @@ public class EngineerAction {
         return simulation.map.entries().stream()
                 .filter(entry -> neededBiomes.contains(entry.getValue().biome))
                 .filter(entry -> !simulation.map.hasDriverPath(simulation.map.base, entry.getKey()))
-                .min(Comparator.comparingInt(entry -> player.engineer.manhattan(entry.getKey())))
+                .min(Comparator.comparingInt(entry -> player.engineerRanger.position().manhattan(entry.getKey())))
                 .map(java.util.Map.Entry::getKey);
     }
 

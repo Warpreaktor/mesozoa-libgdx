@@ -91,16 +91,16 @@ public class DriverAi {
      * @return позиция рейнджера, к которому водитель должен подтянуться
      */
     private Point chooseDriverTarget(PlayerState player) {
-        if (!player.driver.equals(player.hunter)) {
-            return player.hunter;
+        if (!player.driverRanger.position().equals(player.hunterRanger.position())) {
+            return player.hunterRanger.position();
         }
 
-        if (!player.driver.equals(player.engineer)) {
-            return player.engineer;
+        if (!player.driverRanger.position().equals(player.engineerRanger.position())) {
+            return player.engineerRanger.position();
         }
 
-        if (!player.driver.equals(player.scout)) {
-            return player.scout;
+        if (!player.driverRanger.position().equals(player.scoutRanger.position())) {
+            return player.scoutRanger.position();
         }
 
         return null;
@@ -119,9 +119,9 @@ public class DriverAi {
      */
     private boolean hasNoUsefulDriverTarget(PlayerState player, Point target) {
         return target == null
-                && player.driver.equals(player.hunter)
-                && player.driver.equals(player.engineer)
-                && player.driver.equals(player.scout);
+                && player.driverRanger.position().equals(player.hunterRanger.position())
+                && player.driverRanger.position().equals(player.engineerRanger.position())
+                && player.driverRanger.position().equals(player.scoutRanger.position());
     }
 
     /**
@@ -146,7 +146,7 @@ public class DriverAi {
      * @return true, если водитель уже стоит в целевой клетке
      */
     private boolean isDriverAlreadyAtTarget(PlayerState player, Point target) {
-        return player.driver.equals(target);
+        return player.driverRanger.position().equals(target);
     }
 
     /**
@@ -161,7 +161,7 @@ public class DriverAi {
      * @return true, если водитель не может проехать к цели
      */
     private boolean hasNoDriverRouteToTarget(PlayerState player, Point target) {
-        return !simulation.map.hasDriverPath(player.driver, target);
+        return !simulation.map.hasDriverPath(player.driverRanger.position(), target);
     }
 
     /**
@@ -176,7 +176,7 @@ public class DriverAi {
      * @return положительная оценка полезного водительского действия
      */
     private AiScore scoreReachableDriverTarget(PlayerState player, Point target) {
-        int distance = simulation.map.driverPathDistance(player.driver, target);
+        int distance = simulation.map.driverPathDistance(player.driverRanger.position(), target);
         double distanceBonus = Math.min(SCORE_ROUTE_DISTANCE_BONUS_MAX, Math.max(0, distance - 1) * 2.0);
         double score = SCORE_USEFUL_ROUTE_BASE + distanceBonus;
 

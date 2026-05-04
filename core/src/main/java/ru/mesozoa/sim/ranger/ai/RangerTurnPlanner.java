@@ -129,19 +129,19 @@ public final class RangerTurnPlanner {
     private Point targetFor(PlayerState player, RangerRole role) {
         return switch (role) {
             case SCOUT -> null;
-            case ENGINEER -> engineerTarget(player).orElse(player.scout);
-            case HUNTER -> hunterTarget(player).orElse(player.scout);
+            case ENGINEER -> engineerTarget(player).orElse(player.scoutRanger.position());
+            case HUNTER -> hunterTarget(player).orElse(player.scoutRanger.position());
             case DRIVER -> driverTarget(player);
         };
     }
 
     private Optional<Point> hunterTarget(PlayerState player) {
-        return nearestNeededDinosaur(player, player.hunter, CaptureMethod.TRACKING, CaptureMethod.HUNT)
+        return nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.TRACKING, CaptureMethod.HUNT)
                 .map(dinosaur -> dinosaur.position);
     }
 
     private Optional<Point> engineerTarget(PlayerState player) {
-        Optional<Point> trapTarget = nearestNeededDinosaur(player, player.engineer, CaptureMethod.TRAP)
+        Optional<Point> trapTarget = nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP)
                 .map(dinosaur -> dinosaur.position);
         if (trapTarget.isPresent()) return trapTarget;
 
@@ -149,7 +149,7 @@ public final class RangerTurnPlanner {
                 .filter(dinosaur -> dinosaur.captured)
                 .filter(dinosaur -> player.captured.contains(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineer.manhattan(dinosaur.position)))
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
         if (capturedTarget.isPresent()) return capturedTarget;
 
@@ -157,14 +157,14 @@ public final class RangerTurnPlanner {
     }
 
     private Point driverTarget(PlayerState player) {
-        if (!player.driver.equals(player.hunter)) {
-            return player.hunter;
+        if (!player.driverRanger.position().equals(player.hunterRanger.position())) {
+            return player.hunterRanger.position();
         }
-        if (!player.driver.equals(player.engineer)) {
-            return player.engineer;
+        if (!player.driverRanger.position().equals(player.engineerRanger.position())) {
+            return player.engineerRanger.position();
         }
-        if (!player.driver.equals(player.scout)) {
-            return player.scout;
+        if (!player.driverRanger.position().equals(player.scoutRanger.position())) {
+            return player.scoutRanger.position();
         }
         return null;
     }

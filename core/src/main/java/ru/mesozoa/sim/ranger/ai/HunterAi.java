@@ -103,7 +103,7 @@ public final class HunterAi {
 
         if (canReachTrackingTargetThisActivation(player, trackingTarget)) {
             Dinosaur dinosaur = trackingTarget.get();
-            int distance = hunterPathDistance(player.hunter, dinosaur.position);
+            int distance = hunterPathDistance(player.hunterRanger.position(), dinosaur.position);
             return new AiScore(
                     SCORE_TRACKING_REACHABLE_NOW,
                     "охотник может дойти до цели выслеживания за текущую активацию: "
@@ -114,7 +114,7 @@ public final class HunterAi {
 
         if (canStartHuntNow(player, huntTarget)) {
             Dinosaur dinosaur = huntTarget.get();
-            int distance = hunterPathDistance(player.hunter, dinosaur.position);
+            int distance = hunterPathDistance(player.hunterRanger.position(), dinosaur.position);
             return new AiScore(
                     SCORE_HUNT_READY,
                     "хищник в радиусе охоты и есть приманка: "
@@ -125,7 +125,7 @@ public final class HunterAi {
 
         if (canReachHuntRangeThisActivation(player, huntTarget)) {
             Dinosaur dinosaur = huntTarget.get();
-            int distance = hunterPathDistance(player.hunter, dinosaur.position);
+            int distance = hunterPathDistance(player.hunterRanger.position(), dinosaur.position);
             return new AiScore(
                     SCORE_HUNT_REACHABLE_NOW,
                     "охотник может выйти в радиус охоты за текущую активацию: "
@@ -192,7 +192,7 @@ public final class HunterAi {
      */
     private boolean isHunterOnTrackingTarget(PlayerState player, Optional<Dinosaur> trackingTarget) {
         return trackingTarget.isPresent()
-                && player.hunter.equals(trackingTarget.get().position);
+                && player.hunterRanger.position().equals(trackingTarget.get().position);
     }
 
     /**
@@ -207,7 +207,7 @@ public final class HunterAi {
      */
     private boolean canReachTrackingTargetThisActivation(PlayerState player, Optional<Dinosaur> trackingTarget) {
         if (trackingTarget.isEmpty()) return false;
-        int distance = hunterPathDistance(player.hunter, trackingTarget.get().position);
+        int distance = hunterPathDistance(player.hunterRanger.position(), trackingTarget.get().position);
         return distance > 0 && distance <= HUNTER_ACTION_POINTS;
     }
 
@@ -223,7 +223,7 @@ public final class HunterAi {
      */
     private boolean canStartHuntNow(PlayerState player, Optional<Dinosaur> huntTarget) {
         if (huntTarget.isEmpty() || player.hunterBait <= 0) return false;
-        int distance = hunterPathDistance(player.hunter, huntTarget.get().position);
+        int distance = hunterPathDistance(player.hunterRanger.position(), huntTarget.get().position);
         return distance <= HUNT_START_RANGE;
     }
 
@@ -239,7 +239,7 @@ public final class HunterAi {
      */
     private boolean canReachHuntRangeThisActivation(PlayerState player, Optional<Dinosaur> huntTarget) {
         if (huntTarget.isEmpty() || player.hunterBait <= 0) return false;
-        int distance = hunterPathDistance(player.hunter, huntTarget.get().position);
+        int distance = hunterPathDistance(player.hunterRanger.position(), huntTarget.get().position);
         return distance > HUNT_START_RANGE
                 && distance <= HUNT_START_RANGE + HUNTER_ACTION_POINTS;
     }
@@ -300,7 +300,7 @@ public final class HunterAi {
         if (remainingHunterSpecies.isEmpty()) return false;
         if (trackingTarget.isPresent() || huntTarget.isPresent()) return false;
 
-        int distance = hunterPathDistance(player.hunter, player.scout);
+        int distance = hunterPathDistance(player.hunterRanger.position(), player.scoutRanger.position());
         return distance != UNREACHABLE_DISTANCE && distance > NEAR_SCOUT_DISTANCE;
     }
 
@@ -325,7 +325,7 @@ public final class HunterAi {
         if (remainingHunterSpecies.isEmpty()) return false;
         if (trackingTarget.isPresent() || huntTarget.isPresent()) return false;
 
-        int distance = hunterPathDistance(player.hunter, player.scout);
+        int distance = hunterPathDistance(player.hunterRanger.position(), player.scoutRanger.position());
         return distance <= NEAR_SCOUT_DISTANCE;
     }
 
@@ -340,7 +340,7 @@ public final class HunterAi {
      * @return оценка полезности движения к цели выслеживания
      */
     private AiScore scoreVisibleTrackingTarget(PlayerState player, Dinosaur dinosaur) {
-        int distance = hunterPathDistance(player.hunter, dinosaur.position);
+        int distance = hunterPathDistance(player.hunterRanger.position(), dinosaur.position);
 
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
@@ -369,7 +369,7 @@ public final class HunterAi {
      * @return оценка полезности движения к цели охоты
      */
     private AiScore scoreVisibleHuntTarget(PlayerState player, Dinosaur dinosaur) {
-        int distance = hunterPathDistance(player.hunter, dinosaur.position);
+        int distance = hunterPathDistance(player.hunterRanger.position(), dinosaur.position);
 
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
@@ -398,7 +398,7 @@ public final class HunterAi {
      * @return оценка полезности сближения с разведчиком
      */
     private AiScore scoreCatchUpToScout(PlayerState player) {
-        int distance = hunterPathDistance(player.hunter, player.scout);
+        int distance = hunterPathDistance(player.hunterRanger.position(), player.scoutRanger.position());
 
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
@@ -442,7 +442,7 @@ public final class HunterAi {
      * @return ближайшая TRACKING-цель или Optional.empty(), если такой цели нет
      */
     private Optional<Dinosaur> nearestTrackingTarget(PlayerState player) {
-        return nearestNeededDinosaur(player, player.hunter, CaptureMethod.TRACKING);
+        return nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.TRACKING);
     }
 
     /**
@@ -452,7 +452,7 @@ public final class HunterAi {
      * @return ближайшая HUNT-цель или Optional.empty(), если такой цели нет
      */
     private Optional<Dinosaur> nearestHuntTarget(PlayerState player) {
-        return nearestNeededDinosaur(player, player.hunter, CaptureMethod.HUNT);
+        return nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.HUNT);
     }
 
     /**

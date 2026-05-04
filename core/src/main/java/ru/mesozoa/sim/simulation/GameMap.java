@@ -160,51 +160,29 @@ public final class GameMap {
 
 
     /**
-     * Возвращает соседние клетки, куда может перейти обычный наземный рейнджер.
-     *
-     * Проходимость берётся из состояния конкретного тайла. Это важно для мостов:
-     * биом может оставаться рекой или озером, но сам тайл после постройки моста
-     * становится проходимым.
-     */
-    public List<Point> engineerReachableNeighbors(Point from) {
-        return groundRangerReachableNeighbors(from);
-    }
-
-    /**
-     * Возвращает следующий шаг инженера к цели.
+     * Возвращает следующий шаг обычного наземного рейнджера к цели.
      *
      * Если до самой цели пока нельзя добраться, метод выбирает ближайшую
-     * достижимую клетку в сторону цели. Это важно для ситуаций, когда инженер
-     * должен подойти к краю озера или реки, чтобы построить мост, а не
-     * бездарно топтаться база-лес-база, как герой плохого туториала.
+     * достижимую клетку в сторону цели. Это позволяет рейнджеру подойти к
+     * месту будущей постройки, не застревая на жадном шаге туда-сюда.
      */
-    public Point stepEngineerToward(Point from, Point target) {
-        List<Point> exactPath = findEngineerPath(from, target);
+    public Point stepGroundRangerToward(Point from, Point target) {
+        List<Point> exactPath = findGroundRangerPath(from, target);
         if (!exactPath.isEmpty()) {
             return exactPath.size() < 2 ? from : exactPath.get(1);
         }
 
-        Point closestReachable = nearestEngineerReachablePointTo(from, target);
+        Point closestReachable = nearestGroundRangerReachablePointTo(from, target);
         if (closestReachable == null || closestReachable.equals(from)) {
             return from;
         }
 
-        List<Point> approachPath = findEngineerPath(from, closestReachable);
+        List<Point> approachPath = findGroundRangerPath(from, closestReachable);
         if (approachPath.isEmpty() || approachPath.size() < 2) {
             return from;
         }
 
         return approachPath.get(1);
-    }
-
-    /**
-     * Проверяет, может ли инженер стоять на указанной клетке.
-     *
-     * @deprecated Используй {@link #canGroundRangerStandOn(Point)}.
-     */
-    @Deprecated(forRemoval = true)
-    public boolean canEngineerStandOn(Point point) {
-        return canGroundRangerStandOn(point);
     }
 
     /**
@@ -226,13 +204,6 @@ public final class GameMap {
         }
 
         return result;
-    }
-
-    /**
-     * Возвращает следующий шаг обычного наземного рейнджера к цели.
-     */
-    public Point stepGroundRangerToward(Point from, Point target) {
-        return stepEngineerToward(from, target);
     }
 
     /**
@@ -279,10 +250,10 @@ public final class GameMap {
         return point != null && isPlaced(point) && !isBase(point);
     }
 
-    private List<Point> findEngineerPath(Point from, Point target) {
+    private List<Point> findGroundRangerPath(Point from, Point target) {
         if (from == null || target == null) return List.of();
-        if (from.equals(target)) return canEngineerStandOn(from) ? List.of(from) : List.of();
-        if (!canEngineerStandOn(from) || !canEngineerStandOn(target)) return List.of();
+        if (from.equals(target)) return canGroundRangerStandOn(from) ? List.of(from) : List.of();
+        if (!canGroundRangerStandOn(from) || !canGroundRangerStandOn(target)) return List.of();
 
         ArrayDeque<Point> queue = new ArrayDeque<>();
         HashMap<Point, Point> previous = new HashMap<>();
@@ -294,7 +265,7 @@ public final class GameMap {
             Point current = queue.removeFirst();
             if (current.equals(target)) break;
 
-            for (Point neighbor : engineerReachableNeighbors(current)) {
+            for (Point neighbor : groundRangerReachableNeighbors(current)) {
                 if (previous.containsKey(neighbor)) continue;
                 previous.put(neighbor, current);
                 queue.addLast(neighbor);
@@ -314,8 +285,8 @@ public final class GameMap {
         return path;
     }
 
-    private Point nearestEngineerReachablePointTo(Point from, Point target) {
-        if (from == null || target == null || !canEngineerStandOn(from)) return null;
+    private Point nearestGroundRangerReachablePointTo(Point from, Point target) {
+        if (from == null || target == null || !canGroundRangerStandOn(from)) return null;
 
         ArrayDeque<Point> queue = new ArrayDeque<>();
         LinkedHashSet<Point> visited = new LinkedHashSet<>();
@@ -333,7 +304,7 @@ public final class GameMap {
                 bestDistance = distance;
             }
 
-            for (Point neighbor : engineerReachableNeighbors(current)) {
+            for (Point neighbor : groundRangerReachableNeighbors(current)) {
                 if (visited.add(neighbor)) {
                     queue.addLast(neighbor);
                 }
@@ -539,7 +510,7 @@ public final class GameMap {
      */
     public boolean canBuildBridgeFrom(Point engineerPosition, Point bridgePoint) {
         if (engineerPosition == null || bridgePoint == null) return false;
-        if (!canEngineerStandOn(engineerPosition)) return false;
+        if (!canGroundRangerStandOn(engineerPosition)) return false;
         if (!isPlaced(bridgePoint)) return false;
 
         boolean sameCell = engineerPosition.equals(bridgePoint);
