@@ -1,0 +1,497 @@
+package ru.mesozoa.sim.rules;
+
+import ru.mesozoa.sim.model.*;
+import ru.mesozoa.sim.tile.Tile;
+import ru.mesozoa.sim.tile.TileDefinition;
+
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Исполнение действий рейнджеров.
+ */
+public final class RangerActionExecutor {
+    private final GameSimulation simulation;
+    private final RangerTurnPlanner planner;
+
+    public RangerActionExecutor(GameSimulation simulation, RangerTurnPlanner planner) {
+        this.simulation = simulation;
+        this.planner = planner;
+    }
+
+    /**
+     * Начинает ход игрока и возвращает две роли, которые будут активированы по одной.
+     */
+    public List<RangerRole> startTurn(PlayerState player) {
+        if (player.isComplete()) {
+            simulation.log("Игрок " + player.id + " уже выполнил задание.");
+            return List.of();
+        }
+
+        if (player.turnsSkipped > 0) {
+            player.turnsSkipped--;
+            simulation.log("Игрок " + player.id + " пропускает ход.");
+            return List.of();
+        }
+
+        List<RangerRole> roles = planner.chooseTwoRangersForTurn(player);
+
+        simulation.log("Ход игрока " + player.id + " (" + player.color.assetSuffix + "): "
+                + planner.roleListToText(roles));
+
+        return roles;
+    }
+
+    /**
+     * Исполняет одну активацию одной роли.
+     */
+    public void playRole(PlayerState player, RangerRole role, int movementPoints) {
+        switch (role) {
+            case SCOUT -> scoutAction(player, movementPoints);
+            case ENGINEER -> engineerAction(player, movementPoints);
+            case HUNTER -> hunterAction(player, movementPoints);
+            case DRIVER -> driverAction(player, movementPoints);
+        }
+    }
+
+    private void scoutAction(PlayerState player, int movementPoints) {
+        if (simulation.tileBag.isEmpty()) {
+            moveRoleTowardNearestFrontier(player, RangerRole.SCOUT, movementPoints);
+            return;
+        }
+
+        exploreOneTile(player);
+    }
+
+    private void engineerAction(PlayerState player, int movementPoints) {
+        if (collectBadNearbyTrap(player)) {
+            return;
+        }
+
+        if (placeTrapForNeededTarget(player, movementPoints)) {
+            return;
+        }
+
+        Optional<Dinosaur> target = nearestNeededDinosaur(player, player.engineer, CaptureMethod.TRAP);
+        if (target.isPresent()) {
+            moveRoleToward(player, RangerRole.ENGINEER, target.get().position, movementPoints);
+            return;
+        }
+
+        if (collectAnyNearbyEmptyTrap(player)) {
+            return;
+        }
+
+        moveRoleToward(player, RangerRole.ENGINEER, player.scout, movementPoints);
+    }
+
+    private void hunterAction(PlayerState player, int movementPoints) {
+        boolean acted = attemptCapture(player);
+        if (acted) {
+            return;
+        }
+
+        Optional<Dinosaur> target = nearestNeededDinosaur(
+                player,
+                player.hunter,
+                CaptureMethod.TRACKING,
+                CaptureMethod.HUNT
+        );
+
+        if (target.isPresent()) {
+            moveRoleToward(player, RangerRole.HUNTER, target.get().position, movementPoints);
+            return;
+        }
+
+        moveRoleToward(player, RangerRole.HUNTER, player.scout, movementPoints);
+    }
+
+    private void driverAction(PlayerState player, int movementPoints) {
+        if (extractTrappedDinosaurIfPossible(player)) {
+            return;
+        }
+
+        Optional<Dinosaur> trappedTarget = nearestTrappedDinosaur(player);
+        if (trappedTarget.isPresent()) {
+            moveRoleToward(player, RangerRole.DRIVER, trappedTarget.get().position, movementPoints);
+            extractTrappedDinosaurIfPossible(player);
+            return;
+        }
+
+        Point target;
+
+        if (!player.driver.equals(player.hunter)) {
+            target = player.hunter;
+        } else if (!player.driver.equals(player.engineer)) {
+            target = player.engineer;
+        } else {
+            target = player.scout;
+        }
+
+        moveRoleToward(player, RangerRole.DRIVER, target, movementPoints);
+    }
+
+    private Optional<Dinosaur> nearestNeededDinosaur(PlayerState player, Point from, CaptureMethod... methods) {
+        Set<CaptureMethod> allowedMethods = EnumSet.noneOf(CaptureMethod.class);
+        allowedMethods.addAll(Arrays.asList(methods));
+
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.removed && !d.trapped)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> allowedMethods.contains(d.species.captureMethod))
+                .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
+    }
+
+    private void moveRoleTowardNearestFrontier(PlayerState player, RangerRole role, int movementPoints) {
+        Point start = player.positionOf(role);
+        Point frontier = simulation.map.nearestUnexploredFrontier(start);
+        if (frontier == null) return;
+
+        moveRoleToward(player, role, frontier, movementPoints);
+    }
+
+    private void moveRoleToward(PlayerState player, RangerRole role, Point target, int movementPoints) {
+        Point position = player.positionOf(role);
+
+        for (int i = 0; i < movementPoints; i++) {
+            if (position.equals(target)) break;
+
+            Point next = simulation.stepTowardPlaced(position, target);
+            if (next.equals(position)) break;
+
+            position = next;
+        }
+
+        player.setPosition(role, position);
+    }
+
+    private void exploreOneTile(PlayerState player) {
+        TileDefinition drawn = simulation.tileBag.draw();
+        if (drawn == null) return;
+
+        Point placement = choosePlacementPoint(player);
+        if (placement == null) return;
+
+        Tile placedTile = placeDrawnTile(player, drawn, placement, false);
+        if (placedTile == null) return;
+
+        for (Direction direction : placedTile.expansionDirections) {
+            Point extraPoint = direction.from(placement);
+
+            if (!simulation.map.canPlaceExpansion(extraPoint)) {
+                simulation.log("Переход " + direction + " заблокирован: клетка занята " + extraPoint);
+                continue;
+            }
+
+            TileDefinition extra = simulation.tileBag.drawExtraBiome(placedTile.biome);
+            if (extra == null) {
+                simulation.log("Нет доп. тайла для биома " + placedTile.biome.displayName);
+                continue;
+            }
+
+            placeDrawnTile(player, extra, extraPoint, true);
+        }
+    }
+
+    private Point choosePlacementPoint(PlayerState player) {
+        List<Point> candidates = simulation.map.availablePlacementPoints();
+        if (candidates.isEmpty()) return null;
+
+        return candidates.stream()
+                .min(Comparator.comparingInt(p -> p.manhattan(player.scout)))
+                .orElse(candidates.get(simulation.random.nextInt(candidates.size())));
+    }
+
+    private Tile placeDrawnTile(PlayerState player, TileDefinition drawn, Point placement, boolean automaticExpansion) {
+        int rotationQuarterTurns = simulation.random.nextInt(4);
+        Tile tile = drawn.toPlacedTile(rotationQuarterTurns);
+
+        boolean placed = automaticExpansion
+                ? simulation.map.placeExpansionTile(placement, tile)
+                : simulation.map.placeTile(placement, tile);
+
+        if (!placed) return null;
+
+        if (!automaticExpansion) {
+            player.scout = placement;
+        }
+
+        String prefix = automaticExpansion ? "Автодостройка" : "Игрок " + player.id + " выложил";
+        simulation.log(prefix + ": " + tile.biome.displayName + " " + placement
+                + ", поворот " + (rotationQuarterTurns * 90) + "°");
+
+        if (tile.hasSpawn() && !tile.spawnUsed) {
+            spawnDinosaur(tile.spawnSpecies, placement);
+            tile.spawnUsed = true;
+        }
+
+        return tile;
+    }
+
+    private void spawnDinosaur(Species species, Point position) {
+        Dinosaur dino = new Dinosaur(simulation.nextDinoId++, species, position);
+        simulation.dinosaurs.add(dino);
+        simulation.result.firstSpawnRound.putIfAbsent(species, simulation.round);
+        simulation.log("СПАУН: " + species.displayName + " на " + position);
+    }
+
+    private boolean placeTrapForNeededTarget(PlayerState player, int movementPoints) {
+        if (activeTrapCount(player) >= simulation.inventoryConfig.maxTrapsPerPlayer) {
+            return false;
+        }
+
+        Optional<Dinosaur> target = simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.removed && !d.trapped)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .min(Comparator.comparingInt(d -> d.position.manhattan(player.engineer)));
+
+        if (target.isEmpty()) return false;
+
+        Point predicted = predictNextBioStep(target.get());
+        if (predicted == null || !simulation.map.isPlaced(predicted) || hasActiveTrapAt(player, predicted)) {
+            return false;
+        }
+
+        if (!isSameOrAdjacent8(player.engineer, predicted)) {
+            moveRoleToward(player, RangerRole.ENGINEER, predicted, movementPoints);
+            return true;
+        }
+
+        player.traps.add(new Trap(player.id, predicted));
+        simulation.log("Игрок " + player.id + " поставил ловушку на " + predicted
+                + " для цели: " + target.get().species.displayName);
+        return true;
+    }
+
+    /**
+     * Собирает рядом стоящую ловушку, если она стала вредной или бесполезной.
+     *
+     * Если в ловушке сидит не нужный игроку динозавр, инженер поднимает ловушку,
+     * а зверь снова оказывается на свободе. Пустая ловушка подбирается только
+     * если она больше не перекрывает прогнозный ход нужной S-цели.
+     */
+    private boolean collectBadNearbyTrap(PlayerState player) {
+        Optional<Trap> trapToCollect = player.traps.stream()
+                .filter(t -> t.active)
+                .filter(t -> isSameOrAdjacent8(player.engineer, t.position))
+                .filter(t -> trapShouldBeCollected(player, t))
+                .findFirst();
+
+        trapToCollect.ifPresent(trap -> collectTrap(player, trap));
+        return trapToCollect.isPresent();
+    }
+
+    /**
+     * Подбирает любую пустую ловушку рядом, если инженеру всё равно нечем заняться.
+     */
+    private boolean collectAnyNearbyEmptyTrap(PlayerState player) {
+        Optional<Trap> trapToCollect = player.traps.stream()
+                .filter(t -> t.active && !t.hasDinosaur())
+                .filter(t -> isSameOrAdjacent8(player.engineer, t.position))
+                .findFirst();
+
+        trapToCollect.ifPresent(trap -> collectTrap(player, trap));
+        return trapToCollect.isPresent();
+    }
+
+    /**
+     * Проверяет, стоит ли инженеру снять ловушку с карты.
+     */
+    private boolean trapShouldBeCollected(PlayerState player, Trap trap) {
+        if (trap.hasDinosaur()) {
+            return trappedDinosaur(trap)
+                    .map(dinosaur -> !player.needs(dinosaur.species))
+                    .orElse(true);
+        }
+
+        return !isTrapUsefulForNeededTarget(player, trap);
+    }
+
+    /**
+     * Поднимает ловушку в инвентарь инженера.
+     *
+     * Если внутри сидел динозавр, он освобождается на той же клетке.
+     */
+    private void collectTrap(PlayerState player, Trap trap) {
+        if (trap.hasDinosaur()) {
+            trappedDinosaur(trap).ifPresent(dinosaur -> {
+                dinosaur.trapped = false;
+                dinosaur.trappedByPlayerId = 0;
+                simulation.log("Инженер игрока " + player.id + " снял ловушку на " + trap.position
+                        + " и выпустил " + dinosaur.species.displayName + " #" + dinosaur.id);
+            });
+        } else {
+            simulation.log("Инженер игрока " + player.id + " снял пустую ловушку на " + trap.position);
+        }
+
+        trap.trappedDinosaurId = 0;
+        trap.active = false;
+    }
+
+    /**
+     * Проверяет, перекрывает ли ловушка прогнозный следующий шаг нужной S-цели.
+     */
+    private boolean isTrapUsefulForNeededTarget(PlayerState player, Trap trap) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.removed && !d.trapped)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .map(this::predictNextBioStep)
+                .anyMatch(trap.position::equals);
+    }
+
+    /**
+     * Возвращает динозавра, сидящего в указанной ловушке.
+     */
+    private Optional<Dinosaur> trappedDinosaur(Trap trap) {
+        if (!trap.hasDinosaur()) return Optional.empty();
+
+        return simulation.dinosaurs.stream()
+                .filter(dinosaur -> dinosaur.id == trap.trappedDinosaurId)
+                .findFirst();
+    }
+
+    /**
+     * Возвращает ближайшего динозавра, удерживаемого ловушкой игрока.
+     */
+    private Optional<Dinosaur> nearestTrappedDinosaur(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> d.trapped && !d.captured && !d.removed)
+                .filter(d -> d.trappedByPlayerId == player.id)
+                .min(Comparator.comparingInt(d -> d.position.manhattan(player.driver)));
+    }
+
+    /**
+     * Доставляет динозавра из ловушки на базу, если водитель уже стоит на его клетке.
+     *
+     * Только в этот момент ловушка возвращается в инвентарь, а динозавр считается
+     * действительно пойманным для задания игрока.
+     */
+    private boolean extractTrappedDinosaurIfPossible(PlayerState player) {
+        Optional<Dinosaur> trapped = simulation.dinosaurs.stream()
+                .filter(d -> d.trapped && !d.captured && !d.removed)
+                .filter(d -> d.trappedByPlayerId == player.id)
+                .filter(d -> d.position.equals(player.driver))
+                .findFirst();
+
+        if (trapped.isEmpty()) {
+            return false;
+        }
+
+        Dinosaur dinosaur = trapped.get();
+        Optional<Trap> trap = player.traps.stream()
+                .filter(t -> t.active && t.trappedDinosaurId == dinosaur.id)
+                .findFirst();
+
+        dinosaur.trapped = false;
+        dinosaur.trappedByPlayerId = 0;
+        dinosaur.captured = true;
+        dinosaur.position = simulation.map.base;
+        player.captured.add(dinosaur.species);
+        simulation.result.trapCaptures++;
+
+        trap.ifPresent(t -> {
+            t.trappedDinosaurId = 0;
+            t.active = false;
+        });
+
+        simulation.log("Водитель игрока " + player.id + " вывез " + dinosaur.species.displayName
+                + " #" + dinosaur.id + " на базу. Ловушка вернулась в инвентарь");
+        return true;
+    }
+
+    /**
+     * Считает активные ловушки игрока, включая ловушки с динозаврами внутри.
+     */
+    private long activeTrapCount(PlayerState player) {
+        return player.traps.stream().filter(t -> t.active).count();
+    }
+
+    /**
+     * Проверяет, стоит ли у игрока активная ловушка на указанной клетке.
+     */
+    private boolean hasActiveTrapAt(PlayerState player, Point point) {
+        return player.traps.stream().anyMatch(t -> t.active && t.position.equals(point));
+    }
+
+    /**
+     * Проверяет, находится ли точка в зоне действия инженера: текущая клетка или
+     * любая соседняя, включая диагонали.
+     */
+    private boolean isSameOrAdjacent8(Point center, Point point) {
+        return Math.abs(center.x - point.x) <= 1 && Math.abs(center.y - point.y) <= 1;
+    }
+
+    private Point predictNextBioStep(Dinosaur dinosaur) {
+        Point target = predictNextBioTarget(dinosaur);
+        if (target == null) return null;
+        return simulation.stepTowardPlaced(dinosaur.position, target);
+    }
+
+    private Point predictNextBioTarget(Dinosaur dinosaur) {
+        Biome nextBiome = dinosaur.species.bioTrail.get((dinosaur.trailIndex + 1) % dinosaur.species.bioTrail.size());
+        return simulation.map.nearestPlacedBiome(dinosaur.position, nextBiome);
+    }
+
+    private boolean attemptCapture(PlayerState player) {
+        List<Dinosaur> needed = simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.removed && !d.trapped)
+                .filter(d -> player.needs(d.species))
+                .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.hunter)))
+                .toList();
+
+        for (Dinosaur dinosaur : needed) {
+            if (dinosaur.species.captureMethod == CaptureMethod.TRACKING) {
+                if (player.hunter.manhattan(dinosaur.position) <= 1) {
+                    double chance = simulation.gameMechanicConfig.trackingBaseSuccess
+                            + simulation.gameMechanicConfig.trackingStepBonus
+                            * simulation.random.nextInt(simulation.gameMechanicConfig.trackingMaxSteps);
+
+                    if (simulation.random.nextDouble() < chance) {
+                        capture(player, dinosaur, "выслеживание");
+                        simulation.result.trackingCaptures++;
+                    }
+                    return true;
+                }
+
+                player.hunter = simulation.stepTowardPlaced(player.hunter, dinosaur.position);
+                return true;
+            }
+
+            if (dinosaur.species.captureMethod == CaptureMethod.HUNT) {
+                if (player.hunterBait <= 0) return false;
+
+                if (player.hunter.manhattan(dinosaur.position) <= 2) {
+                    double chance = simulation.random.nextBoolean()
+                            ? simulation.gameMechanicConfig.huntBaseSuccess
+                            : simulation.gameMechanicConfig.huntPreparedSuccess;
+
+                    if (simulation.random.nextDouble() < chance) {
+                        capture(player, dinosaur, "охота");
+                        simulation.result.huntCaptures++;
+                    }
+
+                    player.hunterBait--;
+                    return true;
+                }
+
+                player.hunter = simulation.stepTowardPlaced(player.hunter, dinosaur.position);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void capture(PlayerState player, Dinosaur dinosaur, String method) {
+        dinosaur.captured = true;
+        player.captured.add(dinosaur.species);
+        simulation.log("ПОЙМАН: игрок " + player.id + " поймал "
+                + dinosaur.species.displayName + " (" + method + ")");
+    }
+}
