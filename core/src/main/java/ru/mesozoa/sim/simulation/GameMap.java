@@ -10,17 +10,30 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Динамическое игровое поле.
  * Центр карты определяется по BaseTile
  */
 public final class GameMap {
+
+    /**
+     * Один конкретный шаг расширения дорожной сети, связанной с базой.
+     *
+     * @param workerPosition клетка, где должен стоять инженер
+     * @param buildPoint клетка, на которую направлена стройка: сосед для дороги или клетка моста
+     * @param bridge true, если шаг строит мост; false, если шаг строит дорогу
+     */
+    public record DriverNetworkBuildStep(Point workerPosition, Point buildPoint, boolean bridge) {
+    }
 
     /**
      * Обычные тайлы местности, выложенные игроками на стол.
@@ -354,6 +367,185 @@ public final class GameMap {
         List<Point> path = findDriverPath(from, target);
         if (path.isEmpty()) return Integer.MAX_VALUE;
         return path.size() - 1;
+    }
+
+    /**
+     * Возвращает клетки, связанные с базой действующей дорожной сетью водителя.
+     *
+     * База входит в результат даже если из неё пока не построена первая дорога.
+     * Это позволяет инженеру корректно начинать сеть с базового тайла, а не
+     * строить отдельные бессвязные обрывки дороги рядом с динозавром.
+     *
+     * @return множество клеток, до которых водитель может добраться из базы
+     */
+    public Set<Point> driverNetworkFromBase() {
+        LinkedHashSet<Point> visited = new LinkedHashSet<>();
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+
+        queue.add(base);
+        visited.add(base);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            for (Point neighbor : driverReachableNeighbors(current)) {
+                if (visited.add(neighbor)) {
+                    queue.addLast(neighbor);
+                }
+            }
+        }
+
+        return visited;
+    }
+
+    /**
+     * Выбирает следующий строительный шаг, который расширит связанную с базой
+     * дорожную сеть в сторону цели.
+     *
+     * Метод принципиально смотрит только на frontier текущей сети от базы.
+     * Поэтому инженер больше не строит декоративные дороги у пойманного
+     * динозавра, которые водитель не может использовать. Чудо инженерной мысли:
+     * дорога наконец должна соединяться с другой дорогой.
+     *
+     * @param target клетка, к которой нужно подвести водителя
+     * @return лучший шаг строительства или пустой результат, если сеть нельзя расширить
+     */
+    public Optional<DriverNetworkBuildStep> bestDriverNetworkBuildStepToward(Point target) {
+        if (target == null || !isPlaced(target) || hasDriverPath(base, target)) {
+            return Optional.empty();
+        }
+
+        Set<Point> network = driverNetworkFromBase();
+        ArrayList<DriverNetworkBuildStep> candidates = new ArrayList<>();
+
+        for (Point from : network) {
+            collectRoadExpansionCandidates(from, network, candidates);
+            collectBridgeExpansionCandidates(from, network, target, candidates);
+        }
+
+        return candidates.stream()
+                .min(Comparator
+                        .comparingInt((DriverNetworkBuildStep step) -> projectedNetworkDistance(step, network, target))
+                        .thenComparingInt(step -> step.workerPosition().manhattan(target))
+                        .thenComparingInt(step -> step.buildPoint().manhattan(target)));
+    }
+
+    /**
+     * Проверяет, можно ли прямо сейчас выполнить выбранный шаг расширения сети.
+     *
+     * @param step шаг строительства из base-connected сети
+     * @return true, если дорога или мост всё ещё могут быть построены
+     */
+    public boolean canBuildDriverNetworkStep(DriverNetworkBuildStep step) {
+        if (step == null) return false;
+        if (step.bridge()) {
+            return canBuildBridgeFrom(step.workerPosition(), step.buildPoint());
+        }
+        return canBuildRoadBetween(step.workerPosition(), step.buildPoint());
+    }
+
+    /**
+     * Выполняет выбранный шаг расширения дорожной сети водителя.
+     *
+     * @param step шаг строительства из base-connected сети
+     * @return true, если постройка была выполнена
+     */
+    public boolean buildDriverNetworkStep(DriverNetworkBuildStep step) {
+        if (!canBuildDriverNetworkStep(step)) return false;
+        if (step.bridge()) {
+            return buildBridgeFrom(step.workerPosition(), step.buildPoint());
+        }
+        return buildRoadBetween(step.workerPosition(), step.buildPoint());
+    }
+
+    /**
+     * Добавляет кандидаты дорожного расширения из одной клетки текущей сети.
+     *
+     * @param from клетка уже связанной с базой сети
+     * @param network текущая сеть водителя от базы
+     * @param candidates список, куда добавляются найденные шаги
+     */
+    private void collectRoadExpansionCandidates(
+            Point from,
+            Set<Point> network,
+            ArrayList<DriverNetworkBuildStep> candidates
+    ) {
+        for (Point to : from.neighbors4()) {
+            if (network.contains(to)) continue;
+            if (canBuildRoadBetween(from, to)) {
+                candidates.add(new DriverNetworkBuildStep(from, to, false));
+            }
+        }
+    }
+
+    /**
+     * Добавляет кандидаты мостового расширения из одной клетки текущей сети.
+     *
+     * @param from клетка уже связанной с базой сети
+     * @param network текущая сеть водителя от базы
+     * @param target цель, к которой тянется сеть
+     * @param candidates список, куда добавляются найденные шаги
+     */
+    private void collectBridgeExpansionCandidates(
+            Point from,
+            Set<Point> network,
+            Point target,
+            ArrayList<DriverNetworkBuildStep> candidates
+    ) {
+        if (canBuildBridgeFrom(from, from) && bridgeWouldExpandNetwork(from, network, target)) {
+            candidates.add(new DriverNetworkBuildStep(from, from, true));
+        }
+
+        for (Point to : from.neighbors4()) {
+            if (canBuildBridgeFrom(from, to) && bridgeWouldExpandNetwork(to, network, target)) {
+                candidates.add(new DriverNetworkBuildStep(from, to, true));
+            }
+        }
+    }
+
+    /**
+     * Оценивает, насколько выбранный шаг приблизит связанную сеть к цели.
+     *
+     * @param step проверяемый шаг строительства
+     * @param network текущая сеть водителя от базы
+     * @param target цель, к которой строится путь
+     * @return манхэттенское расстояние от расширенной части сети до цели
+     */
+    private int projectedNetworkDistance(DriverNetworkBuildStep step, Set<Point> network, Point target) {
+        if (step.bridge() && network.contains(step.buildPoint())) {
+            return bestUnlockedNeighborDistance(step.buildPoint(), network, target);
+        }
+        return step.buildPoint().manhattan(target);
+    }
+
+    /**
+     * Проверяет, даст ли мост новую достижимую клетку для водителя.
+     *
+     * @param bridgePoint клетка будущего моста
+     * @param network текущая сеть водителя от базы
+     * @param target цель, к которой строится путь
+     * @return true, если мост добавит новую клетку или приблизит сеть к цели
+     */
+    private boolean bridgeWouldExpandNetwork(Point bridgePoint, Set<Point> network, Point target) {
+        if (!isPlaced(bridgePoint)) return false;
+        if (!network.contains(bridgePoint)) return true;
+        return bestUnlockedNeighborDistance(bridgePoint, network, target) < Integer.MAX_VALUE;
+    }
+
+    /**
+     * Ищет ближайшего к цели соседа, который станет доступен после моста.
+     *
+     * @param bridgePoint клетка будущего моста
+     * @param network текущая сеть водителя от базы
+     * @param target цель, к которой строится путь
+     * @return расстояние до цели или Integer.MAX_VALUE, если мост ничего не откроет
+     */
+    private int bestUnlockedNeighborDistance(Point bridgePoint, Set<Point> network, Point target) {
+        int best = Integer.MAX_VALUE;
+        for (Point neighbor : bridgePoint.neighbors4()) {
+            if (!isPlaced(neighbor) || network.contains(neighbor)) continue;
+            best = Math.min(best, neighbor.manhattan(target));
+        }
+        return best;
     }
 
     public Point stepDriverToward(Point from, Point target) {

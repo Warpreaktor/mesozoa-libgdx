@@ -9,6 +9,7 @@ import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.model.Trap;
 import ru.mesozoa.sim.ranger.RangerPlan;
+import ru.mesozoa.sim.simulation.GameMap;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.ArrayList;
@@ -147,81 +148,66 @@ public class EngineerAction {
     /**
      * Пытается выполнить полезную инфраструктурную работу рядом с инженером.
      *
-     * Инженер строит только из своей клетки: дорогу — между своей клеткой и
-     * соседней клеткой по стороне, мост — на своей клетке.
+     * Инфраструктура строится только как продолжение сети, уже связанной с базой.
+     * Иначе водитель всё равно не сможет доехать до динозавра, а инженер будет
+     * производить художественные дорожные инсталляции в лесу. Очень атмосферно,
+     * но бесполезно.
+     *
+     * @param player игрок, чей инженер строит
+     * @param plannedTarget целевая клетка из AI-плана
+     * @return true, если дорога или мост были построены
      */
     private boolean tryBuildInfrastructure(PlayerState player, Point plannedTarget) {
-        Optional<Point> target = bestInfrastructureTarget(player, plannedTarget);
-        if (target.isEmpty()) return false;
+        Optional<GameMap.DriverNetworkBuildStep> step = bestDriverNetworkBuildStep(player, plannedTarget);
+        if (step.isEmpty()) return false;
 
-        if (tryBuildBridgeTowardTarget(player, target.get())) {
-            return true;
-        }
-
-        return tryBuildRoadTowardTarget(player, target.get());
-    }
-
-    /**
-     * Пытается построить мост рядом с инженером в сторону инфраструктурной цели.
-     *
-     * Сначала проверяется текущая клетка инженера, затем соседняя клетка в прямом
-     * направлении к цели, затем остальные соседние клетки по стороне.
-     */
-    private boolean tryBuildBridgeTowardTarget(PlayerState player, Point target) {
-        if (simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), player.engineerRanger.position())) {
-            simulation.map.buildBridgeFrom(player.engineerRanger.position(), player.engineerRanger.position());
-            simulation.log("Инженер игрока " + player.id + " построил мост");
-            return true;
-        }
-
-        Point direct = player.engineerRanger.position().stepToward(target);
-        if (simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), direct)) {
-            simulation.map.buildBridgeFrom(player.engineerRanger.position(), direct);
-            simulation.log("Инженер игрока " + player.id + " построил мост");
-            return true;
-        }
-
-        Optional<Point> bridgePoint = player.engineerRanger.position().neighbors4().stream()
-                .filter(point -> simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), point))
-                .min(Comparator.comparingInt(point -> point.manhattan(target)));
-
-        if (bridgePoint.isPresent()) {
-            simulation.map.buildBridgeFrom(player.engineerRanger.position(), bridgePoint.get());
-            simulation.log("Инженер игрока " + player.id + " построил мост");
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Пытается построить дорогу из клетки инженера в соседнюю клетку по стороне.
-     *
-     * Кандидат выбирается среди соседних клеток, где дорогу действительно можно
-     * построить, с предпочтением клетки, которая ближе к инфраструктурной цели.
-     */
-    private boolean tryBuildRoadTowardTarget(PlayerState player, Point target) {
-        Optional<Point> nextRoadPoint = player.engineerRanger.position().neighbors4().stream()
-                .filter(point -> simulation.map.canBuildRoadBetween(player.engineerRanger.position(), point))
-                .min(Comparator.comparingInt(point -> point.manhattan(target)));
-
-        if (nextRoadPoint.isEmpty()) {
+        GameMap.DriverNetworkBuildStep buildStep = step.get();
+        if (!player.engineerRanger.position().equals(buildStep.workerPosition())) {
             return false;
         }
 
-        simulation.map.buildRoadBetween(player.engineerRanger.position(), nextRoadPoint.get());
-        simulation.log("Инженер игрока " + player.id + " построил дорогу");
+        if (!simulation.map.buildDriverNetworkStep(buildStep)) {
+            return false;
+        }
+
+        simulation.log("Инженер игрока " + player.id + " построил "
+                + (buildStep.bridge() ? "мост" : "дорогу")
+                + " к дорожной сети");
         return true;
     }
 
     /**
-     * Перемещает инженера к ближайшей инфраструктурной цели.
+     * Выбирает следующий шаг строительства от связанной с базой дорожной сети.
      *
-     * Если точная цель недостижима из-за воды или гор, инженер всё равно идёт
-     * к ближайшей достижимой клетке, откуда сможет строить мост или продолжать
-     * дорогу. Это убирает старую гениальную схему база-лес-база.
+     * @param player игрок, для которого ищется инфраструктурный шаг
+     * @param plannedTarget цель из AI-плана
+     * @return шаг строительства дороги или моста
+     */
+    private Optional<GameMap.DriverNetworkBuildStep> bestDriverNetworkBuildStep(PlayerState player, Point plannedTarget) {
+        Optional<Point> target = bestInfrastructureTarget(player, plannedTarget);
+        if (target.isEmpty()) return Optional.empty();
+        return simulation.map.bestDriverNetworkBuildStepToward(target.get());
+    }
+
+    /**
+     * Перемещает инженера к точке, из которой можно расширить связанную с базой
+     * дорожную сеть.
+     *
+     * Инженеру больше не нужно ломиться к самому динозавру в ловушке. Ему нужно
+     * встать на frontier текущей дороги и построить следующий сегмент. Дорога,
+     * внезапно, должна начинаться не с пленного Криптогната, а с базы.
+     *
+     * @param player игрок, чей инженер двигается
+     * @param plannedTarget цель из AI-плана
+     * @param movementPoints доступные очки движения
+     * @return true, если инженер сменил позицию
      */
     private boolean moveEngineerTowardInfrastructureTarget(PlayerState player, Point plannedTarget, int movementPoints) {
+        Optional<GameMap.DriverNetworkBuildStep> step = bestDriverNetworkBuildStep(player, plannedTarget);
+        if (step.isPresent()) {
+            return moveEngineerToward(player, step.get().workerPosition(), movementPoints);
+        }
+
         Optional<Point> target = bestInfrastructureTarget(player, plannedTarget);
         return moveEngineerToward(player, target.orElse(player.scoutRanger.position()), movementPoints);
     }
