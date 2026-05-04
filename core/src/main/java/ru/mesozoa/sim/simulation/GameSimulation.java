@@ -6,6 +6,8 @@ import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
+import ru.mesozoa.sim.dinosaur.profile.DinosaurProfile;
+import ru.mesozoa.sim.dinosaur.profile.DinosaurProfiles;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.report.GameResult;
 import ru.mesozoa.sim.tile.Tile;
@@ -18,6 +20,8 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.HashMap;
+import java.util.List;
 
 public final class GameSimulation {
 
@@ -320,39 +324,186 @@ public final class GameSimulation {
         }
     }
 
+    /**
+     * Перемещает динозавра по его биологической тропе.
+     *
+     * Новая логика намеренно не уводит динозавра в туман войны. Если целевой
+     * биом маршрута не открыт или недостижим за один ход по уже открытой карте,
+     * динозавр делает один случайный шаг. Неизведанная область при этом считается
+     * краем острова: если случайное направление ведёт в закрытую или непроходимую
+     * клетку, динозавр остаётся на месте. Да, зверь наконец-то перестал исчезать
+     * сразу после появления, это был не динозавр, а фокусник-шарлатан.
+     */
     private void moveByBioTrail(Dinosaur dinosaur) {
-        Point target = predictNextBioTarget(dinosaur);
+        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
+        Tile currentTile = map.tile(dinosaur.position);
 
-        if (target == null) {
-            Point frontier = map.nearestUnexploredFrontier(dinosaur.position);
-            if (frontier == null) return;
-
-            Point next = stepTowardFrontier(dinosaur.position, frontier);
-            if (!map.isPlaced(next) && next.equals(frontier)) {
-                dinosaur.removed = true;
-                log(dinosaur.species.displayName + " #" + dinosaur.id + " ушёл в неизвестную часть острова " + frontier);
-            } else {
-                dinosaur.position = next;
-            }
+        if (currentTile == null) {
             return;
         }
 
-        int steps = Math.max(1, Math.min(dinosaur.species.agility, 3));
-        for (int i = 0; i < steps; i++) {
-            if (dinosaur.position.equals(target)) break;
-            dinosaur.position = stepTowardPlaced(dinosaur.position, target);
+        Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, dinosaur.trailIndex);
+        Optional<List<Point>> path = findDinosaurPathToReachableBiome(
+                dinosaur.position,
+                nextBiome,
+                profile
+        );
+
+        if (path.isPresent()) {
+            moveDinosaurAlongBioTrailPath(dinosaur, profile, nextBiome, path.get());
+            return;
         }
 
-        Tile current = map.tile(dinosaur.position);
-        Biome nextBiome = dinosaur.species.bioTrail.get((dinosaur.trailIndex + 1) % dinosaur.species.bioTrail.size());
-        if (current != null && current.biome == nextBiome) {
-            dinosaur.trailIndex = (dinosaur.trailIndex + 1) % dinosaur.species.bioTrail.size();
+        moveDinosaurInRandomDirection(dinosaur, profile, nextBiome);
+    }
+
+    /**
+     * Перемещает динозавра в найденный целевой биом био-тропы.
+     *
+     * @param dinosaur динозавр, который перемещается
+     * @param profile видовой профиль динозавра
+     * @param nextBiome целевой биом био-тропы
+     * @param path кратчайший путь до подходящего тайла, включая стартовую клетку
+     */
+    private void moveDinosaurAlongBioTrailPath(
+            Dinosaur dinosaur,
+            DinosaurProfile profile,
+            Biome nextBiome,
+            List<Point> path
+    ) {
+        if (path.size() < 2) {
+            return;
+        }
+
+        dinosaur.position = path.get(path.size() - 1);
+        int newTrailIndex = profile.trailIndexOf(nextBiome);
+        if (newTrailIndex >= 0) {
+            dinosaur.trailIndex = newTrailIndex;
         }
     }
 
-    private Point predictNextBioTarget(Dinosaur dinosaur) {
-        Biome nextBiome = dinosaur.species.bioTrail.get((dinosaur.trailIndex + 1) % dinosaur.species.bioTrail.size());
-        return map.nearestPlacedBiome(dinosaur.position, nextBiome);
+    /**
+     * Ищет ближайший тайл следующего биома, до которого динозавр может дойти
+     * за один ход в пределах своей ловкости.
+     *
+     * Поиск идёт только по уже открытым клеткам и только по биомам, входящим
+     * в био-тропу конкретного вида.
+     */
+    private Optional<List<Point>> findDinosaurPathToReachableBiome(
+            Point start,
+            Biome targetBiome,
+            DinosaurProfile profile
+    ) {
+        if (!canDinosaurStandOn(start, profile)) {
+            return Optional.empty();
+        }
+
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+        HashMap<Point, Point> previous = new HashMap<>();
+        HashMap<Point, Integer> distance = new HashMap<>();
+
+        queue.add(start);
+        previous.put(start, null);
+        distance.put(start, 0);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            int currentDistance = distance.get(current);
+
+            if (!current.equals(start) && tileBiome(current) == targetBiome) {
+                return Optional.of(restorePath(previous, current));
+            }
+
+            if (currentDistance >= profile.agility()) {
+                continue;
+            }
+
+            for (Point neighbor : current.neighbors4()) {
+                if (previous.containsKey(neighbor)) {
+                    continue;
+                }
+
+                if (!canDinosaurStandOn(neighbor, profile)) {
+                    continue;
+                }
+
+                previous.put(neighbor, current);
+                distance.put(neighbor, currentDistance + 1);
+                queue.addLast(neighbor);
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Восстанавливает путь BFS от старта до найденной цели.
+     */
+    private List<Point> restorePath(HashMap<Point, Point> previous, Point target) {
+        ArrayList<Point> path = new ArrayList<>();
+        Point step = target;
+
+        while (step != null) {
+            path.add(0, step);
+            step = previous.get(step);
+        }
+
+        return path;
+    }
+
+    /**
+     * Делает один случайный шаг динозавра, если следующий биом био-тропы сейчас
+     * недостижим за один ход.
+     *
+     * Если случайное направление ведёт в закрытую клетку, базу или биом вне
+     * маршрута этого вида, динозавр стоит на месте.
+     */
+    private void moveDinosaurInRandomDirection(Dinosaur dinosaur, DinosaurProfile profile, Biome nextBiome) {
+        Direction direction = Direction.values()[random.nextInt(Direction.values().length)];
+        Point next = direction.from(dinosaur.position);
+
+        if (canDinosaurStandOn(next, profile)) {
+            dinosaur.position = next;
+            Tile tile = map.tile(next);
+            if (tile != null) {
+                int newTrailIndex = profile.trailIndexOf(tile.biome);
+                if (newTrailIndex >= 0) {
+                    dinosaur.trailIndex = newTrailIndex;
+                }
+            }
+            log(dinosaur.species.displayName + " #" + dinosaur.id
+                    + " не нашёл рядом биом " + nextBiome.displayName
+                    + " и шагнул " + direction + " на " + next);
+            return;
+        }
+
+        log(dinosaur.species.displayName + " #" + dinosaur.id
+                + " не нашёл доступный " + nextBiome.displayName
+                + " и остался на месте: " + direction + " закрыт или непроходим");
+    }
+
+    /**
+     * Проверяет, может ли динозавр стоять на клетке.
+     *
+     * Неизведанная область, база и биомы вне био-тропы вида считаются
+     * непроходимыми. Вот это и убирает старую механику «вышел за край карты и
+     * исчез», которая выглядела так, будто динозавров уносит бухгалтерия.
+     */
+    private boolean canDinosaurStandOn(Point point, DinosaurProfile profile) {
+        if (point == null || !map.isPlaced(point) || map.isBase(point)) {
+            return false;
+        }
+
+        Biome biome = tileBiome(point);
+        return profile.canEnter(biome);
+    }
+
+    /**
+     * Возвращает биом обычного тайла или null для базы/закрытой клетки.
+     */
+    private Biome tileBiome(Point point) {
+        Tile tile = map.tile(point);
+        return tile == null ? null : tile.biome;
     }
 
     public Point stepTowardPlaced(Point from, Point target) {

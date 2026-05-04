@@ -124,14 +124,14 @@ public class EngineerAction {
     private boolean tryBuildBridgeTowardTarget(PlayerState player, Point target) {
         if (simulation.map.canBuildBridgeFrom(player.engineer, player.engineer)) {
             simulation.map.buildBridgeFrom(player.engineer, player.engineer);
-            simulation.log("Инженер игрока " + player.id + " построил мост на " + player.engineer);
+            simulation.log("Инженер игрока " + player.id + " построил мост");
             return true;
         }
 
         Point direct = player.engineer.stepToward(target);
         if (simulation.map.canBuildBridgeFrom(player.engineer, direct)) {
             simulation.map.buildBridgeFrom(player.engineer, direct);
-            simulation.log("Инженер игрока " + player.id + " построил мост на " + direct);
+            simulation.log("Инженер игрока " + player.id + " построил мост");
             return true;
         }
 
@@ -141,7 +141,7 @@ public class EngineerAction {
 
         if (bridgePoint.isPresent()) {
             simulation.map.buildBridgeFrom(player.engineer, bridgePoint.get());
-            simulation.log("Инженер игрока " + player.id + " построил мост на " + bridgePoint.get());
+            simulation.log("Инженер игрока " + player.id + " построил мост");
             return true;
         }
 
@@ -164,8 +164,7 @@ public class EngineerAction {
         }
 
         simulation.map.buildRoadBetween(player.engineer, nextRoadPoint.get());
-        simulation.log("Инженер игрока " + player.id + " построил дорогу "
-                + player.engineer + " -> " + nextRoadPoint.get());
+        simulation.log("Инженер игрока " + player.id + " построил дорогу");
         return true;
     }
 
