@@ -294,6 +294,10 @@ public final class MesozoaHudStage {
             return "пойман";
         }
 
+        if (isTrappedNeededSpecies(simulation, player, species)) {
+            return "в ловушке";
+        }
+
         if (isVisibleNeededSpecies(simulation, species)) {
             return "на карте";
         }
@@ -306,11 +310,29 @@ public final class MesozoaHudStage {
             return "good";
         }
 
+        if (isTrappedNeededSpecies(simulation, player, species)) {
+            return "warning";
+        }
+
         if (isVisibleNeededSpecies(simulation, species)) {
             return "warning";
         }
 
         return "muted";
+    }
+
+    /**
+     * Проверяет, ждёт ли нужный вид вывоза из ловушки текущего игрока.
+     *
+     * @param simulation текущая симуляция
+     * @param player игрок, чей HUD собирается
+     * @param species вид из задания
+     * @return true, если вид сидит в ловушке игрока и ещё не доставлен
+     */
+    private boolean isTrappedNeededSpecies(GameSimulation simulation, PlayerState player, Species species) {
+        return simulation.dinosaurs.stream()
+                .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
+                .anyMatch(dinosaur -> dinosaur.species == species);
     }
 
     private boolean isVisibleNeededSpecies(GameSimulation simulation, Species species) {

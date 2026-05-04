@@ -1,29 +1,26 @@
 package ru.mesozoa.sim.ranger.ai;
 
+import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.simulation.GameSimulation;
+
+import java.util.Optional;
 
 /**
  * AI-оценка полезности водителя для очередной активации игрока.
  */
 public class DriverAi {
 
-    /** Вес действия, которое водитель сейчас выполнить не может. */
-    private static final double SCORE_IMPOSSIBLE = -100.0;
-
-    /** Вес ситуации, когда водитель не решает полезной задачи. */
+    /** Вес ситуации, когда водитель сейчас не имеет полезной задачи. */
     private static final double SCORE_NO_USEFUL_TASK = -10.0;
 
-    /** Вес ситуации, когда цель понятна, но к ней нет дороги или мостового пути. */
-    private static final double SCORE_NO_ROUTE = -30.0;
+    /** Вес ситуации, когда динозавр в ловушке есть, но дороги для вывоза нет. */
+    private static final double SCORE_TRAPPED_DINO_WITHOUT_ROUTE = -25.0;
 
-    /** Базовый вес полезного логистического действия водителя. */
-    private static final double SCORE_USEFUL_ROUTE_BASE = 18.0;
-
-    /** Максимальный бонус за длинную связную дорогу, по которой водитель может быстро подтянуться. */
-    private static final double SCORE_ROUTE_DISTANCE_BONUS_MAX = 10.0;
+    /** Вес готового вывоза динозавра из ловушки. */
+    private static final double SCORE_READY_EXTRACTION = 120.0;
 
     private final GameSimulation simulation;
 
@@ -34,133 +31,80 @@ public class DriverAi {
     /**
      * Рассчитывает вес активации водителя для текущего игрока.
      *
+     * Водитель не получает очки за сближение с охотником, инженером или разведчиком:
+     * по текущим правилам он телепортируется по связанной дорожной сети за одно
+     * действие. Его работа начинается только тогда, когда в ловушке уже сидит
+     * нужный динозавр.
+     *
      * @param player игрок, для которого оценивается полезность водителя
      * @return оценка полезности водителя и причина этой оценки
      */
     public AiScore scoreDriver(PlayerState player) {
-        Point target = chooseDriverTarget(player);
-
-        if (hasNoUsefulDriverTarget(player, target)) {
+        Optional<Dinosaur> reachableTarget = nearestReachableTrappedDinosaur(player);
+        if (reachableTarget.isPresent()) {
+            Dinosaur dinosaur = reachableTarget.get();
             return new AiScore(
-                    SCORE_NO_USEFUL_TASK,
-                    "водитель стоит вместе со всей командой, логистической задачи нет"
+                    SCORE_READY_EXTRACTION,
+                    "динозавр в ловушке готов к вывозу: "
+                            + dinosaur.species.displayName
+                            + " на " + dinosaur.position
             );
         }
 
-        if (isTargetMissing(target)) {
+        Optional<Dinosaur> blockedTarget = nearestBlockedTrappedDinosaur(player);
+        if (blockedTarget.isPresent()) {
+            Dinosaur dinosaur = blockedTarget.get();
             return new AiScore(
-                    SCORE_IMPOSSIBLE,
-                    "у водителя нет корректной цели движения"
+                    SCORE_TRAPPED_DINO_WITHOUT_ROUTE,
+                    "динозавр в ловушке ждёт вывоза, но дороги нет: "
+                            + dinosaur.species.displayName
+                            + " на " + dinosaur.position
             );
         }
-
-        if (isDriverAlreadyAtTarget(player, target)) {
-            return new AiScore(
-                    SCORE_NO_USEFUL_TASK,
-                    "водитель уже находится в выбранной целевой клетке"
-            );
-        }
-
-        if (hasNoDriverRouteToTarget(player, target)) {
-            return new AiScore(
-                    SCORE_NO_ROUTE,
-                    "водитель не может проехать к цели: нет связанного пути по дорогам или мостам"
-            );
-        }
-
-        return scoreReachableDriverTarget(player, target);
-    }
-
-    /**
-     * Выбирает ближайшую логистическую задачу водителя в рамках текущей упрощённой модели.
-     *
-     * @param player игрок, для которого выбирается цель водителя
-     * @return позиция рейнджера, к которому водитель должен подтянуться
-     */
-    private Point chooseDriverTarget(PlayerState player) {
-        if (!player.driverRanger.position().equals(player.hunterRanger.position())) {
-            return player.hunterRanger.position();
-        }
-
-        if (!player.driverRanger.position().equals(player.engineerRanger.position())) {
-            return player.engineerRanger.position();
-        }
-
-        if (!player.driverRanger.position().equals(player.scoutRanger.position())) {
-            return player.scoutRanger.position();
-        }
-
-        return null;
-    }
-
-    /**
-     * Проверяет, есть ли у водителя вообще полезная задача.
-     *
-     * @param player игрок, чей водитель оценивается
-     * @param target выбранная цель водителя
-     * @return true, если водитель не имеет полезной логистической задачи
-     */
-    private boolean hasNoUsefulDriverTarget(PlayerState player, Point target) {
-        return target == null
-                && player.driverRanger.position().equals(player.hunterRanger.position())
-                && player.driverRanger.position().equals(player.engineerRanger.position())
-                && player.driverRanger.position().equals(player.scoutRanger.position());
-    }
-
-    /**
-     * Проверяет, что цель движения не была определена.
-     *
-     * @param target выбранная цель водителя
-     * @return true, если цель отсутствует
-     */
-    private boolean isTargetMissing(Point target) {
-        return target == null;
-    }
-
-    /**
-     * Проверяет, находится ли водитель уже в целевой клетке.
-     * В такой ситуации активация водителя не изменит положение на карте, поэтому
-     * она должна иметь отрицательный вес и не должна перебивать охотника, инженера
-     * или разведчика.
-     *
-     * @param player игрок, чей водитель оценивается
-     * @param target выбранная цель водителя
-     * @return true, если водитель уже стоит в целевой клетке
-     */
-    private boolean isDriverAlreadyAtTarget(PlayerState player, Point target) {
-        return player.driverRanger.position().equals(target);
-    }
-
-    /**
-     * Проверяет, существует ли путь до цели по дорогам или мостам.
-     * Если из базы не проложена дорога или не существует допустимый мостовой/дорожный маршрут,
-     * водитель не должен получать положительный вес.
-     *
-     * @param player игрок, чей водитель оценивается
-     * @param target выбранная цель водителя
-     * @return true, если водитель не может проехать к цели
-     */
-    private boolean hasNoDriverRouteToTarget(PlayerState player, Point target) {
-        return !simulation.map.hasDriverPath(player.driverRanger.position(), target);
-    }
-
-    /**
-     * Рассчитывает положительный вес для достижимой цели водителя.
-     * Водитель — логистическая поддержка, поэтому его вес намеренно ниже весов
-     * срочной поимки охотником или инженером.
-     *
-     * @param player игрок, чей водитель оценивается
-     * @param target достижимая цель водителя
-     * @return положительная оценка полезного водительского действия
-     */
-    private AiScore scoreReachableDriverTarget(PlayerState player, Point target) {
-        int distance = simulation.map.driverPathDistance(player.driverRanger.position(), target);
-        double distanceBonus = Math.min(SCORE_ROUTE_DISTANCE_BONUS_MAX, Math.max(0, distance - 1) * 2.0);
-        double score = SCORE_USEFUL_ROUTE_BASE + distanceBonus;
 
         return new AiScore(
-                score,
-                "водитель может проехать к цели по дорогам или мостам, расстояние по маршруту: " + distance
+                SCORE_NO_USEFUL_TASK,
+                "нет динозавров в ловушках, водитель не тратит ход на бессмысленные покатушки"
         );
+    }
+
+    /**
+     * Выбирает клетку для вывоза динозавра водителем.
+     *
+     * @param player игрок, для которого выбирается цель
+     * @return клетка динозавра в ловушке или null, если цель недоступна
+     */
+    public Point chooseDriverTarget(PlayerState player) {
+        return nearestReachableTrappedDinosaur(player)
+                .map(dinosaur -> dinosaur.position)
+                .orElse(null);
+    }
+
+    /**
+     * Ищет ближайшего динозавра в ловушке, которого можно вывезти сейчас.
+     *
+     * @param player игрок, чей водитель оценивается
+     * @return ближайшая доступная цель вывоза
+     */
+    private Optional<Dinosaur> nearestReachableTrappedDinosaur(PlayerState player) {
+        return simulation.nearestTrappedNeededDinosaurAwaitingPickup(
+                player,
+                player.driverRanger.position(),
+                true
+        );
+    }
+
+    /**
+     * Ищет ближайшего динозавра в ловушке, до которого ещё нет дорожного доступа.
+     *
+     * @param player игрок, чей водитель оценивается
+     * @return ближайшая заблокированная цель вывоза
+     */
+    private Optional<Dinosaur> nearestBlockedTrappedDinosaur(PlayerState player) {
+        return simulation.nearestTrappedNeededDinosaurAwaitingPickup(
+                player,
+                player.driverRanger.position(),
+                false
+        ).filter(dinosaur -> !simulation.canDriverExtractTrappedDinosaur(player, dinosaur));
     }
 }

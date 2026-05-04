@@ -141,32 +141,23 @@ public final class RangerTurnPlanner {
     }
 
     private Optional<Point> engineerTarget(PlayerState player) {
-        Optional<Point> trapTarget = nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP)
-                .map(dinosaur -> dinosaur.position);
-        if (trapTarget.isPresent()) return trapTarget;
-
         Optional<Point> capturedTarget = simulation.dinosaurs.stream()
-                .filter(dinosaur -> dinosaur.captured)
-                .filter(dinosaur -> player.captured.contains(dinosaur.species))
+                .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
+                .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
         if (capturedTarget.isPresent()) return capturedTarget;
 
+        Optional<Point> trapTarget = nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP)
+                .map(dinosaur -> dinosaur.position);
+        if (trapTarget.isPresent()) return trapTarget;
+
         return hunterTarget(player);
     }
 
     private Point driverTarget(PlayerState player) {
-        if (!player.driverRanger.position().equals(player.hunterRanger.position())) {
-            return player.hunterRanger.position();
-        }
-        if (!player.driverRanger.position().equals(player.engineerRanger.position())) {
-            return player.engineerRanger.position();
-        }
-        if (!player.driverRanger.position().equals(player.scoutRanger.position())) {
-            return player.scoutRanger.position();
-        }
-        return null;
+        return driverAi.chooseDriverTarget(player);
     }
 
     private Optional<Dinosaur> nearestNeededDinosaur(PlayerState player, Point from, CaptureMethod... methods) {
@@ -176,7 +167,7 @@ public final class RangerTurnPlanner {
         }
 
         return simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.species.captureMethod))
                 .min(Comparator.comparingInt(d -> d.position.manhattan(from)));

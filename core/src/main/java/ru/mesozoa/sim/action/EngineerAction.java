@@ -50,10 +50,6 @@ public class EngineerAction {
         plan.ranger().spendActionPoints(movementPoints);
     }
 
-    public void action(PlayerState player, int movementPoints) {
-        action(player, null, movementPoints);
-    }
-
     /**
      * Выполняет действие инженера с учётом цели, выбранной AI-планировщиком.
      *
@@ -62,6 +58,22 @@ public class EngineerAction {
      * цель используется как главный ориентир для дороги, моста или перемещения.
      */
     private void action(PlayerState player, Point plannedTarget, int movementPoints) {
+        if (hasTrappedDinosaurWithoutDriverAccess(player)) {
+            if (tryBuildInfrastructure(player, plannedTarget)) {
+                return;
+            }
+
+            boolean moved = moveEngineerTowardInfrastructureTarget(player, plannedTarget, movementPoints);
+            if (tryBuildInfrastructure(player, plannedTarget)) {
+                return;
+            }
+
+            if (!moved) {
+                simulation.log("Инженер игрока " + player.id + " не смог приблизить дорогу к динозавру в ловушке");
+            }
+            return;
+        }
+
         if (hasNeededTrapTarget(player)) {
             moveEngineerTowardTrapTarget(player, movementPoints);
             int placed = placeAvailableTrapsAroundEngineer(player);
@@ -86,9 +98,19 @@ public class EngineerAction {
         }
     }
 
+    /**
+     * Проверяет, есть ли динозавр в ловушке игрока без готового дорожного вывоза.
+     *
+     * @param player игрок, чей инженер оценивает инфраструктурную задачу
+     * @return true, если водитель пока не может забрать динозавра из ловушки
+     */
+    private boolean hasTrappedDinosaurWithoutDriverAccess(PlayerState player) {
+        return nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent();
+    }
+
     private boolean hasNeededTrapTarget(PlayerState player) {
         return simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .anyMatch(d -> d.species.captureMethod == CaptureMethod.TRAP);
     }
@@ -224,7 +246,7 @@ public class EngineerAction {
      * Выбирает практическую цель для строительства дорог и мостов.
      *
      * Приоритеты:
-     * 1. пойманный нужный динозавр без доступа водителя;
+     * 1. нужный динозавр в ловушке без доступа водителя;
      * 2. видимая цель охотника без дороги;
      * 3. открытый нужный биом без дороги;
      * 4. разведчик.
@@ -317,7 +339,7 @@ public class EngineerAction {
         LinkedHashSet<Point> result = new LinkedHashSet<>();
 
         simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
                 .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())))
@@ -328,10 +350,16 @@ public class EngineerAction {
         return new ArrayList<>(result);
     }
 
+    /**
+     * Ищет ближайшего нужного динозавра в ловушке, к которому ещё не подведена дорога.
+     *
+     * @param player игрок, чей инженер строит инфраструктуру
+     * @return клетка динозавра в ловушке без водительского доступа
+     */
     private Optional<Point> nearestCapturedNeededDinosaurWithoutDriverAccess(PlayerState player) {
         return simulation.dinosaurs.stream()
-                .filter(dinosaur -> dinosaur.captured)
-                .filter(dinosaur -> player.captured.contains(dinosaur.species))
+                .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
+                .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
@@ -339,7 +367,7 @@ public class EngineerAction {
 
     private Optional<Point> nearestNeededHunterTargetWithoutDriverAccess(PlayerState player) {
         return simulation.dinosaurs.stream()
-                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING
                         || dinosaur.species.captureMethod == CaptureMethod.HUNT)

@@ -27,7 +27,7 @@ public class EngineerAi {
     /** Вес невозможного или уже не нужного действия. */
     private static final double SCORE_IMPOSSIBLE = -100.0;
 
-    /** Вес срочной логистики для уже пойманного динозавра без дорожного доступа. */
+    /** Вес срочной логистики для динозавра в ловушке без дорожного доступа. */
     private static final double SCORE_CAPTURED_DINO_EXTRACTION = 100.0;
 
     /** Вес ситуации, когда инженер уже рядом с S-целью и может ставить ловушки. */
@@ -90,7 +90,7 @@ public class EngineerAi {
             Dinosaur dinosaur = capturedWithoutRoad.get();
             return new AiScore(
                     SCORE_CAPTURED_DINO_EXTRACTION,
-                    "пойманный динозавр ждёт вывоза, но водитель не имеет дороги: "
+                    "динозавр в ловушке ждёт вывоза, но водитель не имеет дороги: "
                             + dinosaur.species.displayName
                             + " на " + dinosaur.position
             );
@@ -189,13 +189,13 @@ public class EngineerAi {
     }
 
     /**
-     * Проверяет, есть ли уже пойманный нужный динозавр без дорожного доступа.
+     * Проверяет, есть ли нужный динозавр в ловушке без дорожного доступа.
      *
-     * Пойманного динозавра всё ещё нужно вывезти. Если водитель не может доехать
+     * Динозавра в ловушке ещё нужно вывезти. Если водитель не может доехать
      * до его клетки по дорогам или мостам, инженер получает максимальный приоритет:
      * иначе добыча просто лежит на острове и делает вид, что это склад.
      *
-     * @param capturedWithoutRoad ближайший пойманный нужный динозавр без маршрута водителя
+     * @param capturedWithoutRoad ближайший динозавр в ловушке без маршрута водителя
      * @return true, если есть срочная задача на дорожный вывоз
      */
     private boolean hasCapturedDinosaurWithoutRoadAccess(Optional<Dinosaur> capturedWithoutRoad) {
@@ -321,17 +321,17 @@ public class EngineerAi {
     }
 
     /**
-     * Ищет ближайшего пойманного нужного динозавра, к которому водитель не имеет пути.
-     * Пока модель вывоза упрощена, пойманный динозавр остаётся на своей клетке.
+     * Ищет ближайшего нужного динозавра в ловушке, к которому водитель не имеет пути.
+     * Пока водитель не вывез добычу, динозавр и ловушка остаются на карте.
      * Эту позицию можно использовать как цель дорожной инфраструктуры.
      *
      * @param player игрок, для которого ищется задача вывоза
-     * @return ближайший пойманный нужный динозавр без водительского маршрута
+     * @return ближайший динозавр в ловушке без водительского маршрута
      */
     private Optional<Dinosaur> nearestCapturedNeededDinosaurWithoutDriverAccess(PlayerState player) {
         return simulation.dinosaurs.stream()
-                .filter(dinosaur -> dinosaur.captured)
-                .filter(dinosaur -> player.captured.contains(dinosaur.species))
+                .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
+                .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)));
     }
@@ -356,7 +356,7 @@ public class EngineerAi {
      */
     private Optional<Dinosaur> nearestNeededHunterTargetWithoutDriverAccess(PlayerState player) {
         return simulation.dinosaurs.stream()
-                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> dinosaur.species.captureMethod == CaptureMethod.TRACKING
                         || dinosaur.species.captureMethod == CaptureMethod.HUNT)
@@ -449,7 +449,7 @@ public class EngineerAi {
         allowedMethods.addAll(List.of(methods));
 
         return simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.species.captureMethod))
                 .min(Comparator.comparingInt(d -> d.position.manhattan(from)));

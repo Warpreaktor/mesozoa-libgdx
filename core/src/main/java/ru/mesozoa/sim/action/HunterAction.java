@@ -63,7 +63,7 @@ public class HunterAction {
 
     private boolean attemptCapture(PlayerState player) {
         List<Dinosaur> needed = simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod != CaptureMethod.TRAP)
                 .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.hunterRanger.position())))

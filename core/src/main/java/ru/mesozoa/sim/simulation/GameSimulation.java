@@ -289,7 +289,7 @@ public final class GameSimulation {
 
     private void dinosaurPhase() {
         for (Dinosaur dinosaur : new ArrayList<>(dinosaurs)) {
-            if (dinosaur.captured || dinosaur.removed) continue;
+            if (dinosaur.captured || dinosaur.trapped || dinosaur.removed) continue;
 
             if (dinosaur.species == Species.VELOCITAURUS) {
                 huntWithVelocitaurus(dinosaur);
@@ -304,6 +304,10 @@ public final class GameSimulation {
                 checkTrapCapture(dinosaur);
             }
 
+            if (dinosaur.trapped) {
+                continue;
+            }
+
             if (dinosaur.species == Species.CRYPTOGNATH) {
                 stealBaitIfPossible(dinosaur);
             }
@@ -316,7 +320,7 @@ public final class GameSimulation {
 
     private void huntWithVelocitaurus(Dinosaur hunter) {
         Optional<Dinosaur> prey = dinosaurs.stream()
-                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> d.species.size == SizeClass.S)
                 .filter(d -> d.position.manhattan(hunter.position) <= hunter.species.huntRadius)
                 .findFirst();
@@ -338,7 +342,7 @@ public final class GameSimulation {
      * @return конечная клетка ближайшего движения по био-тропе или Optional.empty()
      */
     public Optional<Point> predictDinosaurBioTrailDestination(Dinosaur dinosaur) {
-        if (dinosaur == null || dinosaur.captured || dinosaur.removed) {
+        if (dinosaur == null || dinosaur.captured || dinosaur.trapped || dinosaur.removed) {
             return Optional.empty();
         }
 
@@ -575,6 +579,16 @@ public final class GameSimulation {
         return tile != null && !tile.biome.blocksMostMovement();
     }
 
+    /**
+     * Проверяет срабатывание ловушки после перемещения динозавра.
+     *
+     * Ловушка только обездвиживает динозавра на карте. Вид засчитывается игроку
+     * позже, когда водитель сможет приехать по дорожной сети, забрать клетку с
+     * ловушкой и вернуться на базу. Иначе ловушка превращалась в телепорт добычи
+     * в инвентарь, а это уже не настолка, а налоговая оптимизация.
+     *
+     * @param dinosaur динозавр, который только что переместился
+     */
     private void checkTrapCapture(Dinosaur dinosaur) {
         if (dinosaur.species.captureMethod != CaptureMethod.TRAP) return;
         if (dinosaur.lastPosition == null || dinosaur.lastPosition.equals(dinosaur.position)) return;
@@ -583,17 +597,117 @@ public final class GameSimulation {
             if (!player.needs(dinosaur.species)) continue;
 
             for (Trap trap : player.traps) {
-                if (trap.active && trap.position.equals(dinosaur.position)) {
-                    trap.active = false;
-                    dinosaur.captured = true;
-                    player.captured.add(dinosaur.species);
+                if (trap.canCatchDinosaur() && trap.position.equals(dinosaur.position)) {
+                    dinosaur.trapped = true;
+                    dinosaur.trappedByPlayerId = player.id;
+                    trap.trappedDinosaurId = dinosaur.id;
                     result.trapCaptures++;
-                    log("ПОЙМАН: игрок " + player.id + " поймал "
-                            + dinosaur.species.displayName + " (ловушка)");
+                    log("В ЛОВУШКЕ: игрок " + player.id + " поймал "
+                            + dinosaur.species.displayName
+                            + " #" + dinosaur.id
+                            + "; нужен водитель для вывоза на базу");
                     return;
                 }
             }
         }
+    }
+
+    /**
+     * Ищет ближайшего нужного динозавра, который уже сидит в ловушке игрока и ждёт вывоза.
+     *
+     * @param player игрок, для которого ищется задача водителя
+     * @param from клетка, от которой считается расстояние для сортировки
+     * @param requireDriverRoute true, если нужно вернуть только цель с готовым водительским маршрутом
+     * @return ближайший ожидающий вывоза динозавр
+     */
+    public Optional<Dinosaur> nearestTrappedNeededDinosaurAwaitingPickup(
+            PlayerState player,
+            Point from,
+            boolean requireDriverRoute
+    ) {
+        return dinosaurs.stream()
+                .filter(dinosaur -> isTrappedByPlayer(dinosaur, player))
+                .filter(dinosaur -> player.needs(dinosaur.species))
+                .filter(dinosaur -> !requireDriverRoute || canDriverExtractTrappedDinosaur(player, dinosaur))
+                .min(Comparator.comparingInt(dinosaur -> from == null ? 0 : dinosaur.position.manhattan(from)));
+    }
+
+    /**
+     * Проверяет, сидит ли динозавр в ловушке указанного игрока.
+     *
+     * @param dinosaur проверяемый динозавр
+     * @param player игрок-владелец ловушки
+     * @return true, если динозавр ждёт вывоза именно этим игроком
+     */
+    public boolean isTrappedByPlayer(Dinosaur dinosaur, PlayerState player) {
+        return dinosaur != null
+                && player != null
+                && dinosaur.trapped
+                && !dinosaur.captured
+                && !dinosaur.removed
+                && dinosaur.trappedByPlayerId == player.id;
+    }
+
+    /**
+     * Проверяет, может ли водитель вывезти динозавра из ловушки за одну активацию.
+     *
+     * За первое очко действия водитель доезжает до любой точки связанной дорожной
+     * сети, за второе возвращается на базу уже с динозавром. Длина дороги не важна:
+     * это джип, а не пеший бухгалтер с линейкой.
+     *
+     * @param player игрок, чей водитель проверяется
+     * @param dinosaur динозавр в ловушке
+     * @return true, если есть путь от текущей позиции водителя до ловушки и путь обратно на базу
+     */
+    public boolean canDriverExtractTrappedDinosaur(PlayerState player, Dinosaur dinosaur) {
+        return isTrappedByPlayer(dinosaur, player)
+                && map.hasDriverPath(player.driverRanger.position(), dinosaur.position)
+                && map.hasDriverPath(dinosaur.position, map.base);
+    }
+
+    /**
+     * Доставляет динозавра из ловушки на базу и засчитывает его игроку.
+     *
+     * @param player игрок, которому засчитывается динозавр
+     * @param dinosaur динозавр, сидящий в ловушке игрока
+     * @return true, если вывоз выполнен
+     */
+    public boolean extractTrappedDinosaurToBase(PlayerState player, Dinosaur dinosaur) {
+        if (!canDriverExtractTrappedDinosaur(player, dinosaur)) {
+            return false;
+        }
+
+        Optional<Trap> trap = trapHoldingDinosaur(player, dinosaur);
+        if (trap.isEmpty()) {
+            return false;
+        }
+
+        dinosaur.trapped = false;
+        dinosaur.trappedByPlayerId = 0;
+        dinosaur.captured = true;
+        player.captured.add(dinosaur.species);
+
+        trap.get().trappedDinosaurId = 0;
+        trap.get().active = false;
+
+        log("ДОСТАВЛЕН: водитель игрока " + player.id
+                + " вывез " + dinosaur.species.displayName
+                + " #" + dinosaur.id + " на базу");
+        return true;
+    }
+
+    /**
+     * Ищет ловушку игрока, которая удерживает конкретного динозавра.
+     *
+     * @param player владелец ловушки
+     * @param dinosaur динозавр в ловушке
+     * @return ловушка с указанным динозавром
+     */
+    private Optional<Trap> trapHoldingDinosaur(PlayerState player, Dinosaur dinosaur) {
+        return player.traps.stream()
+                .filter(trap -> trap.active)
+                .filter(trap -> trap.trappedDinosaurId == dinosaur.id)
+                .findFirst();
     }
 
     private void stealBaitIfPossible(Dinosaur dinosaur) {

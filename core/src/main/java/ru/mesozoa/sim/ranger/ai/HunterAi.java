@@ -473,7 +473,7 @@ public final class HunterAi {
         }
 
         return simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.removed)
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.species.captureMethod))
                 .min(Comparator.comparingInt(d -> normalizedPathDistance(from, d.position)));
