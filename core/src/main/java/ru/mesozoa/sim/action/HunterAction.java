@@ -4,6 +4,8 @@ import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.RangerRole;
+import ru.mesozoa.sim.model.Point;
+import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.Comparator;
@@ -23,9 +25,24 @@ public class HunterAction {
     }
 
 
+    public void action(PlayerState player, RangerPlan plan) {
+        int movementPoints = plan.ranger().currentActionPoints();
+        action(player, plan.target(), movementPoints);
+        plan.ranger().spendActionPoints(movementPoints);
+    }
+
     public void action(PlayerState player, int movementPoints) {
+        action(player, null, movementPoints);
+    }
+
+    private void action(PlayerState player, Point plannedTarget, int movementPoints) {
         boolean acted = attemptCapture(player);
         if (acted) {
+            return;
+        }
+
+        if (plannedTarget != null) {
+            rangerActionExecutor.moveRoleToward(player, RangerRole.HUNTER, plannedTarget, movementPoints);
             return;
         }
 
@@ -66,7 +83,7 @@ public class HunterAction {
                     return true;
                 }
 
-                player.hunter = simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position);
+                player.setPosition(RangerRole.HUNTER, simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position));
                 return true;
             }
 
@@ -87,7 +104,7 @@ public class HunterAction {
                     return true;
                 }
 
-                player.hunter = simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position);
+                player.setPosition(RangerRole.HUNTER, simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position));
                 return true;
             }
         }

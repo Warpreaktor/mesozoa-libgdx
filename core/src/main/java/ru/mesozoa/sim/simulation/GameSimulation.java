@@ -1,12 +1,13 @@
 package ru.mesozoa.sim.simulation;
 
 import ru.mesozoa.sim.action.RangerActionExecutor;
-import ru.mesozoa.sim.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.*;
+import ru.mesozoa.sim.ranger.RangerPlan;
+import ru.mesozoa.sim.ranger.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.report.GameResult;
 import ru.mesozoa.sim.tile.Tile;
 import ru.mesozoa.sim.tile.TileBag;
@@ -120,18 +121,26 @@ public final class GameSimulation {
                 }
             }
 
-            RangerRole role = rangerTurnPlanner.chooseNextRangerForTurn(player, activePlayerUsedRoles);
-            if (role == null) {
-                finishCurrentPlayerTurn();
+            RangerPlan plan = rangerTurnPlanner.chooseNextPlanForTurn(player, activePlayerUsedRoles);
+            if (plan == null) {
+                log("Игрок " + player.id + ": активация пропущена — нет полезного плана");
+                activePlayerActionIndex++;
+
+                if (activePlayerActionIndex >= 2) {
+                    finishCurrentPlayerTurn();
+                }
+
                 updateResult();
                 checkGameOverAfterPartialStep();
                 return;
             }
 
-            log("Действие игрока " + player.id + ": " + roleToText(role));
-            rangerActionExecutor.playRole(player, role, 2);
+            log("Действие игрока " + player.id + ": "
+                    + plan.ranger().displayName()
+                    + " — " + plan.reason());
+            rangerActionExecutor.executePlan(player, plan);
 
-            activePlayerUsedRoles.add(role);
+            activePlayerUsedRoles.add(plan.role());
             activePlayerActionIndex++;
 
             if (activePlayerActionIndex >= 2) {

@@ -9,6 +9,7 @@ import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.model.Trap;
+import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.ArrayList;
@@ -44,6 +45,12 @@ public class EngineerAction {
      * Инженер может переместиться на свои очки движения, а затем выполнить одну
      * инженерную работу: поставить ловушки, построить дорогу или мост.
      */
+    public void action(PlayerState player, RangerPlan plan) {
+        int movementPoints = plan.ranger().currentActionPoints();
+        action(player, movementPoints);
+        plan.ranger().spendActionPoints(movementPoints);
+    }
+
     public void action(PlayerState player, int movementPoints) {
         if (hasNeededTrapTarget(player)) {
             moveEngineerTowardTrapTarget(player, movementPoints);
@@ -175,10 +182,11 @@ public class EngineerAction {
     }
 
     /**
-     * Перемещает инженера по общим правилам наземных рейнджеров.
+     * Перемещает инженера по его собственным правилам проходимости.
      *
-     * Инженер использует ту же проходимость тайлов, что и остальные наземные
-     * специалисты. Для движения используется BFS-логика карты.
+     * Инженер не заходит в болото, горы и озёра без моста. Для движения
+     * используется BFS-логика карты, а не жадный шаг, который мог уводить его
+     * вперёд и тут же возвращать обратно вторым очком движения.
      */
     private boolean moveEngineerToward(PlayerState player, Point target, int movementPoints) {
         Point before = player.engineer;
@@ -187,13 +195,13 @@ public class EngineerAction {
         for (int i = 0; i < movementPoints; i++) {
             if (position.equals(target)) break;
 
-            Point next = simulation.map.stepGroundRangerToward(position, target);
+            Point next = simulation.map.stepEngineerToward(position, target);
             if (next.equals(position)) break;
 
             position = next;
         }
 
-        player.engineer = position;
+        player.setPosition(RangerRole.ENGINEER, position);
 
         if (!before.equals(position)) {
             simulation.log("Инженер игрока " + player.id + " переместился " + before + " -> " + position);

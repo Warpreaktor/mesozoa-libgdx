@@ -1,4 +1,4 @@
-package ru.mesozoa.sim.ai;
+package ru.mesozoa.sim.ranger.ai;
 
 import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.PlayerState;

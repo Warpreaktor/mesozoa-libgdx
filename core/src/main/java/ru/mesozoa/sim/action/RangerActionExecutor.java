@@ -2,8 +2,10 @@ package ru.mesozoa.sim.action;
 
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.*;
+import ru.mesozoa.sim.ranger.Ranger;
+import ru.mesozoa.sim.ranger.RangerPlan;
+import ru.mesozoa.sim.ranger.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.simulation.GameSimulation;
-import ru.mesozoa.sim.ai.RangerTurnPlanner;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -13,6 +15,9 @@ import java.util.Set;
 
 /**
  * Исполнение действий рейнджеров.
+ *
+ * Основная точка входа теперь принимает RangerPlan. План содержит выбранную
+ * фигурку, её AI-оценку, причину и цель, а очки действий берутся из самой фигурки.
  */
 public final class RangerActionExecutor {
 
@@ -37,15 +42,52 @@ public final class RangerActionExecutor {
     }
 
     /**
-     * Исполняет одну активацию одной роли.
+     * Исполняет выбранный AI-план.
+     *
+     * @param player владелец фигурки
+     * @param plan выбранный план действия
      */
-    public void playRole(PlayerState player, RangerRole role, int movementPoints) {
-        switch (role) {
-            case SCOUT -> scoutAction.action(player, movementPoints);
-            case ENGINEER -> engineerAction.action(player, movementPoints);
-            case HUNTER -> hunterAction.action(player, movementPoints);
-            case DRIVER -> driverAction.action(player, movementPoints);
+    public void executePlan(PlayerState player, RangerPlan plan) {
+        Ranger ranger = plan.ranger();
+        ranger.startActivation();
+        ranger.play(plan, this, player);
+        ranger.finishActivation();
+        player.syncLegacyPositionsFromRangers();
+    }
+
+    /**
+     * Исполняет план внутри конкретной фигурки.
+     *
+     * Пока старые action-классы ещё живы, здесь остаётся переходный switch. Он
+     * должен исчезнуть позже, когда логика исполнения переедет в конкретные фигурки
+     * или в отдельные command-обработчики.
+     *
+     * @param player владелец фигурки
+     * @param plan выбранный план
+     */
+    public void executePlanForRanger(PlayerState player, RangerPlan plan) {
+        switch (plan.role()) {
+            case SCOUT -> scoutAction.action(player, plan);
+            case ENGINEER -> engineerAction.action(player, plan);
+            case HUNTER -> hunterAction.action(player, plan);
+            case DRIVER -> driverAction.action(player, plan);
         }
+    }
+
+    /**
+     * Старый метод исполнения роли.
+     *
+     * @deprecated Используй {@link #executePlan(PlayerState, RangerPlan)}.
+     */
+    @Deprecated(forRemoval = true)
+    public void playRole(PlayerState player, RangerRole role, int movementPoints) {
+        RangerPlan plan = new RangerPlan(
+                player.rangerFor(role),
+                null,
+                new AiScore(0.0, "совместимый вызов старого playRole"),
+                null
+        );
+        executePlan(player, plan);
     }
 
     public void moveRoleToward(PlayerState player, RangerRole role, Point target, int movementPoints) {

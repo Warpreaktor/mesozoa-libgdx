@@ -4,6 +4,7 @@ import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
+import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.tile.Tile;
 
@@ -25,6 +26,12 @@ public class ScoutAction {
         this.dinosaurAction = dinosaurAction;
     }
 
+
+    public void action(PlayerState player, RangerPlan plan) {
+        int movementPoints = plan.ranger().currentActionPoints();
+        action(player, movementPoints);
+        plan.ranger().spendActionPoints(movementPoints);
+    }
 
     public void action(PlayerState player, int movementPoints) {
         if (simulation.tileBag.isEmpty()) {
@@ -90,7 +97,7 @@ public class ScoutAction {
         if (!placed) return null;
 
         if (!automaticExpansion) {
-            player.scout = placement;
+            player.setPosition(RangerRole.SCOUT, placement);
         }
 
         if (tile.hasSpawn() && !tile.spawnUsed) {

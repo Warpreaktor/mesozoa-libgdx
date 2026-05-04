@@ -168,24 +168,21 @@ public final class GameMap {
 
 
     /**
-     * Возвращает соседние клетки, куда может перейти обычный наземный рейнджер.
+     * Возвращает соседние клетки, куда может перейти инженер пешком.
      *
-     * Это общее правило для всех пеших специалистов: охотника, инженера и водителя
-     * вне режима джипа. Разведчик этот метод не использует, потому что он может
-     * летать над любыми открытыми тайлами и заходить в неизвестность.
-     *
-     * @param from клетка, из которой пытается выйти наземный рейнджер
-     * @return список соседних по стороне клеток, доступных для пешего перемещения
+     * Инженер не использует дороги как ограничение движения, но он не может
+     * заходить в болото, горы и озёра без построенного моста. База считается
+     * обычной стартовой клеткой для пешего перемещения.
      */
-    public List<Point> groundRangerReachableNeighbors(Point from) {
+    public List<Point> engineerReachableNeighbors(Point from) {
         ArrayList<Point> result = new ArrayList<>();
 
-        if (!canGroundRangerStandOn(from)) {
+        if (!canEngineerStandOn(from)) {
             return result;
         }
 
         for (Point neighbor : from.neighbors4()) {
-            if (canGroundRangerStandOn(neighbor)) {
+            if (canEngineerStandOn(neighbor)) {
                 result.add(neighbor);
             }
         }
@@ -194,30 +191,25 @@ public final class GameMap {
     }
 
     /**
-     * Возвращает следующий шаг обычного наземного рейнджера к цели.
+     * Возвращает следующий шаг инженера к цели.
      *
-     * Метод использует BFS по реально проходимым тайлам, а не жадный шаг по
-     * манхэттенской дистанции. Если сама цель непроходима, выбирается ближайшая
-     * достижимая клетка в сторону цели. Это нужно, например, чтобы инженер мог
-     * подойти к берегу реки или озера и построить мост, а не бодро упереться
-     * лбом в воду. Опять технологии, но на этот раз полезные.
-     *
-     * @param from стартовая клетка наземного рейнджера
-     * @param target целевая клетка
-     * @return следующий шаг или from, если полезного шага нет
+     * Если до самой цели пока нельзя добраться, метод выбирает ближайшую
+     * достижимую клетку в сторону цели. Это важно для ситуаций, когда инженер
+     * должен подойти к краю озера или реки, чтобы построить мост, а не
+     * бездарно топтаться база-лес-база, как герой плохого туториала.
      */
-    public Point stepGroundRangerToward(Point from, Point target) {
-        List<Point> exactPath = findGroundRangerPath(from, target);
+    public Point stepEngineerToward(Point from, Point target) {
+        List<Point> exactPath = findEngineerPath(from, target);
         if (!exactPath.isEmpty()) {
             return exactPath.size() < 2 ? from : exactPath.get(1);
         }
 
-        Point closestReachable = nearestGroundRangerReachablePointTo(from, target);
+        Point closestReachable = nearestEngineerReachablePointTo(from, target);
         if (closestReachable == null || closestReachable.equals(from)) {
             return from;
         }
 
-        List<Point> approachPath = findGroundRangerPath(from, closestReachable);
+        List<Point> approachPath = findEngineerPath(from, closestReachable);
         if (approachPath.isEmpty() || approachPath.size() < 2) {
             return from;
         }
@@ -226,73 +218,53 @@ public final class GameMap {
     }
 
     /**
-     * Проверяет, может ли обычный наземный рейнджер стоять на указанной клетке.
-     *
-     * Проходимость хранится в конкретном Tile, потому что это состояние тайла.
-     * Например, река по умолчанию непроходима, но после постройки моста конкретный
-     * тайл реки становится проходимым, оставаясь при этом рекой.
-     *
-     * @param point проверяемая клетка
-     * @return true, если клетка открыта и доступна для наземного рейнджера
+     * Проверяет, может ли инженер стоять на указанной клетке.
      */
-    public boolean canGroundRangerStandOn(Point point) {
+    public boolean canEngineerStandOn(Point point) {
         if (point == null || !isPlaced(point)) return false;
         if (isBase(point)) return true;
 
         Tile tile = tile(point);
-        return tile != null && tile.isGroundPassable();
+        if (tile == null) return false;
+        if (tile.biome == Biome.MOUNTAIN || tile.biome == Biome.SWAMP) return false;
+        if (tile.biome == Biome.LAKE) return tile.hasBridge;
+        return true;
     }
 
     /**
-     * Возвращает длину пути для обычного наземного рейнджера.
+     * Возвращает соседние клетки для обычного наземного рейнджера.
      *
-     * @param from стартовая клетка
-     * @param target целевая клетка
-     * @return количество шагов или Integer.MAX_VALUE, если пути нет
+     * Переходный метод: пока старая карта ещё хранит инженерную навигацию,
+     * наземные рейнджеры используют те же ограничения. Разведчик сюда не попадает.
      */
-    public int groundRangerPathDistance(Point from, Point target) {
-        List<Point> path = findGroundRangerPath(from, target);
-        return path.isEmpty() ? Integer.MAX_VALUE : path.size() - 1;
+    public List<Point> groundRangerReachableNeighbors(Point from) {
+        return engineerReachableNeighbors(from);
     }
 
     /**
-     * @deprecated Используй {@link #groundRangerReachableNeighbors(Point)}.
-     * Старое имя оставлено как временный мост для кода, который ещё не перевели.
-     */
-    @Deprecated(forRemoval = true)
-    public List<Point> engineerReachableNeighbors(Point from) {
-        return groundRangerReachableNeighbors(from);
-    }
-
-    /**
-     * @deprecated Используй {@link #stepGroundRangerToward(Point, Point)}.
-     * Инженер ходит по тем же правилам, что и остальные наземные специалисты.
-     */
-    @Deprecated(forRemoval = true)
-    public Point stepEngineerToward(Point from, Point target) {
-        return stepGroundRangerToward(from, target);
-    }
-
-    /**
-     * @deprecated Используй {@link #canGroundRangerStandOn(Point)}.
-     * Проходимость больше не является частным правилом инженера.
-     */
-    @Deprecated(forRemoval = true)
-    public boolean canEngineerStandOn(Point point) {
-        return canGroundRangerStandOn(point);
-    }
-
-    /**
-     * Ищет кратчайший путь для обычного наземного рейнджера.
+     * Возвращает следующий шаг обычного наземного рейнджера к цели.
      *
-     * @param from стартовая клетка
-     * @param target целевая клетка
-     * @return путь от from до target включительно или пустой список, если пути нет
+     * Переходный метод поверх инженерной BFS-навигации. Позже правила ног лучше
+     * полностью переименовать из engineer в groundRanger, чтобы код перестал
+     * притворяться, что только инженер умеет ходить.
      */
-    private List<Point> findGroundRangerPath(Point from, Point target) {
+    public Point stepGroundRangerToward(Point from, Point target) {
+        return stepEngineerToward(from, target);
+    }
+
+    /**
+     * Проверяет, может ли обычный наземный рейнджер стоять на клетке.
+     *
+     * Сейчас это совместимый фасад над canEngineerStandOn(...).
+     */
+    public boolean canGroundRangerStandOn(Point point) {
+        return canEngineerStandOn(point);
+    }
+
+    private List<Point> findEngineerPath(Point from, Point target) {
         if (from == null || target == null) return List.of();
-        if (from.equals(target)) return canGroundRangerStandOn(from) ? List.of(from) : List.of();
-        if (!canGroundRangerStandOn(from) || !canGroundRangerStandOn(target)) return List.of();
+        if (from.equals(target)) return canEngineerStandOn(from) ? List.of(from) : List.of();
+        if (!canEngineerStandOn(from) || !canEngineerStandOn(target)) return List.of();
 
         ArrayDeque<Point> queue = new ArrayDeque<>();
         HashMap<Point, Point> previous = new HashMap<>();
@@ -304,7 +276,7 @@ public final class GameMap {
             Point current = queue.removeFirst();
             if (current.equals(target)) break;
 
-            for (Point neighbor : groundRangerReachableNeighbors(current)) {
+            for (Point neighbor : engineerReachableNeighbors(current)) {
                 if (previous.containsKey(neighbor)) continue;
                 previous.put(neighbor, current);
                 queue.addLast(neighbor);
@@ -324,18 +296,8 @@ public final class GameMap {
         return path;
     }
 
-    /**
-     * Ищет ближайшую к цели клетку, достижимую обычным наземным рейнджером.
-     *
-     * Используется, когда сама цель непроходима: например, инженер не может войти
-     * в озеро без моста, но может подойти к соседней суше и построить мост.
-     *
-     * @param from стартовая клетка
-     * @param target желаемая цель
-     * @return ближайшая достижимая клетка или null, если старт некорректен
-     */
-    private Point nearestGroundRangerReachablePointTo(Point from, Point target) {
-        if (from == null || target == null || !canGroundRangerStandOn(from)) return null;
+    private Point nearestEngineerReachablePointTo(Point from, Point target) {
+        if (from == null || target == null || !canEngineerStandOn(from)) return null;
 
         ArrayDeque<Point> queue = new ArrayDeque<>();
         LinkedHashSet<Point> visited = new LinkedHashSet<>();
@@ -353,7 +315,7 @@ public final class GameMap {
                 bestDistance = distance;
             }
 
-            for (Point neighbor : groundRangerReachableNeighbors(current)) {
+            for (Point neighbor : engineerReachableNeighbors(current)) {
                 if (visited.add(neighbor)) {
                     queue.addLast(neighbor);
                 }
@@ -559,7 +521,7 @@ public final class GameMap {
      */
     public boolean canBuildBridgeFrom(Point engineerPosition, Point bridgePoint) {
         if (engineerPosition == null || bridgePoint == null) return false;
-        if (!canGroundRangerStandOn(engineerPosition)) return false;
+        if (!canEngineerStandOn(engineerPosition)) return false;
         if (!isPlaced(bridgePoint)) return false;
 
         boolean sameCell = engineerPosition.equals(bridgePoint);
