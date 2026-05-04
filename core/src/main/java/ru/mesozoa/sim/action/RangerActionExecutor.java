@@ -54,7 +54,9 @@ public final class RangerActionExecutor {
         for (int i = 0; i < movementPoints; i++) {
             if (position.equals(target)) break;
 
-            Point next = simulation.stepTowardPlaced(position, target);
+            Point next = role == RangerRole.SCOUT
+                    ? simulation.stepTowardPlaced(position, target)
+                    : simulation.map.stepGroundRangerToward(position, target);
             if (next.equals(position)) break;
 
             position = next;

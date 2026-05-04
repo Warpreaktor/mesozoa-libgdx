@@ -66,7 +66,7 @@ public class HunterAction {
                     return true;
                 }
 
-                player.hunter = simulation.stepTowardPlaced(player.hunter, dinosaur.position);
+                player.hunter = simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position);
                 return true;
             }
 
@@ -87,7 +87,7 @@ public class HunterAction {
                     return true;
                 }
 
-                player.hunter = simulation.stepTowardPlaced(player.hunter, dinosaur.position);
+                player.hunter = simulation.map.stepGroundRangerToward(player.hunter, dinosaur.position);
                 return true;
             }
         }

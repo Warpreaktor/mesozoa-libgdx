@@ -7,7 +7,6 @@ import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.simulation.GameSimulation;
-import ru.mesozoa.sim.tile.Tile;
 
 import java.util.ArrayDeque;
 import java.util.Comparator;
@@ -549,19 +548,16 @@ public final class HunterAi {
     /**
      * Проверяет, может ли охотник войти на указанный тайл при обычном движении.
      *
-     * Сейчас охотник не может входить на биомы, блокирующие большинство перемещений:
-     * озёра и горы. Специальные правила движения по следу можно будет расширить отдельно,
+     * Охотник использует общие правила наземных рейнджеров: он может стоять только
+     * на тех клетках, у которых конкретный Tile сейчас проходим. Поэтому река или
+     * озеро могут стать доступными после строительства моста, но сам биом при этом
+     * не меняется. Специальное движение по следу можно будет расширить отдельно,
      * когда в модели появится состояние активной цепочки выслеживания.
      *
      * @param point клетка, которую нужно проверить
      * @return true, если охотник может войти на клетку
      */
     private boolean canHunterEnter(Point point) {
-        if (simulation.map.isBase(point)) {
-            return true;
-        }
-
-        Tile tile = simulation.map.tile(point);
-        return tile != null && !tile.biome.blocksMostMovement();
+        return simulation.map.canGroundRangerStandOn(point);
     }
 }

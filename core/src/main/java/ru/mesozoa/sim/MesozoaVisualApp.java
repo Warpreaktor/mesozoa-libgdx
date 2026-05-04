@@ -703,6 +703,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             case LAKE -> "О";
             case FLOODPLAIN -> "П";
             case MOUNTAIN -> "Г";
+            case LANDING -> "БР";
         };
     }
 

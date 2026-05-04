@@ -398,7 +398,7 @@ public class EngineerAi {
     /**
      * Проверяет, может ли инженер реально продвинуться к указанной цели.
      *
-     * Метод использует инженерную навигацию карты, а не манхэттенскую линейку.
+     * Метод использует общую навигацию наземных рейнджеров.
      * Если цель недостижима напрямую, карта всё равно может вернуть шаг к
      * ближайшей достижимой клетке, откуда инженер сможет построить мост или
      * продолжить дорогу.
@@ -408,7 +408,7 @@ public class EngineerAi {
      * @return true, если инженер может сделать хотя бы один полезный шаг
      */
     private boolean canEngineerMakeProgressToward(PlayerState player, Point target) {
-        Point next = simulation.map.stepEngineerToward(player.engineer, target);
+        Point next = simulation.map.stepGroundRangerToward(player.engineer, target);
         return !next.equals(player.engineer) || canEngineerBuildNearCurrentPositionToward(player, target);
     }
 

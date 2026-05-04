@@ -175,11 +175,10 @@ public class EngineerAction {
     }
 
     /**
-     * Перемещает инженера по его собственным правилам проходимости.
+     * Перемещает инженера по общим правилам наземных рейнджеров.
      *
-     * Инженер не заходит в болото, горы и озёра без моста. Для движения
-     * используется BFS-логика карты, а не жадный шаг, который мог уводить его
-     * вперёд и тут же возвращать обратно вторым очком движения.
+     * Инженер использует ту же проходимость тайлов, что и остальные наземные
+     * специалисты. Для движения используется BFS-логика карты.
      */
     private boolean moveEngineerToward(PlayerState player, Point target, int movementPoints) {
         Point before = player.engineer;
@@ -188,7 +187,7 @@ public class EngineerAction {
         for (int i = 0; i < movementPoints; i++) {
             if (position.equals(target)) break;
 
-            Point next = simulation.map.stepEngineerToward(position, target);
+            Point next = simulation.map.stepGroundRangerToward(position, target);
             if (next.equals(position)) break;
 
             position = next;
