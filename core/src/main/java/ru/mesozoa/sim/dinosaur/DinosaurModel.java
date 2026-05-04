@@ -1,6 +1,9 @@
-package ru.mesozoa.sim.model;
+package ru.mesozoa.sim.dinosaur;
 
-public final class Dinosaur {
+import ru.mesozoa.sim.model.Point;
+import ru.mesozoa.sim.model.Species;
+
+public final class DinosaurModel {
     public final int id;
     public final Species species;
     public Point position;
@@ -25,7 +28,7 @@ public final class Dinosaur {
 
     public Point lastPosition;
 
-    public Dinosaur(int id, Species species, Point position) {
+    public DinosaurModel(int id, Species species, Point position) {
         this.id = id;
         this.species = species;
         this.position = position;
