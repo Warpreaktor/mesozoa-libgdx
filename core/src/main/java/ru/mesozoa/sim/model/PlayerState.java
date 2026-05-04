@@ -61,7 +61,6 @@ public final class PlayerState {
         this.driverRanger = new Driver(base);
         this.engineerRanger = new Engineer(base);
         this.hunterRanger = new Hunter(base);
-        syncLegacyPositionsFromRangers();
     }
 
     public boolean isComplete() {

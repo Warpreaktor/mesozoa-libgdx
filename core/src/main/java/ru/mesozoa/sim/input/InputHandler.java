@@ -94,7 +94,7 @@ public class InputHandler {
 
     public void zoomAtMouse(float factor) {
         float oldZoom = mesozoaVisualApp.zoom;
-        float newZoom = clamp(mesozoaVisualApp.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+        float newZoom = clamp(mesozoaVisualApp.zoom * factor);
 
         if (Math.abs(newZoom - oldZoom) < 0.0001f) {
             return;
@@ -113,7 +113,7 @@ public class InputHandler {
         mesozoaVisualApp.refreshHud();
     }
 
-    private float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
+    private float clamp(float value) {
+        return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
     }
 }

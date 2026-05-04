@@ -24,11 +24,6 @@ abstract class AbstractBioTrailDinosaurProfile implements DinosaurProfile {
     }
 
     @Override
-    public List<Biome> bioTrail() {
-        return bioTrail;
-    }
-
-    @Override
     public int agility() {
         return species.agility;
     }

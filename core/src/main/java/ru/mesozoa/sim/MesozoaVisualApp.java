@@ -566,7 +566,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
      * Рисует транспортную инфраструктуру поверх тайла:
      * - мостик внутри тайла;
      * - дороги на стыках тайлов.
-     *
      * Дорога — это связь между двумя соседними тайлами, поэтому визуально она
      * кладётся на границу/угол между клетками, а не в центр тайла. Мостик,
      * наоборот, лежит внутри тайла и разрешает водителю выезд в любую соседнюю
@@ -660,8 +659,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         float roadWidth = tileSize * 0.10f;
         float sx = screenX(point);
         float sy = screenY(point);
-        float cx = sx + tileSize / 2f;
-        float cy = sy + tileSize / 2f;
         float centerX = roadCenterX(sx, tileSize, direction);
         float centerY = roadCenterY(sy, tileSize, direction);
         float rotation = roadRotationDegrees(direction);
@@ -925,34 +922,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         if (hudStage != null) {
             hudStage.render(Gdx.graphics.getDeltaTime());
         }
-    }
-
-    private void drawHudPanel() {
-        int hudX = boardViewportWidth();
-
-        shapes.begin(ShapeRenderer.ShapeType.Filled);
-        shapes.setColor(0.095f, 0.105f, 0.115f, 1f);
-        shapes.rect(hudX, 0, HUD_WIDTH, Gdx.graphics.getHeight());
-
-        shapes.setColor(0.18f, 0.20f, 0.23f, 1f);
-        shapes.rect(hudX, 0, 2, Gdx.graphics.getHeight());
-
-        shapes.setColor(0.13f, 0.145f, 0.16f, 1f);
-        shapes.rect(hudX + 10, 10, HUD_WIDTH - 20, Gdx.graphics.getHeight() - 20);
-        shapes.end();
-    }
-
-    private int aliveDinos() {
-        int count = 0;
-        for (Dinosaur d : simulation.dinosaurs) {
-            if (!d.captured && !d.removed) count++;
-        }
-        return count;
-    }
-
-    private String trim(String s, int max) {
-        if (s.length() <= max) return s;
-        return s.substring(0, max - 1) + "…";
     }
 
     @Override
