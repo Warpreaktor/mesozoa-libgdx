@@ -149,11 +149,32 @@ public final class RangerTurnPlanner {
                 .map(dinosaur -> dinosaur.position);
         if (capturedTarget.isPresent()) return capturedTarget;
 
-        Optional<Point> trapTarget = nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP)
-                .map(dinosaur -> dinosaur.position);
+        Optional<Point> trapTarget = nearestTrapAmbushPoint(player);
         if (trapTarget.isPresent()) return trapTarget;
 
         return hunterTarget(player);
+    }
+
+    /**
+     * Выбирает ближайшую реальную клетку засады для инженера.
+     * В план больше не попадает текущая позиция динозавра: action-слой не должен
+     * потом гадать, хотел ли AI ловушку, дорогу или просто красный значок на карте.
+     *
+     * @param player игрок, для которого строится план инженера
+     * @return ближайшая клетка, куда можно поставить новую ловушку
+     */
+    private Optional<Point> nearestTrapAmbushPoint(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .flatMap(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream())
+                .filter(point -> simulation.map.canPlaceTrap(point))
+                .filter(point -> player.traps.stream().noneMatch(trap -> trap.active && trap.position.equals(point)))
+                .filter(point -> simulation.dinosaurs.stream()
+                        .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                        .noneMatch(dinosaur -> dinosaur.position.equals(point)))
+                .min(Comparator.comparingInt(point -> point.manhattan(player.engineerRanger.position())));
     }
 
     private Point driverTarget(PlayerState player) {

@@ -23,6 +23,7 @@ import java.util.EnumSet;
 import java.util.Set;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashSet;
 
 public final class GameSimulation {
 
@@ -365,6 +366,71 @@ public final class GameSimulation {
         }
 
         return Optional.of(path.get().get(path.get().size() - 1));
+    }
+
+    /**
+     * Возвращает упорядоченный список клеток, куда имеет смысл ставить ловушку
+     * для указанного динозавра.
+     *
+     * Сначала берётся точный прогноз по био-тропе, если следующий биом уже
+     * достижим. Если точного прогноза нет, используются соседние клетки, куда
+     * динозавр реально может шагнуть случайным ходом в рамках своего маршрута.
+     * Последним запасным вариантом идут открытые клетки следующего биома: это
+     * даёт инженеру понятную цель для будущей засады, но не заставляет его
+     * ставить капкан под лапы динозавру, потому что мы всё-таки делаем игру,
+     * а не симулятор канцелярского обмана.
+     *
+     * @param dinosaur динозавр, для которого планируется засада
+     * @return клетки для ловушки в порядке убывания полезности
+     */
+    public List<Point> trapAmbushCandidatesFor(Dinosaur dinosaur) {
+        if (dinosaur == null || dinosaur.captured || dinosaur.trapped || dinosaur.removed) {
+            return List.of();
+        }
+
+        DinosaurProfile profile = DinosaurProfiles.profile(dinosaur.species);
+        Tile currentTile = map.tile(dinosaur.position);
+        if (currentTile == null) {
+            return List.of();
+        }
+
+        Optional<Point> exactBioTrailDestination = predictDinosaurBioTrailDestination(dinosaur)
+                .filter(point -> !point.equals(dinosaur.position))
+                .filter(map::canPlaceTrap);
+
+        if (exactBioTrailDestination.isPresent()) {
+            return List.of(exactBioTrailDestination.get());
+        }
+
+        LinkedHashSet<Point> result = new LinkedHashSet<>();
+
+        for (Point neighbor : dinosaur.position.neighbors4()) {
+            if (neighbor.equals(dinosaur.position)) {
+                continue;
+            }
+            if (!map.canPlaceTrap(neighbor)) {
+                continue;
+            }
+            if (!canDinosaurStandOn(neighbor, profile)) {
+                continue;
+            }
+            result.add(neighbor);
+        }
+
+        if (!result.isEmpty()) {
+            return new ArrayList<>(result);
+        }
+
+        Biome nextBiome = profile.nextBiomeAfter(currentTile.biome, dinosaur.trailIndex);
+        map.entries().stream()
+                .filter(entry -> entry.getValue().biome == nextBiome)
+                .map(entry -> entry.getKey())
+                .filter(point -> !point.equals(dinosaur.position))
+                .filter(map::canPlaceTrap)
+                .sorted(Comparator.comparingInt(point -> dinosaur.position.manhattan(point)))
+                .forEach(result::add);
+
+        return new ArrayList<>(result);
     }
 
     /**

@@ -76,6 +76,7 @@ public class EngineerAi {
     public AiScore scoreEngineer(PlayerState player) {
         Optional<Dinosaur> capturedWithoutRoad = nearestCapturedNeededDinosaurWithoutDriverAccess(player);
         Optional<Dinosaur> trapTarget = nearestNeededTrapTarget(player);
+        Optional<Point> trapAmbushPoint = bestTrapAmbushPoint(player, player.engineerRanger.position());
         Optional<Dinosaur> hunterTargetWithoutRoad = nearestNeededHunterTargetWithoutDriverAccess(player);
         Optional<Biome> unconnectedNeededBiome = nearestUnconnectedNeededBiome(player);
 
@@ -96,25 +97,25 @@ public class EngineerAi {
             );
         }
 
-        if (canPlaceUsefulTrapNow(player, trapTarget)) {
+        if (canPlaceUsefulTrapNow(player, trapAmbushPoint)) {
             Dinosaur dinosaur = trapTarget.get();
             return new AiScore(
                     SCORE_IMMEDIATE_TRAP_PLACEMENT,
-                    "инженер рядом с ловушечной целью и может ставить ловушки: "
+                    "инженер рядом с легальной клеткой ловушки для цели: "
                             + dinosaur.species.displayName
             );
         }
 
-        if (hasVisibleTrapTargetAndAvailableTraps(player, trapTarget)) {
+        if (hasVisibleTrapTargetAndAvailableTraps(player, trapTarget, trapAmbushPoint)) {
             Dinosaur dinosaur = trapTarget.get();
             int activeTraps = activeTrapCount(player);
-            int distance = player.engineerRanger.position().manhattan(dinosaur.position);
+            int distance = player.engineerRanger.position().manhattan(trapAmbushPoint.get());
             double score = SCORE_VISIBLE_TRAP_TARGET - Math.min(35.0, distance * 4.0);
             return new AiScore(
                     score,
                     "видимая S-цель для ловушек: "
                             + dinosaur.species.displayName
-                            + ", расстояние: " + distance
+                            + ", расстояние до клетки засады: " + distance
                             + ", ловушек: " + activeTraps + "/" + simulation.inventoryConfig.maxTrapsPerPlayer
             );
         }
@@ -211,12 +212,10 @@ public class EngineerAi {
      * @param trapTarget ближайшая нужная ловушечная цель
      * @return true, если инженер уже в зоне установки ловушек
      */
-    private boolean canPlaceUsefulTrapNow(PlayerState player, Optional<Dinosaur> trapTarget) {
-        return trapTarget.isPresent()
+    private boolean canPlaceUsefulTrapNow(PlayerState player, Optional<Point> trapAmbushPoint) {
+        return trapAmbushPoint.isPresent()
                 && activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer
-                && predictedTrapPosition(trapTarget.get())
-                .map(point -> isAdjacentOrSame(player.engineerRanger.position(), point))
-                .orElse(false);
+                && isAdjacentOrSame(player.engineerRanger.position(), trapAmbushPoint.get());
     }
 
     /**
@@ -228,8 +227,13 @@ public class EngineerAi {
      * @param trapTarget ближайшая нужная ловушечная цель
      * @return true, если есть цель для ловушек и можно выставлять новые ловушки
      */
-    private boolean hasVisibleTrapTargetAndAvailableTraps(PlayerState player, Optional<Dinosaur> trapTarget) {
+    private boolean hasVisibleTrapTargetAndAvailableTraps(
+            PlayerState player,
+            Optional<Dinosaur> trapTarget,
+            Optional<Point> trapAmbushPoint
+    ) {
         return trapTarget.isPresent()
+                && trapAmbushPoint.isPresent()
                 && activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer;
     }
 
@@ -244,15 +248,7 @@ public class EngineerAi {
      * @return true, если ловушки заняли лимит, но не перекрывают цель
      */
     private boolean hasBadActiveTrapLayout(PlayerState player, Optional<Dinosaur> trapTarget) {
-        if (trapTarget.isEmpty()) return false;
-        if (activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer) return false;
-
-        Optional<Point> predicted = predictedTrapPosition(trapTarget.get());
-        if (predicted.isEmpty()) return false;
-
-        return player.traps.stream()
-                .filter(trap -> trap.active)
-                .noneMatch(trap -> trap.position.equals(predicted.get()));
+        return false;
     }
 
     /**
@@ -342,7 +338,13 @@ public class EngineerAi {
      * @return ближайший живой нужный динозавр с CaptureMethod.TRAP
      */
     private Optional<Dinosaur> nearestNeededTrapTarget(PlayerState player) {
-        return nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP);
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .filter(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream()
+                        .anyMatch(point -> isUsableTrapPoint(player, point)))
+                .min(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())));
     }
 
     /**
@@ -483,13 +485,37 @@ public class EngineerAi {
     }
 
     /**
-     * Возвращает прогнозную клетку ловушки для динозавра.
+     * Выбирает ближайшую клетку засады для нужных ловушечных целей.
+     * Если такой клетки нет, инженер вообще не должен получать высокий вес на
+     * ловушки. Иначе он снова будет стоять рядом с Галлимимоном и изображать
+     * красный значок беспомощности.
      *
-     * @param dinosaur динозавр, для которого ищется клетка засады
-     * @return клетка будущего прихода, если она отличается от текущей позиции
+     * @param player игрок, чей инженер оценивается
+     * @param from позиция, от которой считается близость
+     * @return ближайшая легальная клетка ловушки
      */
-    private Optional<Point> predictedTrapPosition(Dinosaur dinosaur) {
-        return simulation.predictDinosaurBioTrailDestination(dinosaur)
-                .filter(point -> !point.equals(dinosaur.position));
+    private Optional<Point> bestTrapAmbushPoint(PlayerState player, Point from) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .flatMap(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream())
+                .filter(point -> isUsableTrapPoint(player, point))
+                .min(Comparator.comparingInt(point -> from == null ? 0 : point.manhattan(from)));
+    }
+
+    /**
+     * Проверяет, может ли эта клетка стать новой активной ловушкой игрока.
+     *
+     * @param player игрок-владелец ловушек
+     * @param point проверяемая клетка
+     * @return true, если клетка открыта, свободна от ловушки и живого динозавра
+     */
+    private boolean isUsableTrapPoint(PlayerState player, Point point) {
+        return simulation.map.canPlaceTrap(point)
+                && player.traps.stream().noneMatch(trap -> trap.active && trap.position.equals(point))
+                && simulation.dinosaurs.stream()
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                .noneMatch(dinosaur -> dinosaur.position.equals(point));
     }
 }

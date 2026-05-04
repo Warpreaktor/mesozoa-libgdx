@@ -74,12 +74,19 @@ public class EngineerAction {
             return;
         }
 
-        if (hasNeededTrapTarget(player)) {
+        if (hasActionableTrapTarget(player)) {
             moveEngineerTowardTrapTarget(player, movementPoints);
             int placed = placeAvailableTrapsAroundEngineer(player);
             if (placed > 0) {
                 simulation.log("Игрок " + player.id + " выставил ловушки: " + placed);
+                return;
             }
+
+            if (tryBuildInfrastructure(player, plannedTarget)) {
+                return;
+            }
+
+            simulation.log("Инженер игрока " + player.id + " видел ловушечную цель, но не нашёл легальной клетки для ловушки");
             return;
         }
 
@@ -108,19 +115,26 @@ public class EngineerAction {
         return nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent();
     }
 
-    private boolean hasNeededTrapTarget(PlayerState player) {
-        return simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
-                .anyMatch(d -> d.species.captureMethod == CaptureMethod.TRAP);
+    /**
+     * Проверяет, есть ли ловушечная цель, для которой уже существует легальная
+     * клетка засады. Просто наличие Галлимимона на карте больше не считается
+     * задачей инженера: иначе он выбирается AI, чешет репу и стоит рядом, как
+     * памятник неудачному геймдизайну.
+     *
+     * @param player игрок, чей инженер ищет работу с ловушками
+     * @return true, если инженер может поставить ловушку сейчас или двигаться к клетке засады
+     */
+    private boolean hasActionableTrapTarget(PlayerState player) {
+        return activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer
+                && bestTrapAmbushPoint(player, player.engineerRanger.position()).isPresent();
     }
 
-    /** Подводит инженера к ближайшей ловушечной цели, если она пока вне зоны установки. */
+    /** Подводит инженера к ближайшей клетке засады, если она пока вне зоны установки. */
     private void moveEngineerTowardTrapTarget(PlayerState player, int movementPoints) {
-        Optional<Dinosaur> target = rangerActionExecutor.nearestNeededDinosaur(player, player.engineerRanger.position(), CaptureMethod.TRAP);
+        Optional<Point> target = bestTrapAmbushPoint(player, player.engineerRanger.position());
 
         if (target.isPresent()) {
-            Point trapPosition = predictedTrapPosition(target.get()).orElse(target.get().position);
+            Point trapPosition = target.get();
             if (!isInTrapPlacementRange(player.engineerRanger.position(), trapPosition)) {
                 moveEngineerToward(player, trapPosition, movementPoints);
             }
@@ -283,9 +297,7 @@ public class EngineerAction {
         int placed = 0;
         for (Point candidate : trapPlacementCandidates(player)) {
             if (placed >= available) break;
-            if (!simulation.map.canPlaceTrap(candidate)) continue;
-            if (hasActiveTrapAt(player, candidate)) continue;
-            if (hasLiveDinosaurAt(candidate)) continue;
+            if (!isUsableTrapPoint(player, candidate)) continue;
 
             player.traps.add(new Trap(player.id, candidate));
             placed++;
@@ -318,22 +330,45 @@ public class EngineerAction {
     }
 
     /**
-     * Возвращает прогнозную клетку ловушки для динозавра.
+     * Выбирает ближайшую легальную клетку засады для нужных ловушечных динозавров.
+     * Учитываются только клетки, куда динозавр может прийти, а не его текущая
+     * позиция. Да, капкан под стоящим зверем всё ещё запрещён, трагедия для
+     * поклонников мгновенной бюрократии.
      *
-     * @param dinosaur динозавр, для которого ищется клетка засады
-     * @return клетка будущего прихода, если она отличается от текущей позиции
+     * @param player игрок, который планирует ловушку
+     * @param from позиция, от которой оценивается близость клетки
+     * @return ближайшая клетка для ловушки
      */
-    private Optional<Point> predictedTrapPosition(Dinosaur dinosaur) {
-        return simulation.predictDinosaurBioTrailDestination(dinosaur)
-                .filter(point -> !point.equals(dinosaur.position));
+    private Optional<Point> bestTrapAmbushPoint(PlayerState player, Point from) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
+                .flatMap(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream())
+                .filter(point -> isUsableTrapPoint(player, point))
+                .min(Comparator.comparingInt(point -> from == null ? 0 : point.manhattan(from)));
+    }
+
+    /**
+     * Проверяет, можно ли игроку занять клетку новой ловушкой.
+     *
+     * @param player игрок-владелец будущей ловушки
+     * @param point проверяемая клетка
+     * @return true, если клетка свободна для новой ловушки
+     */
+    private boolean isUsableTrapPoint(PlayerState player, Point point) {
+        return simulation.map.canPlaceTrap(point)
+                && !hasActiveTrapAt(player, point)
+                && !hasLiveDinosaurAt(point);
     }
 
     /**
      * Кандидаты для установки ловушек.
      *
-     * Ловушка ставится только на прогнозную клетку прихода динозавра по
-     * био-тропе. Текущая клетка динозавра намеренно исключена: ловушка под
-     * лапами — это не засада, а бюрократический телепорт в клетку «пойман».
+     * Сначала используются точные прогнозы по био-тропе. Если следующий биом
+     * сейчас недостижим, берутся соседние клетки, куда динозавр может случайно
+     * шагнуть в рамках своего маршрута. Текущая клетка динозавра намеренно
+     * исключена: ловушка под лапами — это не засада, а бюрократический телепорт.
      */
     private List<Point> trapPlacementCandidates(PlayerState player) {
         LinkedHashSet<Point> result = new LinkedHashSet<>();
@@ -343,9 +378,10 @@ public class EngineerAction {
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.species.captureMethod == CaptureMethod.TRAP)
                 .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())))
-                .forEach(dinosaur -> predictedTrapPosition(dinosaur)
+                .forEach(dinosaur -> simulation.trapAmbushCandidatesFor(dinosaur).stream()
                         .filter(point -> isInTrapPlacementRange(player.engineerRanger.position(), point))
-                        .ifPresent(result::add));
+                        .filter(point -> isUsableTrapPoint(player, point))
+                        .forEach(result::add));
 
         return new ArrayList<>(result);
     }
