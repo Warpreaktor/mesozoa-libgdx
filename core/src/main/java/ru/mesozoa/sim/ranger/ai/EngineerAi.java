@@ -51,13 +51,8 @@ public class EngineerAi {
     /** Вес движения инженера вслед за разведкой без срочной инженерной задачи. */
     private static final double SCORE_FOLLOW_SCOUT = 22.0;
 
-    /**
-     * Вес ожидания, если инженер уже стоит рядом с разведчиком.
-     *
-     * Нулевой вес не даёт планировщику тратить активацию на рейнджера,
-     * который не может выполнить реальную работу в этот ход.
-     */
-    private static final double SCORE_WAIT_NEAR_SCOUT = 0.0;
+    /** Низкий вес ожидания, если инженер уже стоит рядом с разведчиком. */
+    private static final double SCORE_WAIT_NEAR_SCOUT = 8.0;
 
     /** Дистанция, на которой инженер считается рядом с разведчиком. */
     private static final int NEAR_SCOUT_DISTANCE = 2;
@@ -114,7 +109,7 @@ public class EngineerAi {
         if (hasVisibleTrapTargetAndAvailableTraps(player, trapTarget, trapAmbushPoint)) {
             Dinosaur dinosaur = trapTarget.get();
             int activeTraps = activeTrapCount(player);
-            int distance = player.engineerRanger.position().manhattan(trapAmbushPoint.get());
+            int distance = player.engineerRanger.position().chebyshev(trapAmbushPoint.get());
             double score = SCORE_VISIBLE_TRAP_TARGET - Math.min(35.0, distance * 4.0);
             return new AiScore(
                     score,
@@ -160,7 +155,7 @@ public class EngineerAi {
         }
 
         if (shouldFollowScoutForFutureConstruction(player)) {
-            int distance = player.engineerRanger.position().manhattan(player.scoutRanger.position());
+            int distance = player.engineerRanger.position().chebyshev(player.scoutRanger.position());
             double score = SCORE_FOLLOW_SCOUT + Math.min(18.0, distance * 3.0);
             return new AiScore(
                     score,
@@ -176,8 +171,8 @@ public class EngineerAi {
         }
 
         return new AiScore(
-                SCORE_IMPOSSIBLE,
-                "для инженера сейчас нет реального инженерного действия"
+                5.0,
+                "для инженера сейчас нет срочной ловушечной или инфраструктурной задачи"
         );
     }
 
@@ -279,26 +274,26 @@ public class EngineerAi {
     private boolean hasNoRoadOutOfBase(PlayerState player) {
         return simulation.map.openedCount() > 1
                 && !simulation.map.hasRoadOutOfBase()
-                && hasConcreteRoadTarget(player);
+                && hasRemainingRoadRelevantGoal(player);
     }
 
     /**
-     * Проверяет, есть ли уже видимая причина начинать дорожную сеть.
+     * Проверяет, остались ли у игрока цели, для которых дорожная сеть реально нужна.
+     * HUNT-хищники сюда не входят: охотник сам идёт в засаду, а водитель после
+     * транквилизатора не требуется. Иначе инженер опять будет строить автобан к
+     * кусту, где человек просто лежит с приманкой. Удобно, но бессмысленно.
      *
-     * Одна лишь запись в задании штаба больше не заставляет инженера строить
-     * первую дорогу куда попало. Дорога появляется только если на открытой карте
-     * уже есть конкретная цель: пойманный динозавр без вывоза, видимая зона
-     * работы охотника или нужный биом, который действительно можно подключать.
-     * Иначе инженер превращается в дорожного художника, а не в полезного члена
-     * экспедиции.
-     *
-     * @param player игрок, чьи инфраструктурные цели анализируются
-     * @return true, если первая дорога сейчас ведёт к понятной игровой задаче
+     * @param player игрок, чьи оставшиеся цели анализируются
+     * @return true, если есть TRAP/TRACKING-цели или динозавр в ловушке без вывоза
      */
-    private boolean hasConcreteRoadTarget(PlayerState player) {
-        return nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent()
-                || nearestNeededHunterTargetWithoutDriverAccess(player).isPresent()
-                || nearestUnconnectedNeededBiome(player).isPresent();
+    private boolean hasRemainingRoadRelevantGoal(PlayerState player) {
+        if (nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent()) {
+            return true;
+        }
+
+        return player.task.stream()
+                .filter(species -> !player.captured.contains(species))
+                .anyMatch(species -> Dinosaur.captureMethodOf(species) != CaptureMethod.HUNT);
     }
 
     /**
@@ -323,7 +318,7 @@ public class EngineerAi {
      * @return true, если инженер далеко от разведчика и ему полезно приблизиться
      */
     private boolean shouldFollowScoutForFutureConstruction(PlayerState player) {
-        if (player.engineerRanger.position().manhattan(player.scoutRanger.position()) <= NEAR_SCOUT_DISTANCE) {
+        if (player.engineerRanger.position().chebyshev(player.scoutRanger.position()) <= NEAR_SCOUT_DISTANCE) {
             return false;
         }
 
@@ -339,7 +334,7 @@ public class EngineerAi {
      * @return true, если инженер рядом с разведчиком
      */
     private boolean isEngineerAlreadyNearScout(PlayerState player) {
-        return player.engineerRanger.position().manhattan(player.scoutRanger.position()) <= NEAR_SCOUT_DISTANCE;
+        return player.engineerRanger.position().chebyshev(player.scoutRanger.position()) <= NEAR_SCOUT_DISTANCE;
     }
 
     /**
@@ -355,7 +350,7 @@ public class EngineerAi {
                 .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)));
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)));
     }
 
     /**
@@ -370,7 +365,7 @@ public class EngineerAi {
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .filter(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
                         .anyMatch(point -> isUsableTrapPoint(player, point)))
-                .min(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())));
+                .min(Comparator.comparingInt(d -> d.position.chebyshev(player.engineerRanger.position())));
     }
 
     /**
@@ -388,7 +383,7 @@ public class EngineerAi {
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)));
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)));
     }
 
     /**
@@ -407,7 +402,7 @@ public class EngineerAi {
                 .filter(entry -> neededBiomes.contains(entry.getValue().biome))
                 .filter(entry -> !simulation.map.hasDriverPath(simulation.map.base, entry.getKey()))
                 .filter(entry -> canEngineerMakeProgressToward(player, entry.getKey()))
-                .min(Comparator.comparingInt(entry -> player.engineerRanger.position().manhattan(entry.getKey())))
+                .min(Comparator.comparingInt(entry -> player.engineerRanger.position().chebyshev(entry.getKey())))
                 .map(entry -> entry.getValue().biome);
     }
 
@@ -440,7 +435,7 @@ public class EngineerAi {
         Point direct = player.engineerRanger.position().stepToward(target);
         if (simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), direct)) return true;
 
-        return player.engineerRanger.position().neighbors4().stream()
+        return player.engineerRanger.position().neighbors8().stream()
                 .anyMatch(point -> simulation.map.canBuildRoadBetween(player.engineerRanger.position(), point)
                         || simulation.map.canBuildBridgeFrom(player.engineerRanger.position(), point));
     }
@@ -480,7 +475,7 @@ public class EngineerAi {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
-                .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
+                .min(Comparator.comparingInt(d -> d.position.chebyshev(from)));
     }
 
     /**
@@ -505,9 +500,7 @@ public class EngineerAi {
      * @return true, если клетки совпадают или соседствуют
      */
     private boolean isAdjacentOrSame(Point a, Point b) {
-        int dx = Math.abs(a.x - b.x);
-        int dy = Math.abs(a.y - b.y);
-        return dx <= 1 && dy <= 1;
+        return a != null && a.isSameOrAdjacent8(b);
     }
 
     /**
@@ -527,7 +520,7 @@ public class EngineerAi {
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))
-                .min(Comparator.comparingInt(point -> from == null ? 0 : point.manhattan(from)));
+                .min(Comparator.comparingInt(point -> from == null ? 0 : point.chebyshev(from)));
     }
 
     /**

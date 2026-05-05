@@ -18,7 +18,6 @@ import java.util.Comparator;
 import java.util.Optional;
 import java.util.Random;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -163,7 +162,7 @@ public final class GameSimulation {
         }
 
         log("Ход динозавров");
-        dinosaurActionPlanner.dinosaurPhase(dinosaursExcludedFromOrdinaryMovement());
+        dinosaurActionPlanner.dinosaurPhase();
         dinosaurPhaseConsequenceResolver.resolveAfterDinosaurPhase();
         updateResult();
         finishRound();
@@ -255,27 +254,6 @@ public final class GameSimulation {
         activePlayerActionIndex = 0;
     }
 
-    /**
-     * Собирает динозавров, которые не должны делать обычный шаг в фазу
-     * «Динозавры живут».
-     * <p>
-     * Например, М-травоядный в активной цепочке выслеживания двигается только
-     * при попытке охотника взять карту и выложить жетон следа. Если позволить
-     * ему ещё и штатно ходить в динозавровую фазу, охотник будет бесконечно
-     * догонять один и тот же след, как самый грустный навигатор на Крейтосе.
-     *
-     * @return ID динозавров, чей обычный шаг нужно пропустить
-     */
-    private Set<Integer> dinosaursExcludedFromOrdinaryMovement() {
-        HashSet<Integer> result = new HashSet<>();
-        for (PlayerState player : players) {
-            if (player.activeTracking != null) {
-                result.add(player.activeTracking.dinosaurId);
-            }
-        }
-        return result;
-    }
-
     private void finishRound() {
         if (round >= gameConfig.maxRounds
                 || players.stream().allMatch(PlayerState::isComplete)
@@ -352,7 +330,7 @@ public final class GameSimulation {
                 .filter(dinosaur -> isTrappedByPlayer(dinosaur, player))
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> !requireDriverRoute || canDriverExtractTrappedDinosaur(player, dinosaur))
-                .min(Comparator.comparingInt(dinosaur -> from == null ? 0 : dinosaur.position.manhattan(from)));
+                .min(Comparator.comparingInt(dinosaur -> from == null ? 0 : dinosaur.position.chebyshev(from)));
     }
 
     /**
@@ -372,12 +350,10 @@ public final class GameSimulation {
     }
 
     /**
-     * Проверяет, готов ли водительский маршрут к обездвиженному динозавру и обратно на базу.
-     * <p>
-     * Метод не означает мгновенный зачёт по заданию. Водитель сначала отдельной
-     * активацией приезжает к ловушке или жетону следа, а затем отдельной активацией
-     * везёт динозавра на базу. Да, теперь джип ведёт себя как транспорт, а не как
-     * межпространственная бухгалтерская проводка.
+     * Проверяет, может ли водитель вывезти динозавра из ловушки за одну активацию.
+     * За первое очко действия водитель доезжает до любой точки связанной дорожной
+     * сети, за второе возвращается на базу уже с динозавром. Длина дороги не важна:
+     * это джип, а не пеший бухгалтер с линейкой.
      *
      * @param player игрок, чей водитель проверяется
      * @param dinosaur динозавр в ловушке
@@ -391,19 +367,12 @@ public final class GameSimulation {
 
     /**
      * Доставляет динозавра из ловушки на базу и засчитывает его игроку.
-     * <p>
-     * Зачёт разрешён только когда водитель уже стоит на клетке с динозавром. Пока
-     * джип не приехал, зверь остаётся на карте в ловушке или под жетоном следа.
      *
      * @param player игрок, которому засчитывается динозавр
      * @param dinosaur динозавр, сидящий в ловушке игрока
      * @return true, если вывоз выполнен
      */
     public boolean extractTrappedDinosaurToBase(PlayerState player, Dinosaur dinosaur) {
-        if (player == null || dinosaur == null || !player.driverRanger.position().equals(dinosaur.position)) {
-            return false;
-        }
-
         if (!canDriverExtractTrappedDinosaur(player, dinosaur)) {
             return false;
         }
@@ -420,23 +389,12 @@ public final class GameSimulation {
             value.trappedDinosaurId = 0;
             value.active = false;
         });
-        removeTrailTokensForDinosaur(player, dinosaur);
 
         log("ДОСТАВЛЕН: водитель игрока " + player.id
                 + " вывез " + dinosaur.displayName
                 + " #" + dinosaur.id + " на базу"
                 + (trap.isPresent() ? " из ловушки" : " по жетону следа"));
         return true;
-    }
-
-    /**
-     * Убирает с карты жетоны следа, которыми был отмечен вывезенный динозавр.
-     *
-     * @param player игрок, чей водитель вывез динозавра
-     * @param dinosaur вывезенный динозавр
-     */
-    private void removeTrailTokensForDinosaur(PlayerState player, Dinosaur dinosaur) {
-        player.trailTokens.removeIf(token -> token.dinosaurId == dinosaur.id);
     }
 
     /**

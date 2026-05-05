@@ -9,7 +9,6 @@ import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.model.TrackingTrail;
-import ru.mesozoa.sim.model.TrailToken;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.ranger.ai.HunterAi;
 import ru.mesozoa.sim.simulation.GameSimulation;
@@ -239,7 +238,6 @@ public class HunterAction {
 
         Optional<Dinosaur> target = dinosaurById(trail.dinosaurId);
         if (target.isEmpty() || !player.needs(trail.species)) {
-            clearTrackingTokens(player, trail);
             player.activeTracking = null;
             simulation.log("След " + trail.species.displayName
                     + " для игрока " + player.id
@@ -380,24 +378,23 @@ public class HunterAction {
             return;
         }
 
-        if (!trail.canStartAttempt()) {
-            failTracking(player, trail, "у охотника закончились жетоны следа или карты Охота");
-            return;
+        int attempt = trail.startAttempt();
+        if (trail.isFirstAttempt()) {
+            List<HuntCard> cards = trail.drawInitialCards();
+            simulation.log("Выслеживание " + dinosaur.displayName
+                    + " #" + dinosaur.id
+                    + ": стартовые карты " + cardsText(cards)
+                    + ", сумма " + trail.preparationScore());
+        } else {
+            Optional<HuntCard> card = trail.drawFollowUpCard();
+            simulation.log("Выслеживание " + dinosaur.displayName
+                    + " #" + dinosaur.id
+                    + ": добор карты " + cardText(card)
+                    + ", сумма " + trail.preparationScore());
         }
 
-        int attempt = trail.startAttempt();
-        HuntCard card = trail.drawAttemptCard()
-                .orElseThrow(() -> new IllegalStateException("Попытка выслеживания началась без карты Охота"));
-
-        simulation.log("Выслеживание " + dinosaur.displayName
-                + " #" + dinosaur.id
-                + ": попытка " + attempt + " / " + TrackingTrail.MAX_ATTEMPTS
-                + ", карта " + card.displayName + " (+" + card.points + ")"
-                + ", сумма " + trail.preparationScore()
-                + ", жетонов осталось " + trail.remainingTrailTokens());
-
         if (trail.isOverPrepared()) {
-            moveTrackingTargetAway(player, trail, dinosaur);
+            moveTrackingTargetAway(trail, dinosaur);
             failTracking(player, trail, "охотник набрал " + trail.preparationScore()
                     + " очков карт и зверь ушёл от него");
             return;
@@ -412,10 +409,10 @@ public class HunterAction {
             return;
         }
 
-        moveTrackingTargetAway(player, trail, dinosaur);
+        moveTrackingTargetAway(trail, dinosaur);
 
         if (attempt >= TrackingTrail.MAX_ATTEMPTS) {
-            failTracking(player, trail, "после третьей попытки след простыл; карты и следы сброшены");
+            failTracking(player, trail, "после третьей попытки след простыл; карты сброшены");
             return;
         }
 
@@ -425,7 +422,7 @@ public class HunterAction {
                 + "; охотник " + hunterScore
                 + " против " + dinosaurScore
                 + " (ловк. " + dinosaur.agility + " + 1d6=" + dinosaurRoll + ")"
-                + "; попыток " + trail.attempts() + " / " + TrackingTrail.MAX_ATTEMPTS);
+                + "; цепочка " + trail.trailTokens().size() + " / " + (TrackingTrail.MAX_ATTEMPTS - 1));
     }
 
     /**
@@ -446,10 +443,6 @@ public class HunterAction {
             int dinosaurScore,
             int hunterScore
     ) {
-        clearTrackingTokens(player, trail);
-        TrailToken captureToken = trail.createTrailToken(dinosaur.position, Direction.NORTH, true);
-        player.trailTokens.add(captureToken);
-
         dinosaur.trapped = true;
         dinosaur.trappedByPlayerId = player.id;
         player.activeTracking = null;
@@ -472,7 +465,6 @@ public class HunterAction {
      * @param reason причина провала для лога
      */
     private void failTracking(PlayerState player, TrackingTrail trail, String reason) {
-        clearTrackingTokens(player, trail);
         player.registerFailedTrackingChain(trail.dinosaurId);
         player.activeTracking = null;
         simulation.log("ПРОВАЛ ВЫСЛЕЖИВАНИЯ: " + trail.species.displayName
@@ -486,39 +478,23 @@ public class HunterAction {
      * @param trail активная цепочка следов
      * @param dinosaur целевой динозавр
      */
-    private void moveTrackingTargetAway(PlayerState player, TrackingTrail trail, Dinosaur dinosaur) {
+    private void moveTrackingTargetAway(TrackingTrail trail, Dinosaur dinosaur) {
         Point before = dinosaur.position;
         dinosaur.lastPosition = before;
         simulation.dinosaurAi.moveByBioTrail(dinosaur);
         Point after = dinosaur.position;
 
-        Direction direction = directionBetween(before, after);
-        Point tokenPosition = before;
-
         if (before.equals(after)) {
             simulation.log(dinosaur.displayName + " #" + dinosaur.id
                     + " сорвался с места, но не нашёл доступный шаг био-тропы и остался на " + after);
-        } else {
-            simulation.log(dinosaur.displayName + " #" + dinosaur.id
-                    + " оставил след " + direction
-                    + ": " + before + " -> " + after);
+            return;
         }
 
-        TrailToken token = trail.createTrailToken(tokenPosition, direction, false);
-        player.trailTokens.add(token);
-    }
-
-    /**
-     * Убирает с карты все жетоны текущей цепочки выслеживания.
-     *
-     * @param player игрок, чьи жетоны нужно снять
-     * @param trail активная или завершаемая цепочка следов
-     */
-    private void clearTrackingTokens(PlayerState player, TrackingTrail trail) {
-        for (TrailToken token : trail.trailTokens()) {
-            token.active = false;
-        }
-        player.trailTokens.removeIf(token -> !token.active);
+        Direction direction = directionBetween(before, after);
+        trail.addTrailToken(before, after, direction);
+        simulation.log(dinosaur.displayName + " #" + dinosaur.id
+                + " оставил след " + direction
+                + ": " + before + " -> " + after);
     }
 
     /**
@@ -594,7 +570,7 @@ public class HunterAction {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
-                .sorted(Comparator.comparingInt(d -> d.position.manhattan(from)))
+                .sorted(Comparator.comparingInt(d -> d.position.chebyshev(from)))
                 .findFirst();
     }
 

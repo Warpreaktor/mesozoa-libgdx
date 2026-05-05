@@ -101,7 +101,11 @@ public final class GameMap {
 
     /**
      * Ручная выкладка тайла игроком.
-     * Новый тайл должен прилегать к базе или к уже выложенным тайлам по стороне.
+     *
+     * Новый основной тайл по-прежнему должен прилегать к базе или к уже выложенным
+     * тайлам по стороне. Это правило раскладки карты отдельно от правила движения:
+     * ходить можно по диагонали, но остров всё ещё собирается как нормальная
+     * тайловая карта, а не как конфетти после офисного принтера.
      */
     public boolean placeTile(Point p, Tile tile) {
         if (!canPlace(p)) return false;
@@ -203,7 +207,7 @@ public final class GameMap {
 
         Set<Point> network = groundNetworkFromBase();
         int result = 0;
-        for (Point neighbor : point.neighbors4()) {
+        for (Point neighbor : point.neighbors8()) {
             if (network.contains(neighbor)) {
                 result++;
             }
@@ -224,9 +228,9 @@ public final class GameMap {
     /**
      * Возвращает расстояние от клетки до ближайшей точки наземной сети базы.
      *
-     * Метод использует манхэттенское расстояние и нужен только как мягкий штраф
-     * в AI разведчика. Это не pathfinding и не притворяется им, редкий случай
-     * честности в вычислениях.
+     * Метод использует восьминаправленное расстояние и нужен только как мягкий
+     * штраф в AI разведчика. Это не pathfinding и не притворяется им, редкий
+     * случай честности в вычислениях.
      *
      * @param point клетка, для которой ищется ближайшая опора команды
      * @return расстояние до сети или Integer.MAX_VALUE, если сети нет
@@ -236,7 +240,7 @@ public final class GameMap {
 
         int best = Integer.MAX_VALUE;
         for (Point networkPoint : groundNetworkFromBase()) {
-            best = Math.min(best, point.manhattan(networkPoint));
+            best = Math.min(best, point.chebyshev(networkPoint));
         }
         return best;
     }
@@ -255,17 +259,18 @@ public final class GameMap {
         if (point == null) return Optional.empty();
 
         return groundNetworkFromBase().stream()
-                .min(Comparator.comparingInt(point::manhattan));
+                .min(Comparator.comparingInt(point::chebyshev));
     }
 
     /**
-     * Возвращает выложенных соседей клетки по четырём сторонам.
+     * Возвращает выложенных соседей клетки по восьми направлениям.
      *
-     * База входит в результат, если она соседствует с указанной клеткой.
+     * База входит в результат, если она соседствует с указанной клеткой. Для
+     * перемещения рейнджеров диагональная клетка такая же соседняя, как и боковая.
      */
     public List<Point> placedNeighbors(Point p) {
         ArrayList<Point> result = new ArrayList<>();
-        for (Point n : p.neighbors4()) {
+        for (Point n : p.neighbors8()) {
             if (isPlaced(n)) result.add(n);
         }
         return result;
@@ -301,7 +306,8 @@ public final class GameMap {
     /**
      * Возвращает соседние клетки для обычного наземного рейнджера.
      *
-     * Разведчик сюда не попадает: он перемещается по собственным правилам.
+     * Охотник и инженер ходят по восьми направлениям. Разведчик сюда не попадает:
+     * он перемещается по собственным правилам и не тратит очки на перелёт.
      */
     public List<Point> groundRangerReachableNeighbors(Point from) {
         ArrayList<Point> result = new ArrayList<>();
@@ -310,7 +316,8 @@ public final class GameMap {
             return result;
         }
 
-        for (Point neighbor : from.neighbors4()) {
+        for (Direction direction : Direction.values()) {
+            Point neighbor = direction.from(from);
             if (canGroundRangerStandOn(neighbor)) {
                 result.add(neighbor);
             }
@@ -526,14 +533,14 @@ public final class GameMap {
         ArrayDeque<Point> queue = new ArrayDeque<>();
         LinkedHashSet<Point> visited = new LinkedHashSet<>();
         Point best = from;
-        int bestDistance = from.manhattan(target);
+        int bestDistance = from.chebyshev(target);
 
         queue.add(from);
         visited.add(from);
 
         while (!queue.isEmpty()) {
             Point current = queue.removeFirst();
-            int distance = current.manhattan(target);
+            int distance = current.chebyshev(target);
             if (distance < bestDistance) {
                 best = current;
                 bestDistance = distance;
@@ -555,14 +562,14 @@ public final class GameMap {
         ArrayDeque<Point> queue = new ArrayDeque<>();
         LinkedHashSet<Point> visited = new LinkedHashSet<>();
         Point best = from;
-        int bestDistance = from.manhattan(target);
+        int bestDistance = from.chebyshev(target);
 
         queue.add(from);
         visited.add(from);
 
         while (!queue.isEmpty()) {
             Point current = queue.removeFirst();
-            int distance = current.manhattan(target);
+            int distance = current.chebyshev(target);
             if (distance < bestDistance) {
                 best = current;
                 bestDistance = distance;
@@ -676,8 +683,8 @@ public final class GameMap {
         return candidates.stream()
                 .min(Comparator
                         .comparingInt((DriverNetworkBuildStep step) -> projectedNetworkDistance(step, network, target))
-                        .thenComparingInt(step -> step.workerPosition().manhattan(target))
-                        .thenComparingInt(step -> step.buildPoint().manhattan(target)));
+                        .thenComparingInt(step -> step.workerPosition().chebyshev(target))
+                        .thenComparingInt(step -> step.buildPoint().chebyshev(target)));
     }
 
     /**
@@ -720,7 +727,8 @@ public final class GameMap {
             Set<Point> network,
             ArrayList<DriverNetworkBuildStep> candidates
     ) {
-        for (Point to : from.neighbors4()) {
+        for (Direction direction : Direction.values()) {
+            Point to = direction.from(from);
             if (network.contains(to)) continue;
             if (canBuildRoadBetween(from, to)) {
                 candidates.add(new DriverNetworkBuildStep(from, to, false));
@@ -746,7 +754,8 @@ public final class GameMap {
             candidates.add(new DriverNetworkBuildStep(from, from, true));
         }
 
-        for (Point to : from.neighbors4()) {
+        for (Direction direction : Direction.values()) {
+            Point to = direction.from(from);
             if (canBuildBridgeFrom(from, to) && bridgeWouldExpandNetwork(to, network, target)) {
                 candidates.add(new DriverNetworkBuildStep(from, to, true));
             }
@@ -759,13 +768,13 @@ public final class GameMap {
      * @param step проверяемый шаг строительства
      * @param network текущая сеть водителя от базы
      * @param target цель, к которой строится путь
-     * @return манхэттенское расстояние от расширенной части сети до цели
+     * @return восьминаправленное расстояние от расширенной части сети до цели
      */
     private int projectedNetworkDistance(DriverNetworkBuildStep step, Set<Point> network, Point target) {
         if (step.bridge() && network.contains(step.buildPoint())) {
             return bestUnlockedNeighborDistance(step.buildPoint(), network, target);
         }
-        return step.buildPoint().manhattan(target);
+        return step.buildPoint().chebyshev(target);
     }
 
     /**
@@ -792,9 +801,10 @@ public final class GameMap {
      */
     private int bestUnlockedNeighborDistance(Point bridgePoint, Set<Point> network, Point target) {
         int best = Integer.MAX_VALUE;
-        for (Point neighbor : bridgePoint.neighbors4()) {
+        for (Direction direction : Direction.values()) {
+            Point neighbor = direction.from(bridgePoint);
             if (!isPlaced(neighbor) || network.contains(neighbor)) continue;
-            best = Math.min(best, neighbor.manhattan(target));
+            best = Math.min(best, neighbor.chebyshev(target));
         }
         return best;
     }
@@ -854,7 +864,7 @@ public final class GameMap {
      * инженер должен построить дорогу между базой и обычным тайлом.
      */
     public boolean hasRoadOutOfBase() {
-        for (Point neighbor : base.neighbors4()) {
+        for (Point neighbor : base.neighbors8()) {
             if (!isPlaced(neighbor)) continue;
             if (canDriverMoveBetween(base, neighbor)) return true;
         }
@@ -864,15 +874,16 @@ public final class GameMap {
     /**
      * Проверяет, можно ли построить дорогу между двумя соседними клетками.
      *
-     * Дорога моделируется как связь между сторонами двух клеток, поэтому диагональные
-     * соединения здесь запрещены. Дороги нельзя строить через горы и озёра.
+     * Дорога моделируется как связь между соседними клетками. Так как рейнджеры и
+     * водитель могут двигаться по диагоналям, дорожная связь тоже может идти в
+     * диагональную соседнюю клетку. Дороги нельзя строить через горы и озёра.
      */
     public boolean canBuildRoadBetween(Point from, Point to) {
         if (from == null || to == null) return false;
         if (!isPlaced(from) || !isPlaced(to)) return false;
 
         Direction direction = directionBetween(from, to);
-        if (direction == null || !isCardinal(direction)) return false;
+        if (direction == null) return false;
 
         Direction opposite = direction.rotateClockwiseQuarterTurns(2);
         boolean fromIsBase = isBase(from);
@@ -947,18 +958,17 @@ public final class GameMap {
     /**
      * Проверяет, может ли инженер построить мост из своей клетки на указанном тайле.
      *
-     * Мост можно поставить на текущей клетке инженера или на соседней клетке
-     * по стороне. Это нужно прежде всего для озёр: инженер не может стоять на
-     * озере без моста, но должен иметь возможность построить мост с берега.
+     * Мост можно поставить на текущей клетке инженера или на любой соседней
+     * клетке, включая диагональную. Это нужно прежде всего для озёр: инженер не
+     * может стоять на озере без моста, но должен иметь возможность построить мост
+     * с берега, не изображая привязанность к ортогональности как к семейной реликвии.
      */
     public boolean canBuildBridgeFrom(Point engineerPosition, Point bridgePoint) {
         if (engineerPosition == null || bridgePoint == null) return false;
         if (!canGroundRangerStandOn(engineerPosition)) return false;
         if (!isPlaced(bridgePoint)) return false;
 
-        boolean sameCell = engineerPosition.equals(bridgePoint);
-        boolean cardinalNeighbor = engineerPosition.manhattan(bridgePoint) == 1;
-        if (!sameCell && !cardinalNeighbor) return false;
+        if (!engineerPosition.isSameOrAdjacent8(bridgePoint)) return false;
 
         return canBuildBridge(bridgePoint);
     }
@@ -975,10 +985,6 @@ public final class GameMap {
 
     private boolean canHoldRoad(Tile tile) {
         return tile != null && tile.biome != Biome.MOUNTAIN && tile.biome != Biome.LAKE;
-    }
-
-    private boolean isCardinal(Direction direction) {
-        return direction.dx == 0 || direction.dy == 0;
     }
 
     private boolean canDriverMoveBetween(Point from, Point to) {
@@ -1032,7 +1038,7 @@ public final class GameMap {
             Point p = entry.getKey();
             Tile tile = entry.getValue();
             if (tile.biome == biome) {
-                int distance = from.manhattan(p);
+                int distance = from.chebyshev(p);
                 if (distance < bestDistance) {
                     bestDistance = distance;
                     best = p;
@@ -1048,7 +1054,7 @@ public final class GameMap {
         int bestDistance = Integer.MAX_VALUE;
 
         for (Point p : availablePlacementPoints()) {
-            int distance = from.manhattan(p);
+            int distance = from.chebyshev(p);
             if (distance < bestDistance) {
                 bestDistance = distance;
                 best = p;

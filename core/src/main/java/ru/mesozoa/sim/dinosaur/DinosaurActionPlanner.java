@@ -34,12 +34,10 @@ public final class DinosaurActionPlanner {
      *
      * @param skippedDinosaurIds динозавры, чей обычный шаг в эту фазу пропускается
      */
-    public void dinosaurPhase(Set<Integer> skippedDinosaurIds) {
-        Set<Integer> skipped = skippedDinosaurIds == null ? Set.of() : skippedDinosaurIds;
+    public void dinosaurPhase() {
 
         for (Dinosaur dinosaur : new ArrayList<>(simulation.dinosaurs)) {
             if (dinosaur.captured || dinosaur.trapped || dinosaur.removed) continue;
-            if (skipped.contains(dinosaur.id)) continue;
 
             Point before = dinosaur.position;
             dinosaur.lastPosition = before;

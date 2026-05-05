@@ -33,7 +33,7 @@ public final class RangerActionExecutor {
 
         this.simulation = simulation;
         this.dinosaurAction = new DinosaurAction(simulation);
-        this.scoutAction = new ScoutAction(simulation, this, dinosaurAction);
+        this.scoutAction = new ScoutAction(simulation, dinosaurAction);
         this.hunterAction = new HunterAction(simulation, this);
         this.engineerAction = new EngineerAction(simulation, this);
         this.driverAction = new DriverAction(simulation, this);
@@ -101,6 +101,6 @@ public final class RangerActionExecutor {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
-                .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
+                .min(Comparator.comparingInt(d -> d.position.chebyshev(from)));
     }
 }

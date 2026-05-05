@@ -17,13 +17,31 @@ public final class Point {
         return Math.abs(x - other.x) + Math.abs(y - other.y);
     }
 
+    /**
+     * Возвращает расстояние в шагах по квадратной сетке, где разрешены диагонали.
+     *
+     * В правилах «Мезозои» рейнджеры могут переходить в любую соседнюю клетку,
+     * включая диагональные. Поэтому для AI это расстояние точнее манхэттенского:
+     * диагональ стоит один шаг, а не два, как будто рейнджер внезапно стал
+     * налоговой декларацией и обязан ходить только по клеточкам.
+     *
+     * @param other другая клетка
+     * @return минимальное количество восьминаправленных шагов
+     */
+    public int chebyshev(Point other) {
+        return Math.max(Math.abs(x - other.x), Math.abs(y - other.y));
+    }
+
+    /**
+     * Возвращает один шаг к цели с учётом диагонального движения.
+     *
+     * @param target целевая клетка
+     * @return соседняя клетка по направлению к цели
+     */
     public Point stepToward(Point target) {
         int dx = Integer.compare(target.x, x);
         int dy = Integer.compare(target.y, y);
-        if (Math.abs(target.x - x) >= Math.abs(target.y - y)) {
-            return new Point(x + dx, y);
-        }
-        return new Point(x, y + dy);
+        return new Point(x + dx, y + dy);
     }
 
     public List<Point> neighbors4() {
@@ -33,6 +51,32 @@ public final class Point {
         result.add(new Point(x, y + 1));
         result.add(new Point(x, y - 1));
         return result;
+    }
+
+    /**
+     * Возвращает все соседние клетки по восьми направлениям.
+     *
+     * @return ортогональные и диагональные соседи
+     */
+    public List<Point> neighbors8() {
+        ArrayList<Point> result = new ArrayList<>(8);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                result.add(new Point(x + dx, y + dy));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Проверяет соседство по восьми направлениям или совпадение клетки.
+     *
+     * @param other другая клетка
+     * @return true, если клетки совпадают или касаются стороной/углом
+     */
+    public boolean isSameOrAdjacent8(Point other) {
+        return other != null && chebyshev(other) <= 1;
     }
 
     @Override

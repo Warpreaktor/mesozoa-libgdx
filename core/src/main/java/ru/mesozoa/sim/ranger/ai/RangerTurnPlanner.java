@@ -129,7 +129,7 @@ public final class RangerTurnPlanner {
     private Point targetFor(PlayerState player, RangerRole role) {
         return switch (role) {
             case SCOUT -> null;
-            case ENGINEER -> engineerTarget(player).orElse(null);
+            case ENGINEER -> engineerTarget(player).orElse(player.scoutRanger.position());
             case HUNTER -> hunterTarget(player).orElse(player.scoutRanger.position());
             case DRIVER -> driverTarget(player);
         };
@@ -185,7 +185,7 @@ public final class RangerTurnPlanner {
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.HUNT)
                 .map(dinosaur -> hunterAi.bestHuntAmbushPointFor(player, dinosaur))
                 .flatMap(Optional::stream)
-                .min(Comparator.comparingInt(point -> point.manhattan(player.hunterRanger.position())));
+                .min(Comparator.comparingInt(point -> point.chebyshev(player.hunterRanger.position())));
     }
 
     private Optional<Point> engineerTarget(PlayerState player) {
@@ -193,7 +193,7 @@ public final class RangerTurnPlanner {
                 .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
         if (capturedTarget.isPresent()) return capturedTarget;
 
@@ -223,7 +223,7 @@ public final class RangerTurnPlanner {
                 .filter(point -> simulation.dinosaurs.stream()
                         .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
                         .noneMatch(dinosaur -> dinosaur.position.equals(point)))
-                .min(Comparator.comparingInt(point -> point.manhattan(player.engineerRanger.position())));
+                .min(Comparator.comparingInt(point -> point.chebyshev(player.engineerRanger.position())));
     }
 
     private Point driverTarget(PlayerState player) {
@@ -240,7 +240,7 @@ public final class RangerTurnPlanner {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
-                .min(Comparator.comparingInt(d -> d.position.manhattan(from)));
+                .min(Comparator.comparingInt(d -> d.position.chebyshev(from)));
     }
 
     private String roleToText(RangerRole role) {

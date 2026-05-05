@@ -502,7 +502,7 @@ public final class HunterAi {
                                 player.hunterRanger.position(),
                                 point
                         ))
-                        .thenComparingInt(point -> point.manhattan(dinosaur.position)));
+                        .thenComparingInt(point -> point.chebyshev(dinosaur.position)));
     }
 
     /**

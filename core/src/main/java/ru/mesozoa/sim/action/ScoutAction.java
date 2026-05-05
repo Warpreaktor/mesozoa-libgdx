@@ -21,9 +21,9 @@ import java.util.Set;
  * Выполнение действия разведчика.
  *
  * Разведчик открывает основные тайлы и автоматически достраивает дополнительные
- * тайлы по переходам. Важное ограничение AI: разведка теперь тянется от
- * реального плацдарма экспедиции, а не от одинокой фигурки разведчика, которая
- * решила устроить соло-поход за горную стену. Археология ошибок, сезон новый.
+ * тайлы по переходам. Он не тратит очки на перемещение: вертолёт может оказаться
+ * у любого фронтира карты, но AI всё равно выбирает полезную кромку для команды,
+ * а не устраивает одиночный туризм за горной стеной.
  */
 public class ScoutAction {
 
@@ -52,62 +52,41 @@ public class ScoutAction {
     private static final double BASE_DISTANCE_PENALTY = 4.0;
 
     private final GameSimulation simulation;
-    private final RangerActionExecutor rangerActionExecutor;
     private final DinosaurAction dinosaurAction;
 
     public ScoutAction(GameSimulation simulation,
-                       RangerActionExecutor rangerActionExecutor,
                        DinosaurAction dinosaurAction) {
 
         this.simulation = simulation;
-        this.rangerActionExecutor = rangerActionExecutor;
         this.dinosaurAction = dinosaurAction;
     }
 
     /**
-     * Выполняет план разведчика и списывает все его очки действия.
+     * Выполняет единственное действие разведчика: открывает новый участок карты.
+     *
+     * У разведчика больше нет очков движения. Его фигурка после разведки просто
+     * оказывается на открытом тайле, потому что вертолёт, как ни странно, умеет
+     * летать, а не просить у болота разрешение пройти.
      *
      * @param player игрок, чей разведчик активируется
      * @param plan выбранный AI план разведчика
      */
     public void action(PlayerState player, RangerPlan plan) {
-        int movementPoints = plan.ranger().currentActionPoints();
-        action(player, movementPoints);
-        plan.ranger().spendActionPoints(movementPoints);
+        action(player);
     }
 
     /**
-     * Выполняет действие разведки с указанным числом очков действия.
-     *
-     * Если основные тайлы закончились, разведчик пытается вернуться к ближайшему
-     * фронтиру. Иначе он открывает один основной тайл на командно-полезной кромке
-     * карты, а не рядом с собственной последней авантюрой.
+     * Открывает один основной тайл, если мешочек исследования ещё не пуст.
      *
      * @param player игрок, чей разведчик действует
-     * @param movementPoints доступные очки действия
      */
-    public void action(PlayerState player, int movementPoints) {
+    public void action(PlayerState player) {
         if (simulation.tileBag.isEmpty()) {
-            moveRoleTowardNearestFrontier(player, RangerRole.SCOUT, movementPoints);
+            simulation.log("Разведчик игрока " + player.id + " не может разведать новый участок: основные тайлы закончились");
             return;
         }
 
         exploreOneTile(player);
-    }
-
-    /**
-     * Двигает указанную роль к ближайшему свободному фронтиру карты.
-     *
-     * @param player игрок, чей рейнджер двигается
-     * @param role роль рейнджера
-     * @param movementPoints доступные очки движения
-     */
-    private void moveRoleTowardNearestFrontier(PlayerState player, RangerRole role, int movementPoints) {
-        Point start = player.positionOf(role);
-        Point frontier = simulation.map.nearestUnexploredFrontier(start);
-        if (frontier == null) return;
-
-        rangerActionExecutor.moveRoleToward(player, role, frontier, movementPoints);
     }
 
     /**
@@ -167,9 +146,9 @@ public class ScoutAction {
         return candidates.stream()
                 .max(Comparator
                         .comparingDouble((Point point) -> scoutPlacementScore(player, drawn, point, missingSpecies))
-                        .thenComparingInt(point -> -point.manhattan(simulation.map.base))
-                        .thenComparingInt(point -> -point.manhattan(player.engineerRanger.position()))
-                        .thenComparingInt(point -> -point.manhattan(player.hunterRanger.position())))
+                        .thenComparingInt(point -> -point.chebyshev(simulation.map.base))
+                        .thenComparingInt(point -> -point.chebyshev(player.engineerRanger.position()))
+                        .thenComparingInt(point -> -point.chebyshev(player.hunterRanger.position())))
                 .orElse(candidates.get(simulation.random.nextInt(candidates.size())));
     }
 
@@ -198,9 +177,9 @@ public class ScoutAction {
         score += drawn.isGroundPassable() ? PASSABLE_TILE_BONUS : BLOCKING_TILE_PENALTY;
         score += missingSpawnBiomeScore(drawn, missingSpecies);
         score += bestExpansionScore(player, drawn, point, missingSpecies);
-        score -= point.manhattan(simulation.map.base) * BASE_DISTANCE_PENALTY;
-        score -= Math.min(point.manhattan(player.engineerRanger.position()), 12) * 1.5;
-        score -= Math.min(point.manhattan(player.hunterRanger.position()), 12) * 1.5;
+        score -= point.chebyshev(simulation.map.base) * BASE_DISTANCE_PENALTY;
+        score -= Math.min(point.chebyshev(player.engineerRanger.position()), 12) * 1.5;
+        score -= Math.min(point.chebyshev(player.hunterRanger.position()), 12) * 1.5;
         return score;
     }
 
@@ -368,10 +347,9 @@ public class ScoutAction {
     /**
      * Выбирает позицию фигурки разведчика после открытия основного тайла.
      *
-     * Если открытый тайл непроходим для обычной команды, разведчик остаётся на
-     * ближайшей опорной клетке наземной сети. Так он не становится центром новой
-     * бесполезной экспедиции за горой или озером. Да, иногда бинокль работает и
-     * с берега, цивилизация выжила именно благодаря таким открытиям.
+     * Разведчик летает на любое расстояние и может зависнуть над любым открытым
+     * участком, включая горы и озёра. Его позиция больше не ограничивает выбор
+     * следующего фронтира, но визуально показывает, где он только что разведал карту.
      *
      * @param player игрок, чей разведчик перемещается
      * @param tile открытый тайл
@@ -379,12 +357,7 @@ public class ScoutAction {
      * @return новая позиция разведчика
      */
     private Point scoutPositionAfterExploration(PlayerState player, Tile tile, Point placement) {
-        if (tile.isGroundPassable() && simulation.map.canGroundRangerStandOn(placement)) {
-            return placement;
-        }
-
-        return simulation.map.nearestGroundNetworkPoint(placement)
-                .orElse(player.scoutRanger.position());
+        return placement;
     }
 
     /**

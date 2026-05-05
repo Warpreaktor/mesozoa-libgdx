@@ -2,8 +2,6 @@ package ru.mesozoa.sim.map;
 
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.simulation.GameMap;
-import ru.mesozoa.sim.tile.Tile;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -47,9 +45,9 @@ public final class PathFinder {
     /**
      * Возвращает жадный шаг по открытой карте в сторону цели.
      *
-     * Метод используется разведчиком: он может летать над любыми открытыми
-     * тайлами, но при обычном перемещении не должен вставать в закрытую клетку
-     * без отдельного действия разведки.
+     * Метод используется для свободного перемещения по открытой карте. Шаг идёт
+     * сразу по восьминаправленной сетке: если цель диагональна, фигурка делает
+     * диагональный шаг, а не изображает шахматную ладью на нервном срыве.
      *
      * @param map карта партии
      * @param from текущая клетка
@@ -74,23 +72,21 @@ public final class PathFinder {
 
         return map.placedNeighbors(from).stream()
                 .filter(passableRule)
-                .min((left, right) -> Integer.compare(left.manhattan(target), right.manhattan(target)))
+                .min((left, right) -> Integer.compare(left.chebyshev(target), right.chebyshev(target)))
                 .orElse(from);
     }
 
     /**
-     * Проверяет базовую проходимость клетки для свободного перемещения разведчика.
+     * Проверяет базовую проходимость клетки для старого режима движения разведчика.
+     *
+     * Разведчик теперь не тратит очки на перемещение, но метод оставлен для общих
+     * восьминаправленных утилит pathfinding-а и возможного ручного управления.
      *
      * @param map карта партии
      * @param point проверяемая клетка
-     * @return true, если клетка открыта и не блокирует обычное перемещение
+     * @return true, если клетка уже открыта
      */
     public static boolean isScoutPassable(GameMap map, Point point) {
-        if (map.isBase(point)) {
-            return true;
-        }
-
-        Tile tile = map.tile(point);
-        return tile != null && !tile.biome.blocksMostMovement();
+        return map != null && point != null && map.isPlaced(point);
     }
 }

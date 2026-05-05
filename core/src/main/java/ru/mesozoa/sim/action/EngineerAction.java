@@ -332,7 +332,7 @@ public class EngineerAction {
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))
-                .min(Comparator.comparingInt(point -> from == null ? 0 : point.manhattan(from)));
+                .min(Comparator.comparingInt(point -> from == null ? 0 : point.chebyshev(from)));
     }
 
     /**
@@ -363,7 +363,7 @@ public class EngineerAction {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
-                .sorted(Comparator.comparingInt(d -> d.position.manhattan(player.engineerRanger.position())))
+                .sorted(Comparator.comparingInt(d -> d.position.chebyshev(player.engineerRanger.position())))
                 .forEach(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
                         .filter(point -> isInTrapPlacementRange(player.engineerRanger.position(), point))
                         .filter(point -> isUsableTrapPoint(player, point))
@@ -383,7 +383,7 @@ public class EngineerAction {
                 .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
     }
 
@@ -393,7 +393,7 @@ public class EngineerAction {
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().manhattan(dinosaur.position)))
+                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
     }
 
@@ -404,7 +404,7 @@ public class EngineerAction {
         return simulation.map.entries().stream()
                 .filter(entry -> neededBiomes.contains(entry.getValue().biome))
                 .filter(entry -> !simulation.map.hasDriverPath(simulation.map.base, entry.getKey()))
-                .min(Comparator.comparingInt(entry -> player.engineerRanger.position().manhattan(entry.getKey())))
+                .min(Comparator.comparingInt(entry -> player.engineerRanger.position().chebyshev(entry.getKey())))
                 .map(java.util.Map.Entry::getKey);
     }
 
@@ -422,9 +422,7 @@ public class EngineerAction {
     }
 
     private boolean isInTrapPlacementRange(Point engineerPosition, Point target) {
-        int dx = Math.abs(engineerPosition.x - target.x);
-        int dy = Math.abs(engineerPosition.y - target.y);
-        return dx <= 1 && dy <= 1;
+        return engineerPosition != null && engineerPosition.isSameOrAdjacent8(target);
     }
 
 }
