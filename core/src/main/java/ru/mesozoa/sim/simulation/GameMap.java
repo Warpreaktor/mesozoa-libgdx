@@ -403,11 +403,14 @@ public final class GameMap {
     /**
      * Проверяет, может ли охотник стоять на клетке во время выслеживания.
      *
+     * След не даёт охотнику магическую амфибийно-альпинистскую лицензию: если
+     * зверь ушёл на озеро без моста или в горы, цепочка должна оборваться.
+     *
      * @param point проверяемая клетка
-     * @return true для любой уже открытой клетки, включая базу
+     * @return true, если охотник физически может стоять на этой клетке
      */
     public boolean canHunterTrackStandOn(Point point) {
-        return point != null && isPlaced(point);
+        return canGroundRangerStandOn(point);
     }
 
     /**

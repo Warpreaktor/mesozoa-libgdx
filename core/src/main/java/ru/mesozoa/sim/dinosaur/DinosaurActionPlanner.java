@@ -39,7 +39,6 @@ public final class DinosaurActionPlanner {
 
         for (Dinosaur dinosaur : new ArrayList<>(simulation.dinosaurs)) {
             dinosaur.lastPosition = null;
-
             if (dinosaur.captured || dinosaur.trapped || dinosaur.removed) continue;
             if (skipped.contains(dinosaur.id)) continue;
 

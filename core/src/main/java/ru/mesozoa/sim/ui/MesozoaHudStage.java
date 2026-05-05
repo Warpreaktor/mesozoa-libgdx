@@ -215,10 +215,10 @@ public final class MesozoaHudStage {
         }
 
         if (player.activeTracking != null) {
-            inventory.add(label("Следы", "small")).growX();
+            inventory.add(label("Выслеживание", "small")).growX();
             inventory.add(valueLabel(
-                    player.activeTracking.remainingTrailTokens() + " / " + TrackingTrail.MAX_ATTEMPTS + " жет.",
-                    player.activeTracking.remainingTrailTokens() > 0 ? "warning" : "danger"
+                    player.activeTracking.attempts() + " / " + TrackingTrail.MAX_ATTEMPTS + " попыт.",
+                    player.activeTracking.remainingAttempts() > 0 ? "warning" : "danger"
             )).width(118).right().row();
         }
 

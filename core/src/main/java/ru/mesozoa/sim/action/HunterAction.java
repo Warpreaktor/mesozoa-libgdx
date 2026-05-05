@@ -9,7 +9,6 @@ import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.model.TrackingTrail;
-import ru.mesozoa.sim.model.TrailToken;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.ranger.ai.HunterAi;
 import ru.mesozoa.sim.simulation.GameSimulation;
@@ -39,6 +38,9 @@ public class HunterAction {
 
     /** Максимум приманки, который охотник может хранить. */
     private static final int MAX_HUNTER_BAIT = 3;
+
+    /** Максимум активаций следа без новой попытки, после которого след считается потерянным. */
+    private static final int MAX_TRACKING_ACTIVATIONS_WITHOUT_ATTEMPT = 3;
 
     private final GameSimulation simulation;
     private final RangerActionExecutor rangerActionExecutor;
@@ -248,13 +250,35 @@ public class HunterAction {
 
         Dinosaur dinosaur = target.get();
         if (!player.hunterRanger.position().equals(dinosaur.position)) {
+            if (!canHunterStillFollowTrackingTarget(player, dinosaur)) {
+                failTracking(player, trail, "охотник не может пройти по следу до "
+                        + dinosaur.position + "; след потерян физически, не философски");
+                return true;
+            }
+
+            Point beforeMove = player.hunterRanger.position();
             moveHunterByTracking(player, dinosaur.position, movementPoints);
+            Point afterMove = player.hunterRanger.position();
+
+            if (afterMove.equals(dinosaur.position)) {
+                resolveTrackingAttempt(player, dinosaur);
+                return true;
+            }
+
+            int stalledTurns = trail.registerActivationWithoutAttempt();
             simulation.log("Охотник игрока " + player.id
                     + " идёт по следу " + dinosaur.displayName
                     + " #" + dinosaur.id
                     + " к " + dinosaur.position
+                    + "; " + beforeMove + " -> " + afterMove
                     + "; карты " + trail.preparationScore() + " / 10"
-                    + ", следов " + trail.trailTokens().size());
+                    + ", следов " + trail.trailTokens().size()
+                    + ", без попытки " + stalledTurns + " / "
+                    + MAX_TRACKING_ACTIVATIONS_WITHOUT_ATTEMPT);
+
+            if (stalledTurns >= MAX_TRACKING_ACTIVATIONS_WITHOUT_ATTEMPT) {
+                failTracking(player, trail, "охотник слишком долго не может выйти на новую попытку");
+            }
             return true;
         }
 
@@ -380,18 +404,18 @@ public class HunterAction {
         }
 
         if (!trail.canStartAttempt()) {
-            failTracking(player, trail, "у охотника не осталось жетонов следа или карт Охоты");
+            failTracking(player, trail, "исчерпан лимит попыток или в колоде Охота не хватает карт");
             return;
         }
 
         int attempt = trail.startAttempt();
-        Optional<HuntCard> card = trail.drawAttemptCard();
+        List<HuntCard> cards = trail.drawCardsForCurrentAttempt();
         simulation.log("Выслеживание " + dinosaur.displayName
                 + " #" + dinosaur.id
                 + ": попытка " + attempt
-                + ", карта " + cardText(card)
+                + ", карты " + cardsText(cards)
                 + ", сумма " + trail.preparationScore()
-                + ", жетонов осталось " + trail.remainingTrailTokens());
+                + ", попыток осталось " + trail.remainingAttempts());
 
         if (trail.isOverPrepared()) {
             moveTrackingTargetAway(player, trail, dinosaur);
@@ -409,10 +433,16 @@ public class HunterAction {
             return;
         }
 
-        moveTrackingTargetAway(player, trail, dinosaur);
+        boolean moved = moveTrackingTargetAway(player, trail, dinosaur);
 
         if (attempt >= TrackingTrail.MAX_ATTEMPTS) {
             failTracking(player, trail, "после третьей попытки след простыл; карты сброшены");
+            return;
+        }
+
+        if (moved && !canHunterStillFollowTrackingTarget(player, dinosaur)) {
+            failTracking(player, trail, "динозавр ушёл на " + dinosaur.position
+                    + ", куда охотник не может пройти по пятам");
             return;
         }
 
@@ -422,7 +452,7 @@ public class HunterAction {
                 + "; охотник " + hunterScore
                 + " против " + dinosaurScore
                 + " (ловк. " + dinosaur.agility + " + 1d6=" + dinosaurRoll + ")"
-                + "; цепочка " + trail.trailTokens().size() + " / " + TrackingTrail.MAX_ATTEMPTS);
+                + "; следов " + trail.trailTokens().size() + " / " + TrackingTrail.MAX_ATTEMPTS);
     }
 
     /**
@@ -443,12 +473,10 @@ public class HunterAction {
             int dinosaurScore,
             int hunterScore
     ) {
-        removeTrailTokensFromMap(player, trail);
-        TrailToken marker = trail.createTrailToken(dinosaur.position, Direction.NORTH, true);
-        player.trailTokens.add(marker);
-
         dinosaur.trapped = true;
         dinosaur.trappedByPlayerId = player.id;
+        clearTrackingTrailTokens(player, trail);
+        player.trailTokens.add(trail.createTrailToken(dinosaur.position, Direction.NORTH, true));
         player.activeTracking = null;
         player.clearCaptureFailures(dinosaur.id);
         simulation.result.trackingCaptures++;
@@ -470,7 +498,7 @@ public class HunterAction {
      */
     private void failTracking(PlayerState player, TrackingTrail trail, String reason) {
         player.registerFailedTrackingChain(trail.dinosaurId);
-        removeTrailTokensFromMap(player, trail);
+        clearTrackingTrailTokens(player, trail);
         player.activeTracking = null;
         simulation.log("ПРОВАЛ ВЫСЛЕЖИВАНИЯ: " + trail.species.displayName
                 + " для игрока " + player.id
@@ -478,40 +506,80 @@ public class HunterAction {
     }
 
     /**
-     * Уводит М-травоядного на следующую клетку био-тропы и кладёт жетон следа.
+     * Уводит М-травоядного в случайную сторону и кладёт след на клетку ухода.
+     *
+     * В выслеживании зверь не идёт по био-тропе. Он срывается с места в одном
+     * из восьми направлений и может забежать даже в такой биом, куда обычная
+     * тропа вида его не привела бы. Если выбранное направление упирается в
+     * закрытую область или базу, зверь остаётся на месте: кубик тоже иногда
+     * участвует в разработке через бесполезность.
      *
      * @param player игрок, чей охотник ведёт след
      * @param trail активная цепочка следов
      * @param dinosaur целевой динозавр
+     * @return true, если динозавр реально сменил клетку
      */
-    private void moveTrackingTargetAway(PlayerState player, TrackingTrail trail, Dinosaur dinosaur) {
+    private boolean moveTrackingTargetAway(PlayerState player, TrackingTrail trail, Dinosaur dinosaur) {
         Point before = dinosaur.position;
         dinosaur.lastPosition = before;
-        simulation.dinosaurAi.moveByBioTrail(dinosaur);
-        Point after = dinosaur.position;
 
-        Direction direction = directionBetween(before, after);
-        TrailToken token = trail.createTrailToken(before, direction, false);
-        player.trailTokens.add(token);
+        Direction direction = Direction.values()[simulation.random.nextInt(Direction.values().length)];
+        Point after = direction.from(before);
 
-        if (before.equals(after)) {
+        if (!canTrackingDinosaurEscapeTo(after)) {
             simulation.log(dinosaur.displayName + " #" + dinosaur.id
-                    + " сорвался с места, но не нашёл доступный шаг био-тропы и оставил след на " + after);
-            return;
+                    + " попытался уйти " + direction
+                    + " по следовому броску 1d8, но упёрся в край разведанной карты");
+            return false;
         }
 
+        dinosaur.position = after;
+        player.trailTokens.add(trail.createTrailToken(before, direction, false));
         simulation.log(dinosaur.displayName + " #" + dinosaur.id
                 + " оставил след " + direction
-                + ": " + before + " -> " + after);
+                + " по броску 1d8: " + before + " -> " + after);
+        return true;
     }
 
     /**
-     * Убирает с карты все обычные жетоны текущей цепочки следов.
+     * Проверяет клетку случайного ухода М-травоядного при выслеживании.
+     *
+     * @param point клетка после броска направления
+     * @return true, если зверь может физически уйти на открытую не-базовую клетку
+     */
+    private boolean canTrackingDinosaurEscapeTo(Point point) {
+        return point != null && simulation.map.isPlaced(point) && !simulation.map.isBase(point);
+    }
+
+    /**
+     * Проверяет, может ли охотник продолжить след до текущей клетки зверя.
+     *
+     * @param player игрок, чей охотник идёт по следу
+     * @param dinosaur целевой динозавр
+     * @return true, если есть проходимый путь до зверя
+     */
+    private boolean canHunterStillFollowTrackingTarget(PlayerState player, Dinosaur dinosaur) {
+        return simulation.map.hunterTrackingPathDistance(
+                player.hunterRanger.position(),
+                dinosaur.position
+        ) != Integer.MAX_VALUE;
+    }
+
+    /**
+     * Снимает с карты все жетоны текущей цепочки выслеживания.
+     *
+     * При срыве следа или успешной поимке старая цепочка больше не должна
+     * занимать физические жетоны игрока. На успешной поимке после этого
+     * создаётся один отдельный маркер на клетке обездвиженного динозавра.
      *
      * @param player владелец жетонов
-     * @param trail цепочка, чьи следы снимаются
+     * @param trail цепочка выслеживания, которую нужно очистить
      */
-    private void removeTrailTokensFromMap(PlayerState player, TrackingTrail trail) {
+    private void clearTrackingTrailTokens(PlayerState player, TrackingTrail trail) {
+        if (trail == null) {
+            return;
+        }
+
         player.trailTokens.removeIf(token -> token.dinosaurId == trail.dinosaurId && !token.captureMarker);
     }
 
@@ -608,7 +676,7 @@ public class HunterAction {
                         .filter(dinosaur -> dinosaur.position.equals(point)));
     }
 
-    /** Двигает охотника по особому режиму следов через любые открытые клетки. */
+    /** Двигает охотника по следу через клетки, куда он физически может пройти. */
     private void moveHunterByTracking(PlayerState player, Point target, int movementPoints) {
         Point position = player.hunterRanger.position();
         for (int i = 0; i < movementPoints; i++) {

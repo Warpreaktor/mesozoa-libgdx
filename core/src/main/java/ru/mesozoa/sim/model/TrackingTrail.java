@@ -3,15 +3,16 @@ package ru.mesozoa.sim.model;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+
 
 /**
  * Активное выслеживание М-травоядного охотником.
  *
  * Состояние хранит целевого динозавра, вытянутые карты «Охота», сумму подготовки
- * и жетоны следов текущей цепочки. Одна попытка выслеживания тратит один жетон
- * следа и даёт право взять одну карту «Охота». Нет жетона — нет карты и новой
- * попытки, иначе цепочка превращается в бесконечный бумажный змей из логов.
+ * и жетоны следов текущей цепочки. Первая попытка начинается с двух карт
+ * «Охота», последующие попытки добавляют по одной карте. Если охотник не может
+ * снова выйти на одну клетку с динозавром, след обрывается, а не превращается в
+ * сериал на 280 раундов.
  */
 public final class TrackingTrail {
 
@@ -42,11 +43,11 @@ public final class TrackingTrail {
     /** Сколько попыток поимки уже сделано в текущей цепочке. */
     private int attempts;
 
-    /** Сколько жетонов следа уже потрачено на попытки. */
-    private int spentTrailTokens;
-
     /** Текущая сумма очков по вытянутым картам охоты. */
     private int preparationScore;
+
+    /** Сколько активаций подряд охотник не смог сделать новую попытку. */
+    private int activationsWithoutAttempt;
 
     /**
      * Создаёт новую цепочку выслеживания.
@@ -66,34 +67,47 @@ public final class TrackingTrail {
     /**
      * Проверяет, можно ли начать ещё одну попытку выслеживания.
      *
-     * @return true, если остался хотя бы один жетон следа и одна карта «Охота»
+     * @return true, если лимит попыток не исчерпан и в колоде хватает карт
      */
     public boolean canStartAttempt() {
-        return spentTrailTokens < MAX_ATTEMPTS && !deck.isEmpty();
+        return attempts < MAX_ATTEMPTS && deck.size() >= cardsNeededForNextAttempt();
     }
 
     /**
-     * Начинает очередную попытку поимки и тратит один жетон следа.
+     * Начинает очередную попытку поимки.
      *
      * @return номер попытки в текущей цепочке
      */
     public int startAttempt() {
         if (!canStartAttempt()) {
-            throw new IllegalStateException("Нет жетона следа или карты Охота для новой попытки");
+            throw new IllegalStateException("Лимит попыток исчерпан или в колоде Охота не хватает карт");
         }
 
         attempts++;
-        spentTrailTokens++;
+        activationsWithoutAttempt = 0;
         return attempts;
     }
 
     /**
-     * Добирает одну карту для текущей попытки выслеживания.
+     * Добирает карты для текущей попытки выслеживания.
      *
-     * @return вытянутая карта или пустой результат, если колода закончилась
+     * Первая попытка берёт две стартовые карты, а каждая следующая добавляет
+     * одну карту к уже набранной сумме. Так выслеживание совпадает с физической
+     * моделью настолки: охотник копит подготовку, но рискует перевалить за 10.
+     *
+     * @return список реально вытянутых карт
      */
-    public Optional<HuntCard> drawAttemptCard() {
-        return drawOneCard();
+    public List<HuntCard> drawCardsForCurrentAttempt() {
+        int cardsToDraw = attempts == 1 ? 2 : 1;
+        ArrayList<HuntCard> result = new ArrayList<>(cardsToDraw);
+        for (int i = 0; i < cardsToDraw; i++) {
+            HuntCard card = drawOneCard();
+            if (card == null) {
+                break;
+            }
+            result.add(card);
+        }
+        return List.copyOf(result);
     }
 
     /**
@@ -127,9 +141,24 @@ public final class TrackingTrail {
         return attempts;
     }
 
-    /** @return сколько жетонов следа ещё доступно в текущей цепочке */
-    public int remainingTrailTokens() {
-        return Math.max(0, MAX_ATTEMPTS - spentTrailTokens);
+    /** @return сколько попыток ещё доступно в текущей цепочке */
+    public int remainingAttempts() {
+        return Math.max(0, MAX_ATTEMPTS - attempts);
+    }
+
+    /**
+     * Отмечает активацию, в которой охотник шёл по следу, но не смог сделать попытку.
+     *
+     * @return число подряд идущих активаций без новой попытки
+     */
+    public int registerActivationWithoutAttempt() {
+        activationsWithoutAttempt++;
+        return activationsWithoutAttempt;
+    }
+
+    /** @return сколько активаций подряд прошло без новой попытки */
+    public int activationsWithoutAttempt() {
+        return activationsWithoutAttempt;
     }
 
     /** @return текущая сумма очков карт охоты */
@@ -152,14 +181,18 @@ public final class TrackingTrail {
         return deck.size();
     }
 
-    private Optional<HuntCard> drawOneCard() {
+    private int cardsNeededForNextAttempt() {
+        return attempts == 0 ? 2 : 1;
+    }
+
+    private HuntCard drawOneCard() {
         HuntCard card = deck.pollFirst();
         if (card == null) {
-            return Optional.empty();
+            return null;
         }
 
         drawnCards.add(card);
         preparationScore += card.points;
-        return Optional.of(card);
+        return card;
     }
 }
