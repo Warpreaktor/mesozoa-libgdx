@@ -15,6 +15,7 @@ import ru.mesozoa.sim.tile.TileBag;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.EnumSet;
@@ -432,7 +433,7 @@ public final class GameSimulation {
     private Set<Integer> activeTrackingDinosaurIds() {
         return players.stream()
                 .map(player -> player.activeTracking)
-                .filter(tracking -> tracking != null)
+                .filter(Objects::nonNull)
                 .map(tracking -> tracking.dinosaurId)
                 .collect(java.util.stream.Collectors.toSet());
     }
