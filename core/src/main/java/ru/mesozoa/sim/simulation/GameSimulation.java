@@ -262,8 +262,7 @@ public final class GameSimulation {
 
     private void finishRound() {
         if (round >= gameConfig.maxRounds
-                || players.stream().allMatch(PlayerState::isComplete)
-                || tileBag.isEmpty()) {
+                || players.stream().allMatch(PlayerState::isComplete)) {
             gameOver = true;
             log("Партия завершена.");
             return;

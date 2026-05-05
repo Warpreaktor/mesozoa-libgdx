@@ -21,7 +21,8 @@ public class ScoutAi {
     private static final double SCORE_IMPOSSIBLE = -100.0;
     private static final double SCORE_FIRST_EXPLORATION = 100.0;
     private static final double SCORE_FULL_SEARCH_PRIORITY = 90.0;
-    private static final double SCORE_ALL_TARGETS_VISIBLE = 10.0;
+    /** Вес разведки, когда все оставшиеся цели уже видны и новые тайлы не приближают победу. */
+    private static final double SCORE_ALL_TARGETS_VISIBLE = -10.0;
     private static final double MIXED_SEARCH_BASE_SCORE = 15.0;
     private static final double MIXED_SEARCH_MISSING_RATIO_WEIGHT = 75.0;
 
@@ -72,7 +73,7 @@ public class ScoutAi {
                     SCORE_ALL_TARGETS_VISIBLE,
                     "все оставшиеся цели уже обнаружены: "
                             + speciesNames(visibleNeededSpecies)
-                            + ", разведка не приоритет"
+                            + ", разведка сейчас только тратит активацию"
             );
         }
 

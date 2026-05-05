@@ -40,20 +40,17 @@ public class EngineerAi {
     /** Вес ситуации, когда текущие ловушки уже заняли весь лимит и не помогают. */
     private static final double SCORE_BAD_TRAP_LAYOUT = 78.0;
 
-    /** Вес поддержки охотника дорогой к зоне выслеживания. */
-    private static final double SCORE_HUNTER_SUPPORT_ROAD = 82.0;
+    /** Вес поддержки уже начатого выслеживания дорогой для будущего вывоза. */
+    private static final double SCORE_ACTIVE_TRACKING_ROAD_SUPPORT = 38.0;
 
     /** Вес строительства первой дороги из базы после старта разведки. */
-    private static final double SCORE_FIRST_BASE_ROAD = 75.0;
-
-    /** Вес подключения уже открытого нужного биома к дорожной сети. */
-    private static final double SCORE_NEEDED_BIOME_INFRASTRUCTURE = 62.0;
+    private static final double SCORE_FIRST_BASE_ROAD = 12.0;
 
     /** Вес движения инженера вслед за разведкой без срочной инженерной задачи. */
-    private static final double SCORE_FOLLOW_SCOUT = 22.0;
+    private static final double SCORE_FOLLOW_SCOUT = -5.0;
 
     /** Низкий вес ожидания, если инженер уже стоит рядом с разведчиком. */
-    private static final double SCORE_WAIT_NEAR_SCOUT = 8.0;
+    private static final double SCORE_WAIT_NEAR_SCOUT = -10.0;
 
     /** Дистанция, на которой инженер считается рядом с разведчиком. */
     private static final int NEAR_SCOUT_DISTANCE = 2;
@@ -153,13 +150,22 @@ public class EngineerAi {
             ));
         }
 
-        Optional<Dinosaur> hunterTargetWithoutRoad = nearestNeededHunterTargetWithoutDriverAccess(player);
-        if (hunterTargetWithoutRoad.isPresent()) {
-            Dinosaur dinosaur = hunterTargetWithoutRoad.get();
+        Optional<Point> staleTrapTarget = staleTrapRecoveryTarget(player);
+        if (staleTrapTarget.isPresent() && canExecuteTrapRecoveryPlan(player, staleTrapTarget.get())) {
+            return Optional.of(new EngineerPlanCandidate(
+                    SCORE_BAD_TRAP_LAYOUT,
+                    "лимит ловушек занят, но раскладка не перекрывает актуальную S-цель; инженер переставляет ловушку",
+                    staleTrapTarget.get()
+            ));
+        }
+
+        Optional<Dinosaur> activeTrackingTargetWithoutRoad = activeTrackingTargetWithoutDriverAccess(player);
+        if (activeTrackingTargetWithoutRoad.isPresent()) {
+            Dinosaur dinosaur = activeTrackingTargetWithoutRoad.get();
             if (canExecuteInfrastructurePlan(player, dinosaur.position)) {
                 return Optional.of(new EngineerPlanCandidate(
-                        SCORE_HUNTER_SUPPORT_ROAD,
-                        "есть цель охотника без дорожной поддержки водителя: "
+                        SCORE_ACTIVE_TRACKING_ROAD_SUPPORT,
+                        "охотник уже ведёт след, инженер готовит дорогу для будущего вывоза: "
                                 + dinosaur.displayName + " на " + dinosaur.position,
                         dinosaur.position
                 ));
@@ -176,18 +182,6 @@ public class EngineerAi {
             ));
         }
 
-        Optional<Point> unconnectedNeededBiomePoint = nearestUnconnectedNeededBiomePoint(player);
-        if (unconnectedNeededBiomePoint.isPresent()) {
-            Point point = unconnectedNeededBiomePoint.get();
-            if (canExecuteInfrastructurePlan(player, point)) {
-                Biome biome = simulation.map.tile(point).biome;
-                return Optional.of(new EngineerPlanCandidate(
-                        SCORE_NEEDED_BIOME_INFRASTRUCTURE,
-                        "нужный биом уже открыт, но не подключён к дорожной сети: " + biome.displayName,
-                        point
-                ));
-            }
-        }
 
         if (shouldFollowScoutForFutureConstruction(player)) {
             int distance = player.engineerRanger.position().chebyshev(player.scoutRanger.position());
@@ -233,6 +227,25 @@ public class EngineerAi {
      * @return true, если активация не будет пустой
      */
     private boolean canExecuteTrapPlan(PlayerState player, Point trapPoint) {
+        Point engineerPosition = player.engineerRanger.position();
+        if (isAdjacentOrSame(engineerPosition, trapPoint)) {
+            return true;
+        }
+
+        Point next = simulation.map.stepGroundRangerToward(engineerPosition, trapPoint);
+        return !next.equals(engineerPosition);
+    }
+
+    /**
+     * Проверяет, может ли инженер снять устаревшую ловушку сейчас или реально
+     * приблизиться к ней. Перестановка нужна, когда все ловушки стоят на карте,
+     * но ни одна не перекрывает прогнозный маршрут нужного S-динозавра.
+     *
+     * @param player игрок, чей инженер проверяет старую ловушку
+     * @param trapPoint клетка ловушки, которую надо вернуть в инвентарь
+     * @return true, если активация приведёт к снятию ловушки или движению к ней
+     */
+    private boolean canExecuteTrapRecoveryPlan(PlayerState player, Point trapPoint) {
         Point engineerPosition = player.engineerRanger.position();
         if (isAdjacentOrSame(engineerPosition, trapPoint)) {
             return true;
@@ -405,11 +418,7 @@ public class EngineerAi {
      * @return true, если инженер далеко от разведчика и ему полезно приблизиться
      */
     private boolean shouldFollowScoutForFutureConstruction(PlayerState player) {
-        if (player.engineerRanger.position().chebyshev(player.scoutRanger.position()) <= NEAR_SCOUT_DISTANCE) {
-            return false;
-        }
-
-        return canEngineerMakeProgressToward(player, player.scoutRanger.position());
+        return false;
     }
 
     /**
@@ -464,13 +473,18 @@ public class EngineerAi {
      * @param player игрок, для которого ищется зона поддержки охотника
      * @return ближайшая TRACKING/HUNT-цель без водительского маршрута
      */
-    private Optional<Dinosaur> nearestNeededHunterTargetWithoutDriverAccess(PlayerState player) {
+    private Optional<Dinosaur> activeTrackingTargetWithoutDriverAccess(PlayerState player) {
+        if (player.activeTracking == null) {
+            return Optional.empty();
+        }
+
         return simulation.dinosaurs.stream()
+                .filter(dinosaur -> dinosaur.id == player.activeTracking.dinosaurId)
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)));
+                .findFirst();
     }
 
     /**
@@ -596,6 +610,59 @@ public class EngineerAi {
         return (int) player.traps.stream()
                 .filter(trap -> trap.active)
                 .count();
+    }
+
+    /**
+     * Ищет активную пустую ловушку, которую пора переставить.
+     *
+     * Ловушка считается полезной, если она стоит на одной из прогнозных клеток
+     * прихода нужного S-динозавра. Если лимит ловушек забит, а полезных ловушек
+     * нет, инженер получает конкретную физическую задачу: дойти до ближайшей
+     * старой ловушки и вернуть её в инвентарь.
+     *
+     * @param player игрок, чьи ловушки анализируются
+     * @return позиция ловушки для снятия или пустой результат
+     */
+    private Optional<Point> staleTrapRecoveryTarget(PlayerState player) {
+        if (activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer) {
+            return Optional.empty();
+        }
+
+        Set<Point> usefulTrapPositions = usefulTrapPositions(player);
+        if (usefulTrapPositions.isEmpty()) {
+            return Optional.empty();
+        }
+
+        boolean hasUsefulTrap = player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .anyMatch(trap -> usefulTrapPositions.contains(trap.position));
+        if (hasUsefulTrap) {
+            return Optional.empty();
+        }
+
+        return player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .min(Comparator.comparingInt(trap -> player.engineerRanger.position().chebyshev(trap.position)))
+                .map(trap -> trap.position);
+    }
+
+    /**
+     * Собирает прогнозные клетки, где ловушки сейчас действительно помогают
+     * поймать оставшихся нужных S-динозавров.
+     *
+     * @param player игрок, чьи цели и ловушки проверяются
+     * @return множество полезных клеток ловушек
+     */
+    private Set<Point> usefulTrapPositions(PlayerState player) {
+        Set<Point> result = new java.util.HashSet<>();
+
+        simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
+                .forEach(dinosaur -> result.addAll(simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur)));
+
+        return result;
     }
 
     /**

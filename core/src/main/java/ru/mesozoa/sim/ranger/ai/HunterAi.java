@@ -45,11 +45,11 @@ public final class HunterAi {
     /** Вес ситуации, когда охотник может дойти до клетки засады за текущую активацию. */
     private static final double SCORE_HUNT_AMBUSH_REACHABLE_NOW = 92.0;
 
-    /** Низкий вес ожидания рядом с разведчиком, когда видимых целей охотника пока нет. */
-    private static final double SCORE_WAIT_NEAR_SCOUT = 10.0;
+    /** Вес ожидания рядом с разведчиком, когда видимых целей охотника пока нет. */
+    private static final double SCORE_WAIT_NEAR_SCOUT = -5.0;
 
     /** Вес ситуации, когда охотник не может осмысленно действовать прямо сейчас. */
-    private static final double SCORE_LOW_IDLE = 5.0;
+    private static final double SCORE_LOW_IDLE = -10.0;
 
     /** Штраф за каждую проваленную засаду на того же конкретного хищника. */
     private static final double FAILED_HUNT_ATTEMPT_PENALTY = 15.0;

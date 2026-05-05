@@ -75,6 +75,13 @@ public class EngineerAction {
             return;
         }
 
+        if (hasStaleTrapLayout(player)) {
+            boolean done = recoverStaleTrap(player, plannedTarget, movementPoints);
+            if (done) {
+                return;
+            }
+        }
+
         if (hasActionableTrapTarget(player)) {
             moveEngineerTowardTrapTarget(player, movementPoints);
             int placed = placeAvailableTrapsAroundEngineer(player);
@@ -114,6 +121,53 @@ public class EngineerAction {
      */
     private boolean hasTrappedDinosaurWithoutDriverAccess(PlayerState player) {
         return nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent();
+    }
+
+    /**
+     * Проверяет, занял ли игрок весь лимит ловушек старой раскладкой.
+     *
+     * Если все ловушки стоят на карте, но ни одна не перекрывает прогнозный
+     * маршрут нужного S-динозавра, инженер должен снять одну из них, а не
+     * ждать 200 раундов, пока Галлимимон сам придёт на бюрократическую мину.
+     *
+     * @param player игрок, чьи ловушки проверяются
+     * @return true, если нужно переставить пустую ловушку
+     */
+    private boolean hasStaleTrapLayout(PlayerState player) {
+        return staleTrapToRecover(player, player.engineerRanger.position()).isPresent();
+    }
+
+    /**
+     * Снимает устаревшую ловушку или двигает инженера к ней.
+     *
+     * @param player игрок, чей инженер переставляет ловушки
+     * @param plannedTarget цель из AI-плана, обычно позиция старой ловушки
+     * @param movementPoints доступные очки движения инженера
+     * @return true, если инженер снял ловушку, поставил новую или хотя бы сдвинулся к старой
+     */
+    private boolean recoverStaleTrap(PlayerState player, Point plannedTarget, int movementPoints) {
+        Optional<Trap> targetTrap = staleTrapToRecover(player, plannedTarget);
+        if (targetTrap.isEmpty()) {
+            return false;
+        }
+
+        Trap trap = targetTrap.get();
+        if (!isInTrapPlacementRange(player.engineerRanger.position(), trap.position)) {
+            boolean moved = moveEngineerToward(player, trap.position, movementPoints);
+            if (!isInTrapPlacementRange(player.engineerRanger.position(), trap.position)) {
+                return moved;
+            }
+        }
+
+        trap.active = false;
+        trap.trappedDinosaurId = 0;
+        simulation.log("Инженер игрока " + player.id + " снял старую ловушку на " + trap.position);
+
+        int placed = placeAvailableTrapsAroundEngineer(player);
+        if (placed > 0) {
+            simulation.log("Игрок " + player.id + " переставил ловушки: " + placed);
+        }
+        return true;
     }
 
     /**
@@ -259,11 +313,8 @@ public class EngineerAction {
         Optional<Point> capturedTarget = nearestCapturedNeededDinosaurWithoutDriverAccess(player);
         if (capturedTarget.isPresent()) return capturedTarget;
 
-        Optional<Point> hunterTarget = nearestNeededHunterTargetWithoutDriverAccess(player);
+        Optional<Point> hunterTarget = activeTrackingTargetWithoutDriverAccess(player);
         if (hunterTarget.isPresent()) return hunterTarget;
-
-        Optional<Point> biomeTarget = nearestUnconnectedNeededBiomePoint(player);
-        if (biomeTarget.isPresent()) return biomeTarget;
 
         return Optional.empty();
     }
@@ -290,6 +341,54 @@ public class EngineerAction {
         }
 
         return placed;
+    }
+
+    /**
+     * Выбирает пустую активную ловушку для возврата в инвентарь.
+     *
+     * @param player игрок-владелец ловушек
+     * @param preferredPosition позиция из AI-плана, если план уже выбрал конкретную ловушку
+     * @return ловушка, которую стоит снять
+     */
+    private Optional<Trap> staleTrapToRecover(PlayerState player, Point preferredPosition) {
+        if (activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer) {
+            return Optional.empty();
+        }
+
+        Set<Point> usefulTrapPositions = usefulTrapPositions(player);
+        if (usefulTrapPositions.isEmpty()) {
+            return Optional.empty();
+        }
+
+        boolean hasUsefulTrap = player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .anyMatch(trap -> usefulTrapPositions.contains(trap.position));
+        if (hasUsefulTrap) {
+            return Optional.empty();
+        }
+
+        Point from = preferredPosition != null ? preferredPosition : player.engineerRanger.position();
+        return player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .min(Comparator.comparingInt(trap -> trap.position.chebyshev(from)));
+    }
+
+    /**
+     * Собирает клетки, на которых ловушки сейчас имеют смысл для нужных S-целей.
+     *
+     * @param player игрок, для которого строится прогноз
+     * @return множество полезных позиций ловушек
+     */
+    private Set<Point> usefulTrapPositions(PlayerState player) {
+        Set<Point> result = new java.util.HashSet<>();
+
+        simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
+                .forEach(dinosaur -> result.addAll(simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur)));
+
+        return result;
     }
 
     private int activeTrapCount(PlayerState player) {
@@ -387,14 +486,19 @@ public class EngineerAction {
                 .map(dinosaur -> dinosaur.position);
     }
 
-    private Optional<Point> nearestNeededHunterTargetWithoutDriverAccess(PlayerState player) {
+    private Optional<Point> activeTrackingTargetWithoutDriverAccess(PlayerState player) {
+        if (player.activeTracking == null) {
+            return Optional.empty();
+        }
+
         return simulation.dinosaurs.stream()
+                .filter(dinosaur -> dinosaur.id == player.activeTracking.dinosaurId)
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .filter(dinosaur -> player.needs(dinosaur.species))
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)))
-                .map(dinosaur -> dinosaur.position);
+                .map(dinosaur -> dinosaur.position)
+                .findFirst();
     }
 
 
