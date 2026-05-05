@@ -642,8 +642,9 @@ public class EngineerAi {
 
         return player.traps.stream()
                 .filter(trap -> trap.active && !trap.hasDinosaur())
-                .min(Comparator.comparingInt(trap -> player.engineerRanger.position().chebyshev(trap.position)))
-                .map(trap -> trap.position);
+                .map(trap -> trap.position)
+                .filter(point -> canExecuteTrapRecoveryPlan(player, point))
+                .min(Comparator.comparingInt(point -> player.engineerRanger.position().chebyshev(point)));
     }
 
     /**
@@ -660,9 +661,33 @@ public class EngineerAi {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
-                .forEach(dinosaur -> result.addAll(simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur)));
+                .forEach(dinosaur -> result.addAll(highConfidenceTrapPositions(dinosaur)));
 
         return result;
+    }
+
+    /**
+     * Возвращает клетки, которые считаются действительно полезными для уже
+     * выставленных ловушек.
+     *
+     * Если био-тропа даёт точную следующую клетку, полезной считается именно
+     * она. Fallback-соседи нужны для новых низкокачественных ставок, но они не
+     * должны блокировать перестановку старых ловушек: иначе одна случайная
+     * ловушка рядом с Криптогнатом объявляется «полезной», пока зверь 200 ходов
+     * бегает между двумя другими клетками. Спасибо, но такого цирка нам уже
+     * хватило.
+     *
+     * @param dinosaur S-динозавр, для которого проверяется раскладка
+     * @return точные клетки маршрута или fallback-кандидаты, если точного маршрута нет
+     */
+    private Set<Point> highConfidenceTrapPositions(Dinosaur dinosaur) {
+        Optional<Point> exact = simulation.dinosaurAi.predictDinosaurBioTrailDestination(dinosaur)
+                .filter(point -> !point.equals(dinosaur.position));
+        if (exact.isPresent()) {
+            return Set.of(exact.get());
+        }
+
+        return new java.util.HashSet<>(simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur));
     }
 
     /**

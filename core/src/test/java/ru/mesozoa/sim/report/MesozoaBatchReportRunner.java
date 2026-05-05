@@ -89,7 +89,7 @@ public final class MesozoaBatchReportRunner {
 
         GameSimulation simulation = new GameSimulation(gameConfig, new InventoryConfig(), seed);
         GameStats stats = new GameStats(index, seed, config.players(), simulation);
-        simulation.setLogListener(message -> stats.recordLog(simulation.round, message));
+        simulation.setLogListener(message -> stats.recordLog(simulation, message));
 
         int microSteps = 0;
         int microStepLimit = Math.max(1_000, config.maxRounds() * (config.players() * 8 + 32));
@@ -163,11 +163,18 @@ public final class MesozoaBatchReportRunner {
         int activeHuntsAtEnd;
         int activeTrackingAtEnd;
         int trappedAwaitingPickupAtEnd;
+        int taskTrappedAwaitingPickupAtEnd;
+        int nonTaskTrappedAwaitingPickupAtEnd;
         int visibleUncapturedTaskSpeciesAtEnd;
         int hiddenUncapturedTaskSpeciesAtEnd;
         boolean microStepLimitHit;
 
         int plannerSkips;
+        int plannerSkipsByCompletedPlayers;
+        int plannerSkipsByUnfinishedPlayers;
+        int visibleUncapturedTargetSkips;
+        int visibleTrapTargetNoPlanSkips;
+        int visibleHuntTargetNoPlanSkips;
         int plannerBestSkipSignals;
         int noAvailableRanger;
         int scoutNoTiles;
@@ -222,8 +229,12 @@ public final class MesozoaBatchReportRunner {
             }
         }
 
-        void recordLog(int round, String message) {
-            if (message.contains("планировщик пропустил ход")) plannerSkips++;
+        void recordLog(GameSimulation simulation, String message) {
+            int round = simulation.round;
+            if (message.contains("планировщик пропустил ход")) {
+                plannerSkips++;
+                recordPlannerSkipContext(simulation, message);
+            }
             if (message.contains("стратегически лучше пропустить")) plannerBestSkipSignals++;
             if (message.contains("нет доступного рейнджера")) noAvailableRanger++;
             if (message.contains("не может разведать новый участок")) scoutNoTiles++;
@@ -264,6 +275,82 @@ public final class MesozoaBatchReportRunner {
             }
         }
 
+        /**
+         * Раскладывает skip-планировщика по контексту игрока.
+         *
+         * Общий счётчик пропусков слишком шумный: завершивший игрок может честно
+         * ждать, пока второй доигрывает. Гораздо важнее видеть пропуски
+         * незавершённого игрока с видимой, но ещё не закрытой целью.
+         *
+         * @param simulation финальная/текущая симуляция партии
+         * @param message строка лога skip-события
+         */
+        private void recordPlannerSkipContext(GameSimulation simulation, String message) {
+            Integer playerId = playerIdFromMessage(message);
+            if (playerId == null) return;
+
+            PlayerState player = simulation.players.stream()
+                    .filter(candidate -> candidate.id == playerId)
+                    .findFirst()
+                    .orElse(null);
+            if (player == null) return;
+
+            if (player.isComplete()) {
+                plannerSkipsByCompletedPlayers++;
+                return;
+            }
+
+            plannerSkipsByUnfinishedPlayers++;
+            if (hasVisibleUncapturedTaskTarget(simulation, player, null)) {
+                visibleUncapturedTargetSkips++;
+            }
+            if (hasVisibleUncapturedTaskTarget(simulation, player, CaptureMethod.TRAP)) {
+                visibleTrapTargetNoPlanSkips++;
+            }
+            if (hasVisibleUncapturedTaskTarget(simulation, player, CaptureMethod.HUNT)) {
+                visibleHuntTargetNoPlanSkips++;
+            }
+        }
+
+        /** Извлекает ID игрока из строк вида «Игрок 2: ...». */
+        private Integer playerIdFromMessage(String message) {
+            String lower = message.toLowerCase(Locale.ROOT);
+            int index = lower.indexOf("игрок");
+            if (index < 0) return null;
+
+            int cursor = index + "игрок".length();
+            while (cursor < message.length() && !Character.isDigit(message.charAt(cursor))) {
+                cursor++;
+            }
+            if (cursor >= message.length()) return null;
+
+            int end = cursor;
+            while (end < message.length() && Character.isDigit(message.charAt(end))) {
+                end++;
+            }
+            return Integer.parseInt(message.substring(cursor, end));
+        }
+
+        /**
+         * Проверяет, есть ли у игрока видимая незачтённая цель указанного метода.
+         *
+         * @param simulation текущая симуляция
+         * @param player игрок, чьи цели проверяются
+         * @param method способ поимки или null для любого способа
+         * @return true, если видимая цель есть
+         */
+        private boolean hasVisibleUncapturedTaskTarget(
+                GameSimulation simulation,
+                PlayerState player,
+                CaptureMethod method
+        ) {
+            return simulation.dinosaurs.stream()
+                    .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                    .filter(dinosaur -> player.needs(dinosaur.species))
+                    .filter(dinosaur -> method == null || dinosaur.captureMethod == method)
+                    .anyMatch(dinosaur -> !player.captured.contains(dinosaur.species));
+        }
+
         void observeCaptures(GameSimulation simulation) {
             for (PlayerState player : simulation.players) {
                 Set<Species> observed = observedCapturedByPlayer.get(player.id);
@@ -297,6 +384,11 @@ public final class MesozoaBatchReportRunner {
             this.trappedAwaitingPickupAtEnd = (int) simulation.dinosaurs.stream()
                     .filter(dinosaur -> dinosaur.trapped && !dinosaur.captured && !dinosaur.removed)
                     .count();
+            this.taskTrappedAwaitingPickupAtEnd = (int) simulation.dinosaurs.stream()
+                    .filter(dinosaur -> dinosaur.trapped && !dinosaur.captured && !dinosaur.removed)
+                    .filter(dinosaur -> isStillNeededByAnyPlayer(simulation, dinosaur))
+                    .count();
+            this.nonTaskTrappedAwaitingPickupAtEnd = trappedAwaitingPickupAtEnd - taskTrappedAwaitingPickupAtEnd;
 
             for (Map.Entry<Species, Integer> entry : simulation.result.firstSpawnRound.entrySet()) {
                 speciesStats.get(entry.getKey()).firstSpawnRounds.add(entry.getValue());
@@ -316,6 +408,19 @@ public final class MesozoaBatchReportRunner {
                     else hiddenUncapturedTaskSpeciesAtEnd++;
                 }
             }
+        }
+
+        /**
+         * Проверяет, нужен ли обездвиженный динозавр хотя бы одному незавершённому игроку.
+         *
+         * @param simulation симуляция партии
+         * @param dinosaur динозавр в ловушке/по следу
+         * @return true, если это потенциально блокирующая добыча
+         */
+        private boolean isStillNeededByAnyPlayer(GameSimulation simulation, Dinosaur dinosaur) {
+            return simulation.players.stream()
+                    .filter(player -> !player.isComplete())
+                    .anyMatch(player -> player.needs(dinosaur.species));
         }
 
         List<PlayerSpeciesRow> playerSpeciesRows() {
@@ -457,10 +562,13 @@ public final class MesozoaBatchReportRunner {
                         "openedTiles", "spawnedDinosaurs", "capturedDinosaurs", "microSteps",
                         "roadBuilds", "bridgeBuilds", "finalRoadSegments", "finalBridges",
                         "trapTokensPlaced", "trapRepositions", "staleTrapsRecovered",
-                        "plannerSkips", "engineerNoUseful", "driverCannotReach",
+                        "plannerSkips", "plannerSkipsByCompletedPlayers", "plannerSkipsByUnfinishedPlayers",
+                        "visibleUncapturedTargetSkips", "visibleTrapTargetNoPlanSkips", "visibleHuntTargetNoPlanSkips",
+                        "engineerNoUseful", "driverCannotReach",
                         "huntStarts", "huntFailures", "huntRelocations",
                         "trackingStarts", "trackingAttempts", "trackingFailures", "trackingStalls",
                         "activeHuntsAtEnd", "activeTrackingAtEnd", "trappedAwaitingPickupAtEnd",
+                        "taskTrappedAwaitingPickupAtEnd", "nonTaskTrappedAwaitingPickupAtEnd",
                         "visibleUncapturedTaskSpeciesAtEnd", "hiddenUncapturedTaskSpeciesAtEnd",
                         "microStepLimitHit", "suspiciousScore"));
                 out.newLine();
@@ -470,10 +578,13 @@ public final class MesozoaBatchReportRunner {
                             game.openedTiles, game.spawnedDinosaurs, game.capturedDinosaurs, game.microSteps,
                             game.roadBuilds, game.bridgeBuilds, game.finalRoadSegments, game.finalBridges,
                             game.trapTokensPlaced, game.trapRepositions, game.staleTrapsRecovered,
-                            game.plannerSkips, game.engineerNoUseful, game.driverCannotReach,
+                            game.plannerSkips, game.plannerSkipsByCompletedPlayers, game.plannerSkipsByUnfinishedPlayers,
+                            game.visibleUncapturedTargetSkips, game.visibleTrapTargetNoPlanSkips, game.visibleHuntTargetNoPlanSkips,
+                            game.engineerNoUseful, game.driverCannotReach,
                             game.huntStarts, game.huntFailures, game.huntRelocations,
                             game.trackingStarts, game.trackingAttempts, game.trackingFailures, game.trackingStalls,
                             game.activeHuntsAtEnd, game.activeTrackingAtEnd, game.trappedAwaitingPickupAtEnd,
+                            game.taskTrappedAwaitingPickupAtEnd, game.nonTaskTrappedAwaitingPickupAtEnd,
                             game.visibleUncapturedTaskSpeciesAtEnd, game.hiddenUncapturedTaskSpeciesAtEnd,
                             game.microStepLimitHit, game.suspiciousScore()));
                     out.newLine();
@@ -503,14 +614,20 @@ public final class MesozoaBatchReportRunner {
         private void writeAiEventsCsv() throws IOException {
             try (BufferedWriter out = writer("ai_events.csv")) {
                 out.write(String.join(",",
-                        "game", "seed", "plannerBestSkipSignals", "noAvailableRanger", "scoutNoTiles",
+                        "game", "seed", "plannerBestSkipSignals", "plannerSkipsByCompletedPlayers",
+                        "plannerSkipsByUnfinishedPlayers", "visibleUncapturedTargetSkips",
+                        "visibleTrapTargetNoPlanSkips", "visibleHuntTargetNoPlanSkips",
+                        "noAvailableRanger", "scoutNoTiles",
                         "engineerCannotAdvanceRoad", "engineerNoLegalTrapCell", "driverWaits",
                         "driverNotEnoughActions", "driverArrivals", "deliveries",
                         "huntCardDraws", "huntWaits", "trackingTrailMoves", "cryptognathBaitThefts", "predatorKills"));
                 out.newLine();
                 for (GameStats game : games) {
                     out.write(csvLine(
-                            game.gameIndex, game.seed, game.plannerBestSkipSignals, game.noAvailableRanger, game.scoutNoTiles,
+                            game.gameIndex, game.seed, game.plannerBestSkipSignals, game.plannerSkipsByCompletedPlayers,
+                            game.plannerSkipsByUnfinishedPlayers, game.visibleUncapturedTargetSkips,
+                            game.visibleTrapTargetNoPlanSkips, game.visibleHuntTargetNoPlanSkips,
+                            game.noAvailableRanger, game.scoutNoTiles,
                             game.engineerCannotAdvanceRoad, game.engineerNoLegalTrapCell, game.driverWaits,
                             game.driverNotEnoughActions, game.driverArrivals, game.deliveries,
                             game.huntCardDraws, game.huntWaits, game.trackingTrailMoves, game.cryptognathBaitThefts, game.predatorKills));
@@ -681,6 +798,11 @@ public final class MesozoaBatchReportRunner {
             out.write("```text");
             out.newLine();
             writeMetric(out, "plannerSkips", games.stream().mapToInt(game -> game.plannerSkips).sum());
+            writeMetric(out, "plannerSkipsByCompletedPlayers", games.stream().mapToInt(game -> game.plannerSkipsByCompletedPlayers).sum());
+            writeMetric(out, "plannerSkipsByUnfinishedPlayers", games.stream().mapToInt(game -> game.plannerSkipsByUnfinishedPlayers).sum());
+            writeMetric(out, "visibleUncapturedTargetSkips", games.stream().mapToInt(game -> game.visibleUncapturedTargetSkips).sum());
+            writeMetric(out, "visibleTrapTargetNoPlanSkips", games.stream().mapToInt(game -> game.visibleTrapTargetNoPlanSkips).sum());
+            writeMetric(out, "visibleHuntTargetNoPlanSkips", games.stream().mapToInt(game -> game.visibleHuntTargetNoPlanSkips).sum());
             writeMetric(out, "engineerNoUseful", games.stream().mapToInt(game -> game.engineerNoUseful).sum());
             writeMetric(out, "roadBuilds", games.stream().mapToInt(game -> game.roadBuilds).sum());
             writeMetric(out, "bridgeBuilds", games.stream().mapToInt(game -> game.bridgeBuilds).sum());
@@ -694,6 +816,8 @@ public final class MesozoaBatchReportRunner {
             writeMetric(out, "trackingStalls", games.stream().mapToInt(game -> game.trackingStalls).sum());
             writeMetric(out, "activeTrackingAtEnd", games.stream().mapToInt(game -> game.activeTrackingAtEnd).sum());
             writeMetric(out, "trappedAwaitingPickupAtEnd", games.stream().mapToInt(game -> game.trappedAwaitingPickupAtEnd).sum());
+            writeMetric(out, "taskTrappedAwaitingPickupAtEnd", games.stream().mapToInt(game -> game.taskTrappedAwaitingPickupAtEnd).sum());
+            writeMetric(out, "nonTaskTrappedAwaitingPickupAtEnd", games.stream().mapToInt(game -> game.nonTaskTrappedAwaitingPickupAtEnd).sum());
             out.write("```");
             out.newLine();
             out.newLine();
@@ -706,6 +830,8 @@ public final class MesozoaBatchReportRunner {
             writeAverageMetric(out, "roads/game", games.stream().mapToInt(game -> game.roadBuilds).sum());
             writeAverageMetric(out, "bridges/game", games.stream().mapToInt(game -> game.bridgeBuilds).sum());
             writeAverageMetric(out, "plannerSkips/game", games.stream().mapToInt(game -> game.plannerSkips).sum());
+            writeAverageMetric(out, "unfinishedSkips/game", games.stream().mapToInt(game -> game.plannerSkipsByUnfinishedPlayers).sum());
+            writeAverageMetric(out, "visibleTargetSkips/game", games.stream().mapToInt(game -> game.visibleUncapturedTargetSkips).sum());
             writeAverageMetric(out, "engineerNoUseful/game", games.stream().mapToInt(game -> game.engineerNoUseful).sum());
             writeAverageMetric(out, "huntFailures/game", games.stream().mapToInt(game -> game.huntFailures).sum());
             writeAverageMetric(out, "trackingFailures/game", games.stream().mapToInt(game -> game.trackingFailures).sum());

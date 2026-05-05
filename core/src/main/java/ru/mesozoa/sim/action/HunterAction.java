@@ -8,6 +8,7 @@ import ru.mesozoa.sim.model.HuntCard;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
+import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.model.TrackingTrail;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.ranger.ai.HunterAi;
@@ -340,8 +341,24 @@ public class HunterAction {
      */
     private boolean shouldDrawHuntCard(HuntAmbush hunt, int turnsUntilArrival) {
         if (hunt.remainingCards() <= 0) return false;
-        if (hunt.preparationScore() < SAFE_PREPARATION_TARGET) return true;
-        return hunt.preparationScore() < STRONG_PREPARATION_TARGET && turnsUntilArrival > 1;
+
+        int targetPreparation = desiredHuntPreparation(hunt.species);
+        if (hunt.preparationScore() < targetPreparation) return true;
+
+        boolean hasTimeForRisk = turnsUntilArrival == Integer.MAX_VALUE || turnsUntilArrival > 2;
+        return hasTimeForRisk
+                && hunt.preparationScore() < STRONG_PREPARATION_TARGET
+                && hunt.preparationScore() <= HuntAmbush.MAX_PREPARATION_SCORE - 2;
+    }
+
+    /**
+     * Рассчитывает целевую подготовку охотника против конкретного хищника.
+     *
+     * @param species вид хищника
+     * @return желаемая сумма карт перед контактом
+     */
+    private int desiredHuntPreparation(Species species) {
+        return Math.min(STRONG_PREPARATION_TARGET, Dinosaur.agilityOf(species) + 4);
     }
 
     /**

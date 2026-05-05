@@ -1,11 +1,13 @@
 package ru.mesozoa.sim.ranger.ai;
 
 import ru.mesozoa.sim.model.AiScore;
+import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
@@ -24,6 +26,9 @@ public class ScoutAi {
     private static final double SCORE_FULL_SEARCH_PRIORITY = 90.0;
     /** Вес разведки вокруг видимого хищника, которому не хватает биомов для нормальной засады. */
     private static final double SCORE_HUNT_BIOME_SUPPORT = 84.0;
+
+    /** Вес разведки вокруг видимой S-цели, для которой пока нет хорошего ловушечного маршрута. */
+    private static final double SCORE_TRAP_BIOME_SUPPORT = 82.0;
     /** Вес разведки, когда все оставшиеся цели уже видны и новые тайлы не приближают победу. */
     private static final double SCORE_ALL_TARGETS_VISIBLE = -10.0;
     private static final double MIXED_SEARCH_BASE_SCORE = 15.0;
@@ -84,6 +89,16 @@ public class ScoutAi {
                 );
             }
 
+            Optional<Dinosaur> trapTargetNeedingBiomes = bestVisibleTrapTargetNeedingScoutSupport(player);
+            if (trapTargetNeedingBiomes.isPresent()) {
+                Dinosaur dinosaur = trapTargetNeedingBiomes.get();
+                return new AiScore(
+                        SCORE_TRAP_BIOME_SUPPORT,
+                        "все цели уже видны, но для ловушек на " + dinosaur.displayName
+                                + " нужно раскрыть биомы вокруг S-цели"
+                );
+            }
+
             return new AiScore(
                     SCORE_ALL_TARGETS_VISIBLE,
                     "все оставшиеся цели уже обнаружены: "
@@ -109,6 +124,73 @@ public class ScoutAi {
                         + "; осталось найти " + missingNeededSpecies.size()
                         + " из " + remainingNeededSpecies.size()
         );
+    }
+
+
+    /**
+     * Выбирает видимую S-цель, для которой разведчик должен раскрывать окружение.
+     *
+     * Для ловушек одной видимости недостаточно: если нужный следующий биом ещё
+     * не открыт или вокруг зверя мало рабочих выходов, инженер не сможет
+     * построить хороший план. Тогда разведчик помогает именно своему игроку:
+     * открывает клетки рядом с целью, чтобы динозавр вышел из тупика и снова
+     * начал двигаться по прогнозируемому маршруту.
+     *
+     * @param player игрок, чьей ловушечной цели нужна разведка
+     * @return S-динозавр, вокруг которого стоит раскрывать карту
+     */
+    public Optional<Dinosaur> bestVisibleTrapTargetNeedingScoutSupport(PlayerState player) {
+        return visibleNeededTrapTargets(player)
+                .filter(dinosaur -> trapTargetNeedsScoutSupport(dinosaur))
+                .max(Comparator
+                        .comparingInt((Dinosaur dinosaur) -> trapSupportUrgency(dinosaur))
+                        .thenComparingInt(dinosaur -> -dinosaur.position.chebyshev(player.scoutRanger.position())));
+    }
+
+    /**
+     * Проверяет, что видимый S-динозавр ещё не стал удобной ловушечной целью.
+     *
+     * @param dinosaur проверяемая S-цель
+     * @return true, если вокруг цели стоит продолжать разведку
+     */
+    private boolean trapTargetNeedsScoutSupport(Dinosaur dinosaur) {
+        boolean noPredictableBioTrail = simulation.dinosaurAi.predictDinosaurBioTrailDestination(dinosaur).isEmpty();
+        boolean sparseLocalMap = openedNeighborsAround(dinosaur.position) < 6;
+        boolean weakTrapCoverage = simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).size() < 2;
+        return noPredictableBioTrail || sparseLocalMap || weakTrapCoverage;
+    }
+
+    /**
+     * Считает срочность разведки вокруг S-цели.
+     *
+     * @param dinosaur динозавр, вокруг которого оценивается карта
+     * @return чем больше число, тем сильнее разведчик должен помогать
+     */
+    private int trapSupportUrgency(Dinosaur dinosaur) {
+        int urgency = 0;
+        if (simulation.dinosaurAi.predictDinosaurBioTrailDestination(dinosaur).isEmpty()) urgency += 100;
+        urgency += Math.max(0, 8 - openedNeighborsAround(dinosaur.position)) * 10;
+        urgency += Math.max(0, 3 - simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).size()) * 15;
+        return urgency;
+    }
+
+    /** Возвращает поток видимых непойманных S-целей игрока. */
+    private java.util.stream.Stream<Dinosaur> visibleNeededTrapTargets(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP);
+    }
+
+    /** Считает количество открытых клеток вокруг указанной позиции. */
+    private int openedNeighborsAround(ru.mesozoa.sim.model.Point point) {
+        int count = 0;
+        for (ru.mesozoa.sim.model.Point neighbor : point.neighbors8()) {
+            if (simulation.map.isPlaced(neighbor)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**

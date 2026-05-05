@@ -260,24 +260,18 @@ public final class DinosaurAi {
             return List.of();
         }
 
-        Optional<Point> exactBioTrailDestination = predictDinosaurBioTrailDestination(dinosaur)
-                .filter(point -> !point.equals(dinosaur.position))
-                .filter(simulation.map::canPlaceTrap);
-
-        if (exactBioTrailDestination.isPresent()) {
-            return List.of(exactBioTrailDestination.get());
-        }
-
         LinkedHashSet<Point> result = new LinkedHashSet<>();
 
-        for (Point neighbor : dinosaur.position.neighbors4()) {
+        predictDinosaurBioTrailDestination(dinosaur)
+                .filter(point -> !point.equals(dinosaur.position))
+                .filter(simulation.map::canPlaceTrap)
+                .ifPresent(result::add);
+
+        for (Point neighbor : dinosaur.position.neighbors8()) {
+            if (neighbor.equals(dinosaur.position)) continue;
             if (!simulation.map.canPlaceTrap(neighbor)) continue;
             if (!canDinosaurStandOn(neighbor, dinosaur)) continue;
             result.add(neighbor);
-        }
-
-        if (!result.isEmpty()) {
-            return new ArrayList<>(result);
         }
 
         Biome nextBiome = dinosaur.nextBioTrailBiome(currentTile.biome);
@@ -286,7 +280,7 @@ public final class DinosaurAi {
                 .map(entry -> entry.getKey())
                 .filter(point -> !point.equals(dinosaur.position))
                 .filter(simulation.map::canPlaceTrap)
-                .sorted(Comparator.comparingInt(point -> dinosaur.position.manhattan(point)))
+                .sorted(Comparator.comparingInt(point -> dinosaur.position.chebyshev(point)))
                 .forEach(result::add);
 
         return new ArrayList<>(result);

@@ -3,6 +3,7 @@ package ru.mesozoa.sim.ranger.ai;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.CaptureMethod;
+import ru.mesozoa.sim.model.HuntAmbush;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
@@ -66,6 +67,15 @@ public final class HunterAi {
 
     /** Штраф за каждую сорванную цепочку выслеживания на того же конкретного травоядного. */
     private static final double FAILED_TRACKING_CHAIN_PENALTY = 12.0;
+
+    /** Средняя стоимость карты «Охота», нужна для примерной оценки будущей подготовки. */
+    private static final double AVERAGE_HUNT_CARD_SCORE = 2.55;
+
+    /** Базовая желательная подготовка: ниже этого охотник обычно добирает карту. */
+    private static final int SAFE_PREPARATION_TARGET = 7;
+
+    /** Сильная, но ещё не самоубийственная подготовка к засаде. */
+    private static final int STRONG_PREPARATION_TARGET = 9;
 
     /** Количество очков движения охотника за одну активацию в текущей модели симуляции. */
     private static final int HUNTER_ACTION_POINTS = 2;
@@ -240,22 +250,26 @@ public final class HunterAi {
         int distance = hunterPathDistance(hunterPosition, plan.baitPosition());
         int turns = simulation.dinosaurAi.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition());
         double failurePenalty = huntFailurePenalty(player, plan.dinosaur());
+        double preparationPenalty = huntPreparationOpportunityPenalty(plan.dinosaur(), turns);
+        String preparationText = huntPreparationOpportunityText(plan.dinosaur(), turns);
 
         if (hunterPosition.equals(plan.baitPosition())) {
             return new AiScore(
-                    SCORE_HUNT_AMBUSH_READY - failurePenalty,
+                    SCORE_HUNT_AMBUSH_READY - failurePenalty - preparationPenalty,
                     "охотник на клетке засады для " + plan.dinosaur().displayName
                             + ", ожидаемый приход через " + turnsText(turns)
+                            + preparationText
                             + failurePenaltyText(failurePenalty)
             );
         }
 
         if (distance != UNREACHABLE_DISTANCE && distance <= HUNTER_ACTION_POINTS) {
             return new AiScore(
-                    SCORE_HUNT_AMBUSH_REACHABLE_NOW - failurePenalty,
+                    SCORE_HUNT_AMBUSH_REACHABLE_NOW - failurePenalty - preparationPenalty,
                     "охотник может занять клетку засады для " + plan.dinosaur().displayName
                             + " за текущую активацию; расстояние: " + distance
                             + ", ожидаемый приход через " + turnsText(turns)
+                            + preparationText
                             + failurePenaltyText(failurePenalty)
             );
         }
@@ -268,12 +282,13 @@ public final class HunterAi {
             );
         }
 
-        double score = 75.0 - Math.min(35.0, distance * 4.0) - failurePenalty;
+        double score = 75.0 - Math.min(35.0, distance * 4.0) - failurePenalty - preparationPenalty;
         return new AiScore(
                 score,
                 "охотник идёт к клетке засады для " + plan.dinosaur().displayName
                         + "; расстояние: " + distance
                         + ", ожидаемый приход через " + turnsText(turns)
+                        + preparationText
                         + failurePenaltyText(failurePenalty)
         );
     }
@@ -606,6 +621,73 @@ public final class HunterAi {
         return Math.min(rawPenalty, cap);
     }
 
+    /**
+     * Рассчитывает желаемую подготовку против указанного вида.
+     *
+     * Средний бросок 1d6 примерно равен 3-4, поэтому против Велоцитауруса с
+     * ловкостью 3 охотник должен стремиться хотя бы к 7 очкам, а не радоваться
+     * двум слабым картам. Верхний предел оставляет место для риска, но не гонит
+     * AI в гарантированный перебор выше 10.
+     *
+     * @param species вид хищника
+     * @return целевая сумма подготовки
+     */
+    private int desiredHuntPreparation(Species species) {
+        return Math.min(STRONG_PREPARATION_TARGET, Dinosaur.agilityOf(species) + 4);
+    }
+
+    /**
+     * Оценивает, хватит ли охотнику времени добрать карты до прихода хищника.
+     *
+     * @param dinosaur целевой хищник
+     * @param turnsUntilArrival ожидаемый приход к приманке
+     * @return штраф к AI-весу, если зверь приходит слишком рано
+     */
+    private double huntPreparationOpportunityPenalty(Dinosaur dinosaur, int turnsUntilArrival) {
+        if (turnsUntilArrival == Integer.MAX_VALUE) {
+            return 18.0;
+        }
+
+        double expectedPreparation = expectedPreparationByArrival(turnsUntilArrival);
+        double gap = Math.max(0.0, desiredHuntPreparation(dinosaur.species) - expectedPreparation);
+        return gap * 6.0;
+    }
+
+    /**
+     * Примерно считает сумму подготовки к моменту прихода хищника.
+     *
+     * @param turnsUntilArrival ожидаемый приход к приманке
+     * @return ожидаемая сумма карт
+     */
+    private double expectedPreparationByArrival(int turnsUntilArrival) {
+        if (turnsUntilArrival == Integer.MAX_VALUE) {
+            return SAFE_PREPARATION_TARGET;
+        }
+
+        int extraCards = Math.max(0, turnsUntilArrival - 1);
+        return Math.min(
+                HuntAmbush.MAX_PREPARATION_SCORE,
+                AVERAGE_HUNT_CARD_SCORE * (2 + extraCards)
+        );
+    }
+
+    /**
+     * Форматирует оценку будущей подготовки для лога.
+     *
+     * @param dinosaur целевой хищник
+     * @param turnsUntilArrival ожидаемый приход к приманке
+     * @return короткий текст для причины AI-оценки
+     */
+    private String huntPreparationOpportunityText(Dinosaur dinosaur, int turnsUntilArrival) {
+        if (turnsUntilArrival == Integer.MAX_VALUE) {
+            return "; подготовку оценить нельзя";
+        }
+
+        return "; ожидаемая подготовка ≈"
+                + String.format(java.util.Locale.ROOT, "%.1f", expectedPreparationByArrival(turnsUntilArrival))
+                + ", цель " + desiredHuntPreparation(dinosaur.species);
+    }
+
     private String failurePenaltyText(double failurePenalty) {
         return failurePenalty <= 0 ? "" : "; штраф за прошлые провалы " + (int) failurePenalty;
     }
@@ -731,9 +813,12 @@ public final class HunterAi {
         }
         if (turns == Integer.MAX_VALUE) return Integer.MAX_VALUE;
 
-        int desiredTurns = 2;
-        int earlyPenalty = turns < 1 ? 1000 : 0;
-        return earlyPenalty + Math.abs(turns - desiredTurns) * 10;
+        if (turns <= 0) return 1000;
+        if (turns == 1) return 24;
+        if (turns == 2) return 0;
+        if (turns == 3) return 4;
+        if (turns == 4) return 16;
+        return 32 + (turns - 4) * 10;
     }
 
     /**
