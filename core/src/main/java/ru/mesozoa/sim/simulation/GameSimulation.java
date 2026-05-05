@@ -389,12 +389,23 @@ public final class GameSimulation {
             value.trappedDinosaurId = 0;
             value.active = false;
         });
+        clearTrailMarkerHoldingDinosaur(player, dinosaur);
 
         log("ДОСТАВЛЕН: водитель игрока " + player.id
                 + " вывез " + dinosaur.displayName
                 + " #" + dinosaur.id + " на базу"
                 + (trap.isPresent() ? " из ловушки" : " по жетону следа"));
         return true;
+    }
+
+    /**
+     * Снимает жетон следа, которым отмечали обездвиженного по выслеживанию динозавра.
+     *
+     * @param player владелец жетона
+     * @param dinosaur доставленный динозавр
+     */
+    private void clearTrailMarkerHoldingDinosaur(PlayerState player, Dinosaur dinosaur) {
+        player.trailTokens.removeIf(token -> token.captureMarker && token.dinosaurId == dinosaur.id);
     }
 
     /**
