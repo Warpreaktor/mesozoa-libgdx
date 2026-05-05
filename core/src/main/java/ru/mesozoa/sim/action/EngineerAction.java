@@ -209,7 +209,7 @@ public class EngineerAction {
         }
 
         Optional<Point> target = bestInfrastructureTarget(player, plannedTarget);
-        return moveEngineerToward(player, target.orElse(player.scoutRanger.position()), movementPoints);
+        return target.isPresent() && moveEngineerToward(player, target.get(), movementPoints);
     }
 
     /**
@@ -265,7 +265,7 @@ public class EngineerAction {
         Optional<Point> biomeTarget = nearestUnconnectedNeededBiomePoint(player);
         if (biomeTarget.isPresent()) return biomeTarget;
 
-        return Optional.ofNullable(player.scoutRanger.position());
+        return Optional.empty();
     }
 
     /**

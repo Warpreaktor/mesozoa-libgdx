@@ -88,7 +88,7 @@ public final class RangerTurnPlanner {
                     .orElse(null);
 
             simulation.log("AI игрок " + player.id
-                    + ": нет полезного плана для активации; лучший кандидат "
+                    + ": стратегически лучше пропустить активацию; лучший кандидат "
                     + roleToText(bestCandidate.role())
                     + " получил оценку " + bestCandidate.scoreValue()
                     + " — " + bestCandidate.reason());
@@ -129,7 +129,7 @@ public final class RangerTurnPlanner {
     private Point targetFor(PlayerState player, RangerRole role) {
         return switch (role) {
             case SCOUT -> null;
-            case ENGINEER -> engineerTarget(player).orElse(player.scoutRanger.position());
+            case ENGINEER -> engineerAi.chooseEngineerTarget(player).orElse(null);
             case HUNTER -> hunterTarget(player).orElse(player.scoutRanger.position());
             case DRIVER -> driverTarget(player);
         };

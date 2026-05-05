@@ -139,7 +139,7 @@ public final class GameSimulation {
             RangerPlan plan = rangerTurnPlanner.chooseNextPlanForTurn(player, activePlayerUsedRoles);
 
             if (plan == null) {
-                log("Игрок " + player.id + ": нет полезной активации, ход игрока завершён");
+                log("Игрок " + player.id + ": планировщик пропустил ход как стратегически более полезное действие, чем пустая активация");
                 finishCurrentPlayerTurn();
                 updateResult();
                 checkGameOverAfterPartialStep();

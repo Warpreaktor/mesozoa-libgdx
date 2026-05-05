@@ -7,6 +7,7 @@ import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
+import ru.mesozoa.sim.simulation.GameMap;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.Comparator;
@@ -66,114 +67,200 @@ public class EngineerAi {
     /**
      * Рассчитывает вес активации инженера для текущего игрока.
      *
-     * Проверки идут от самых срочных и конкретных задач к более мягкой
-     * профилактической инфраструктуре. Да, это длинная лестница if'ов, зато
-     * каждый пролёт подписан, а не как обычно: "магическое число 37 спасёт игру".
+     * Инженер получает положительную оценку только тогда, когда за этой
+     * оценкой стоит исполнимый план: поставить ловушку, построить следующий
+     * шаг дорожной сети или хотя бы реально сдвинуться к точке будущей работы.
+     * Если исполнимого действия нет, планировщик должен пропустить активацию,
+     * а не посылать инженера постоять с умным видом.
      *
      * @param player игрок, для которого оценивается полезность инженера
      * @return оценка полезности инженера и причина этой оценки
      */
     public AiScore scoreEngineer(PlayerState player) {
+        return bestEngineerPlan(player)
+                .map(plan -> new AiScore(plan.score(), plan.reason()))
+                .orElseGet(() -> new AiScore(
+                        SCORE_IMPOSSIBLE,
+                        "у инженера нет исполнимой ловушечной, дорожной или мостовой задачи"
+                ));
+    }
+
+    /**
+     * Возвращает целевую клетку для выбранного плана инженера.
+     *
+     * Этот метод намеренно использует тот же расчёт, что и scoreEngineer():
+     * планировщик и исполнитель больше не должны жить в разных реальностях,
+     * где один выбрал инженера, а второй не понял, зачем его разбудили.
+     *
+     * @param player игрок, чей инженер планируется
+     * @return целевая клетка исполнимого инженерного плана
+     */
+    public Optional<Point> chooseEngineerTarget(PlayerState player) {
+        return bestEngineerPlan(player).map(EngineerPlanCandidate::target);
+    }
+
+    /**
+     * Выбирает лучший реально исполнимый инженерный план.
+     *
+     * @param player игрок, чей инженер анализируется
+     * @return план с оценкой, причиной и целью или пустой результат
+     */
+    private Optional<EngineerPlanCandidate> bestEngineerPlan(PlayerState player) {
+        if (isPlayerTaskComplete(player)) {
+            return Optional.empty();
+        }
+
         Optional<Dinosaur> capturedWithoutRoad = nearestCapturedNeededDinosaurWithoutDriverAccess(player);
+        if (capturedWithoutRoad.isPresent()) {
+            Dinosaur dinosaur = capturedWithoutRoad.get();
+            if (canExecuteInfrastructurePlan(player, dinosaur.position)) {
+                return Optional.of(new EngineerPlanCandidate(
+                        SCORE_CAPTURED_DINO_EXTRACTION,
+                        "динозавр в ловушке ждёт вывоза, но водитель не имеет дороги: "
+                                + dinosaur.displayName + " на " + dinosaur.position,
+                        dinosaur.position
+                ));
+            }
+        }
+
         Optional<Dinosaur> trapTarget = nearestNeededTrapTarget(player);
         Optional<Point> trapAmbushPoint = bestTrapAmbushPoint(player, player.engineerRanger.position());
-        Optional<Dinosaur> hunterTargetWithoutRoad = nearestNeededHunterTargetWithoutDriverAccess(player);
-        Optional<Biome> unconnectedNeededBiome = nearestUnconnectedNeededBiome(player);
-
-        if (isPlayerTaskComplete(player)) {
-            return new AiScore(
-                    SCORE_IMPOSSIBLE,
-                    "все динозавры из задания уже пойманы, инженер не нужен"
-            );
-        }
-
-        if (hasCapturedDinosaurWithoutRoadAccess(capturedWithoutRoad)) {
-            Dinosaur dinosaur = capturedWithoutRoad.get();
-            return new AiScore(
-                    SCORE_CAPTURED_DINO_EXTRACTION,
-                    "динозавр в ловушке ждёт вывоза, но водитель не имеет дороги: "
-                            + dinosaur.displayName
-                            + " на " + dinosaur.position
-            );
-        }
-
-        if (canPlaceUsefulTrapNow(player, trapAmbushPoint)) {
+        if (trapTarget.isPresent()
+                && trapAmbushPoint.isPresent()
+                && activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer
+                && canExecuteTrapPlan(player, trapAmbushPoint.get())) {
             Dinosaur dinosaur = trapTarget.get();
-            return new AiScore(
-                    SCORE_IMMEDIATE_TRAP_PLACEMENT,
-                    "инженер рядом с легальной клеткой ловушки для цели: "
-                            + dinosaur.displayName
-            );
-        }
+            Point trapPoint = trapAmbushPoint.get();
 
-        if (hasVisibleTrapTargetAndAvailableTraps(player, trapTarget, trapAmbushPoint)) {
-            Dinosaur dinosaur = trapTarget.get();
+            if (isAdjacentOrSame(player.engineerRanger.position(), trapPoint)) {
+                return Optional.of(new EngineerPlanCandidate(
+                        SCORE_IMMEDIATE_TRAP_PLACEMENT,
+                        "инженер рядом с легальной клеткой ловушки для цели: " + dinosaur.displayName,
+                        trapPoint
+                ));
+            }
+
             int activeTraps = activeTrapCount(player);
-            int distance = player.engineerRanger.position().chebyshev(trapAmbushPoint.get());
+            int distance = player.engineerRanger.position().chebyshev(trapPoint);
             double score = SCORE_VISIBLE_TRAP_TARGET - Math.min(35.0, distance * 4.0);
-            return new AiScore(
+            return Optional.of(new EngineerPlanCandidate(
                     score,
                     "видимая S-цель для ловушек: "
                             + dinosaur.displayName
                             + ", расстояние до клетки засады: " + distance
-                            + ", ловушек: " + activeTraps + "/" + simulation.inventoryConfig.maxTrapsPerPlayer
-            );
+                            + ", ловушек: " + activeTraps + "/" + simulation.inventoryConfig.maxTrapsPerPlayer,
+                    trapPoint
+            ));
         }
 
-        if (hasBadActiveTrapLayout(player, trapTarget)) {
-            Dinosaur dinosaur = trapTarget.get();
-            return new AiScore(
-                    SCORE_BAD_TRAP_LAYOUT,
-                    "лимит ловушек занят, но ловушки не перекрывают путь S-цели: "
-                            + dinosaur.displayName
-            );
-        }
-
-        if (hasHunterCaptureZoneWithoutRoadSupport(hunterTargetWithoutRoad)) {
+        Optional<Dinosaur> hunterTargetWithoutRoad = nearestNeededHunterTargetWithoutDriverAccess(player);
+        if (hunterTargetWithoutRoad.isPresent()) {
             Dinosaur dinosaur = hunterTargetWithoutRoad.get();
-            return new AiScore(
-                    SCORE_HUNTER_SUPPORT_ROAD,
-                    "есть цель охотника без дорожной поддержки водителя: "
-                            + dinosaur.displayName
-                            + " на " + dinosaur.position
-            );
+            if (canExecuteInfrastructurePlan(player, dinosaur.position)) {
+                return Optional.of(new EngineerPlanCandidate(
+                        SCORE_HUNTER_SUPPORT_ROAD,
+                        "есть цель охотника без дорожной поддержки водителя: "
+                                + dinosaur.displayName + " на " + dinosaur.position,
+                        dinosaur.position
+                ));
+            }
         }
 
-        if (hasNoRoadOutOfBase(player)) {
-            return new AiScore(
+        Optional<Point> firstBaseRoadTarget = firstBaseRoadTarget(player);
+        if (firstBaseRoadTarget.isPresent()
+                && canExecuteInfrastructurePlan(player, firstBaseRoadTarget.get())) {
+            return Optional.of(new EngineerPlanCandidate(
                     SCORE_FIRST_BASE_ROAD,
-                    "карта уже раскрывается, но из базы ещё не построена ни одна дорога"
-            );
+                    "карта уже раскрывается, но из базы ещё не построена ни одна дорога",
+                    firstBaseRoadTarget.get()
+            ));
         }
 
-        if (hasUnconnectedNeededBiome(unconnectedNeededBiome)) {
-            Biome biome = unconnectedNeededBiome.get();
-            return new AiScore(
-                    SCORE_NEEDED_BIOME_INFRASTRUCTURE,
-                    "нужный биом уже открыт, но не подключён к дорожной сети: " + biome.displayName
-            );
+        Optional<Point> unconnectedNeededBiomePoint = nearestUnconnectedNeededBiomePoint(player);
+        if (unconnectedNeededBiomePoint.isPresent()) {
+            Point point = unconnectedNeededBiomePoint.get();
+            if (canExecuteInfrastructurePlan(player, point)) {
+                Biome biome = simulation.map.tile(point).biome;
+                return Optional.of(new EngineerPlanCandidate(
+                        SCORE_NEEDED_BIOME_INFRASTRUCTURE,
+                        "нужный биом уже открыт, но не подключён к дорожной сети: " + biome.displayName,
+                        point
+                ));
+            }
         }
 
         if (shouldFollowScoutForFutureConstruction(player)) {
             int distance = player.engineerRanger.position().chebyshev(player.scoutRanger.position());
             double score = SCORE_FOLLOW_SCOUT + Math.min(18.0, distance * 3.0);
-            return new AiScore(
+            return Optional.of(new EngineerPlanCandidate(
                     score,
-                    "нет срочной инженерной задачи, инженер подтягивается к разведчику; расстояние: " + distance
-            );
+                    "нет срочной инженерной задачи, инженер подтягивается к разведчику; расстояние: " + distance,
+                    player.scoutRanger.position()
+            ));
         }
 
-        if (isEngineerAlreadyNearScout(player)) {
-            return new AiScore(
-                    SCORE_WAIT_NEAR_SCOUT,
-                    "инженер уже рядом с разведчиком и ждёт понятной задачи"
-            );
+        return Optional.empty();
+    }
+
+    /**
+     * Проверяет, может ли инженер исполнить инфраструктурный план: построить
+     * следующий шаг сети уже сейчас или сдвинуться к рабочей клетке этого шага.
+     *
+     * @param player игрок, чей инженер проверяется
+     * @param target цель дорожной сети
+     * @return true, если активация инженера приведёт к стройке или движению к ней
+     */
+    private boolean canExecuteInfrastructurePlan(PlayerState player, Point target) {
+        Optional<GameMap.DriverNetworkBuildStep> step = simulation.map.bestDriverNetworkBuildStepToward(target);
+        if (step.isEmpty()) return false;
+
+        Point workerPosition = step.get().workerPosition();
+        Point engineerPosition = player.engineerRanger.position();
+        if (engineerPosition.equals(workerPosition)) {
+            return simulation.map.canBuildDriverNetworkStep(step.get());
         }
 
-        return new AiScore(
-                5.0,
-                "для инженера сейчас нет срочной ловушечной или инфраструктурной задачи"
-        );
+        Point next = simulation.map.stepGroundRangerToward(engineerPosition, workerPosition);
+        return !next.equals(engineerPosition);
+    }
+
+    /**
+     * Проверяет, может ли инженер поставить ловушку или реально приблизиться к
+     * клетке, куда он сможет её поставить позже.
+     *
+     * @param player игрок, чей инженер проверяется
+     * @param trapPoint клетка будущей ловушки
+     * @return true, если активация не будет пустой
+     */
+    private boolean canExecuteTrapPlan(PlayerState player, Point trapPoint) {
+        Point engineerPosition = player.engineerRanger.position();
+        if (isAdjacentOrSame(engineerPosition, trapPoint)) {
+            return true;
+        }
+
+        Point next = simulation.map.stepGroundRangerToward(engineerPosition, trapPoint);
+        return !next.equals(engineerPosition);
+    }
+
+    /**
+     * Цель для первой дороги из базы.
+     *
+     * Первая дорога строится только если рядом с базой уже есть открытый тайл,
+     * на который реально можно протянуть дорожную связь.
+     *
+     * @param player игрок, для которого проверяется старт дорожной сети
+     * @return сосед базы, к которому можно строить первую дорогу
+     */
+    private Optional<Point> firstBaseRoadTarget(PlayerState player) {
+        if (!hasNoRoadOutOfBase(player)) return Optional.empty();
+
+        return simulation.map.base.neighbors8().stream()
+                .filter(point -> simulation.map.canBuildRoadBetween(simulation.map.base, point))
+                .min(Comparator.comparingInt(point -> player.engineerRanger.position().chebyshev(point)));
+    }
+
+    /** Исполнимый инженерный план с оценкой, причиной и целевой клеткой. */
+    private record EngineerPlanCandidate(double score, String reason, Point target) {
     }
 
     /**
@@ -384,6 +471,27 @@ public class EngineerAi {
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)));
+    }
+
+    /**
+     * Ищет открытую клетку нужного биома, которую ещё не связали с дорожной сетью.
+     *
+     * В отличие от старого метода с Optional<Biome>, этот вариант возвращает
+     * конкретную клетку. Планировщику нужна не абстрактная «пойма где-то там»,
+     * а координата, к которой инженер сможет строить дорогу или мост.
+     *
+     * @param player игрок, для которого анализируются нужные биомы
+     * @return ближайшая клетка нужного биома без водительского маршрута
+     */
+    private Optional<Point> nearestUnconnectedNeededBiomePoint(PlayerState player) {
+        Set<Biome> neededBiomes = remainingNeededBiomes(player);
+
+        return simulation.map.entries().stream()
+                .filter(entry -> neededBiomes.contains(entry.getValue().biome))
+                .filter(entry -> !simulation.map.hasDriverPath(simulation.map.base, entry.getKey()))
+                .filter(entry -> canExecuteInfrastructurePlan(player, entry.getKey()))
+                .min(Comparator.comparingInt(entry -> player.engineerRanger.position().chebyshev(entry.getKey())))
+                .map(java.util.Map.Entry::getKey);
     }
 
     /**
