@@ -7,6 +7,7 @@ import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -21,15 +22,19 @@ public class ScoutAi {
     private static final double SCORE_IMPOSSIBLE = -100.0;
     private static final double SCORE_FIRST_EXPLORATION = 100.0;
     private static final double SCORE_FULL_SEARCH_PRIORITY = 90.0;
+    /** Вес разведки вокруг видимого хищника, которому не хватает биомов для нормальной засады. */
+    private static final double SCORE_HUNT_BIOME_SUPPORT = 84.0;
     /** Вес разведки, когда все оставшиеся цели уже видны и новые тайлы не приближают победу. */
     private static final double SCORE_ALL_TARGETS_VISIBLE = -10.0;
     private static final double MIXED_SEARCH_BASE_SCORE = 15.0;
     private static final double MIXED_SEARCH_MISSING_RATIO_WEIGHT = 75.0;
 
     private final GameSimulation simulation;
+    private final HunterAi hunterAi;
 
     public ScoutAi(GameSimulation gameSimulation) {
         this.simulation = gameSimulation;
+        this.hunterAi = new HunterAi(gameSimulation);
     }
 
     /**
@@ -69,6 +74,16 @@ public class ScoutAi {
         }
 
         if (areAllRemainingNeededSpeciesVisible(missingNeededSpecies)) {
+            Optional<Dinosaur> huntTargetNeedingBiomes = hunterAi.bestVisibleHuntTargetNeedingScoutSupport(player);
+            if (huntTargetNeedingBiomes.isPresent()) {
+                Dinosaur dinosaur = huntTargetNeedingBiomes.get();
+                return new AiScore(
+                        SCORE_HUNT_BIOME_SUPPORT,
+                        "все цели уже видны, но для охоты на " + dinosaur.displayName
+                                + " нужны открытые биомы вокруг хищника"
+                );
+            }
+
             return new AiScore(
                     SCORE_ALL_TARGETS_VISIBLE,
                     "все оставшиеся цели уже обнаружены: "

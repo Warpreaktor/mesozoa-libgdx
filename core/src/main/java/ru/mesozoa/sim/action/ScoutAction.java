@@ -7,12 +7,14 @@ import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.ranger.RangerPlan;
+import ru.mesozoa.sim.ranger.ai.HunterAi;
 import ru.mesozoa.sim.simulation.GameSimulation;
 import ru.mesozoa.sim.tile.ExtraTile;
 import ru.mesozoa.sim.tile.MainTile;
 import ru.mesozoa.sim.tile.Tile;
 
 import java.util.Comparator;
+import java.util.Optional;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -51,14 +53,22 @@ public class ScoutAction {
     /** Штраф за каждый шаг удаления фронтира от базы. */
     private static final double BASE_DISTANCE_PENALTY = 4.0;
 
+    /** Бонус разведки вокруг видимого HUNT-хищника без хорошей клетки засады. */
+    private static final double HUNT_SUPPORT_NEAR_TARGET_BONUS = 420.0;
+
+    /** Бонус за вытянутый биом, который нужен следующему шагу био-тропы HUNT-хищника. */
+    private static final double HUNT_SUPPORT_NEXT_BIOME_BONUS = 320.0;
+
     private final GameSimulation simulation;
     private final DinosaurAction dinosaurAction;
+    private final HunterAi hunterAi;
 
     public ScoutAction(GameSimulation simulation,
                        DinosaurAction dinosaurAction) {
 
         this.simulation = simulation;
         this.dinosaurAction = dinosaurAction;
+        this.hunterAi = new HunterAi(simulation);
     }
 
     /**
@@ -142,10 +152,11 @@ public class ScoutAction {
         if (candidates.isEmpty()) return null;
 
         Set<Species> missingSpecies = missingNeededSpecies(player);
+        Optional<Dinosaur> huntSupportTarget = hunterAi.bestVisibleHuntTargetNeedingScoutSupport(player);
 
         return candidates.stream()
                 .max(Comparator
-                        .comparingDouble((Point point) -> scoutPlacementScore(player, drawn, point, missingSpecies))
+                        .comparingDouble((Point point) -> scoutPlacementScore(player, drawn, point, missingSpecies, huntSupportTarget))
                         .thenComparingInt(point -> -point.chebyshev(simulation.map.base))
                         .thenComparingInt(point -> -point.chebyshev(player.engineerRanger.position()))
                         .thenComparingInt(point -> -point.chebyshev(player.hunterRanger.position())))
@@ -165,7 +176,8 @@ public class ScoutAction {
             PlayerState player,
             MainTile drawn,
             Point point,
-            Set<Species> missingSpecies
+            Set<Species> missingSpecies,
+            Optional<Dinosaur> huntSupportTarget
     ) {
         int supportCount = simulation.map.groundNetworkSupportCount(point);
         int distanceToGroundNetwork = simulation.map.distanceToGroundNetworkFromBase(point);
@@ -176,7 +188,8 @@ public class ScoutAction {
 
         score += drawn.isGroundPassable() ? PASSABLE_TILE_BONUS : BLOCKING_TILE_PENALTY;
         score += missingSpawnBiomeScore(drawn, missingSpecies);
-        score += bestExpansionScore(player, drawn, point, missingSpecies);
+        score += huntSupportPlacementScore(drawn, point, huntSupportTarget);
+        score += bestExpansionScore(player, drawn, point, missingSpecies, huntSupportTarget);
         score -= point.chebyshev(simulation.map.base) * BASE_DISTANCE_PENALTY;
         score -= Math.min(point.chebyshev(player.engineerRanger.position()), 12) * 1.5;
         score -= Math.min(point.chebyshev(player.hunterRanger.position()), 12) * 1.5;
@@ -214,6 +227,46 @@ public class ScoutAction {
     }
 
     /**
+     * Даёт бонус разведке вокруг видимого HUNT-хищника, которому не хватает карты.
+     *
+     * Если Велоцитаурус уже найден, но охотник не может построить нормальную
+     * засаду, разведчик открывает клетки рядом с ним и особенно ценит биом
+     * следующего шага био-тропы. Так цель становится не просто видимой, а ловимой.
+     *
+     * @param drawn вытянутый тайл
+     * @param point клетка выкладки
+     * @param huntSupportTarget цель, которой нужна разведка окружения
+     * @return бонус за поддержку охоты
+     */
+    private double huntSupportPlacementScore(
+            MainTile drawn,
+            Point point,
+            Optional<Dinosaur> huntSupportTarget
+    ) {
+        if (huntSupportTarget.isEmpty()) {
+            return 0.0;
+        }
+
+        Dinosaur dinosaur = huntSupportTarget.get();
+        int distance = point.chebyshev(dinosaur.position);
+        double score = Math.max(0.0, HUNT_SUPPORT_NEAR_TARGET_BONUS - distance * 115.0);
+
+        Tile currentTile = simulation.map.tile(dinosaur.position);
+        if (currentTile != null && drawn.biome == dinosaur.nextBioTrailBiome(currentTile.biome)) {
+            score += HUNT_SUPPORT_NEXT_BIOME_BONUS;
+        }
+
+        if (dinosaur.canEnter(drawn.biome)) {
+            score += 90.0;
+        }
+        if (drawn.hasExpansion()) {
+            score += 45.0;
+        }
+
+        return score;
+    }
+
+    /**
      * Выбирает поворот основного тайла, который лучше всего поддерживает командную разведку.
      *
      * @param player игрок, чьё задание учитывается
@@ -223,11 +276,12 @@ public class ScoutAction {
      */
     private int chooseRotationQuarterTurns(PlayerState player, MainTile drawn, Point placement) {
         Set<Species> missingSpecies = missingNeededSpecies(player);
+        Optional<Dinosaur> huntSupportTarget = hunterAi.bestVisibleHuntTargetNeedingScoutSupport(player);
         int bestRotation = 0;
         double bestScore = Double.NEGATIVE_INFINITY;
 
         for (int rotation = 0; rotation < 4; rotation++) {
-            double score = expansionScoreForRotation(drawn, placement, missingSpecies, rotation);
+            double score = expansionScoreForRotation(drawn, placement, missingSpecies, huntSupportTarget, rotation);
             if (score > bestScore) {
                 bestScore = score;
                 bestRotation = rotation;
@@ -250,11 +304,12 @@ public class ScoutAction {
             PlayerState player,
             MainTile drawn,
             Point placement,
-            Set<Species> missingSpecies
+            Set<Species> missingSpecies,
+            Optional<Dinosaur> huntSupportTarget
     ) {
         double best = Double.NEGATIVE_INFINITY;
         for (int rotation = 0; rotation < 4; rotation++) {
-            best = Math.max(best, expansionScoreForRotation(drawn, placement, missingSpecies, rotation));
+            best = Math.max(best, expansionScoreForRotation(drawn, placement, missingSpecies, huntSupportTarget, rotation));
         }
         return best == Double.NEGATIVE_INFINITY ? 0.0 : best;
     }
@@ -272,6 +327,7 @@ public class ScoutAction {
             MainTile drawn,
             Point placement,
             Set<Species> missingSpecies,
+            Optional<Dinosaur> huntSupportTarget,
             int rotationQuarterTurns
     ) {
         if (drawn.baseExpansionDirections.isEmpty()) {
@@ -299,12 +355,29 @@ public class ScoutAction {
                 if (missingBiome) {
                     score += 35.0;
                 }
+                score += huntSupportExpansionScore(extraPoint, huntSupportTarget);
             } else {
                 score += UNSUPPORTED_EXPANSION_PENALTY;
             }
         }
 
         return score;
+    }
+
+    /**
+     * Даёт бонус дополнительному тайлу, если он раскрывает область рядом с HUNT-целью.
+     *
+     * @param extraPoint клетка потенциального дополнительного тайла
+     * @param huntSupportTarget цель охоты, которой нужна разведка окружения
+     * @return бонус за полезное расширение вокруг хищника
+     */
+    private double huntSupportExpansionScore(Point extraPoint, Optional<Dinosaur> huntSupportTarget) {
+        if (huntSupportTarget.isEmpty()) {
+            return 0.0;
+        }
+
+        int distance = extraPoint.chebyshev(huntSupportTarget.get().position);
+        return Math.max(0.0, 160.0 - distance * 55.0);
     }
 
     /**

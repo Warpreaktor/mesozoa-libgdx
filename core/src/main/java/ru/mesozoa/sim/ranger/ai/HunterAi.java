@@ -11,6 +11,7 @@ import ru.mesozoa.sim.simulation.GameSimulation;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -51,8 +52,17 @@ public final class HunterAi {
     /** Вес ситуации, когда охотник не может осмысленно действовать прямо сейчас. */
     private static final double SCORE_LOW_IDLE = -10.0;
 
+    /** Вес ситуации, когда хищник виден, но для него пока нет рабочей клетки засады. */
+    private static final double SCORE_VISIBLE_HUNT_TARGET_NEEDS_WORK = 62.0;
+
     /** Штраф за каждую проваленную засаду на того же конкретного хищника. */
     private static final double FAILED_HUNT_ATTEMPT_PENALTY = 15.0;
+
+    /** Верхний предел штрафа, чтобы AI не бросал последнего Велоцитауруса навсегда. */
+    private static final double MAX_FAILED_HUNT_ATTEMPT_PENALTY = 30.0;
+
+    /** Верхний предел штрафа, если HUNT-хищник остался единственной целью охотника. */
+    private static final double MAX_LAST_HUNT_TARGET_PENALTY = 15.0;
 
     /** Штраф за каждую сорванную цепочку выслеживания на того же конкретного травоядного. */
     private static final double FAILED_TRACKING_CHAIN_PENALTY = 12.0;
@@ -125,6 +135,16 @@ public final class HunterAi {
             return scoreReturnForBait(player);
         }
 
+        Optional<Dinosaur> unsupportedHuntTarget = visibleHuntTargetWithoutAmbushPlan(player);
+        if (unsupportedHuntTarget.isPresent()) {
+            Dinosaur dinosaur = unsupportedHuntTarget.get();
+            return new AiScore(
+                    SCORE_VISIBLE_HUNT_TARGET_NEEDS_WORK,
+                    "видимый HUNT-хищник " + dinosaur.displayName
+                            + " пока без рабочей клетки засады; охотник сближается, разведчик должен открыть биомы вокруг цели"
+            );
+        }
+
         if (shouldCatchUpToScout(player, remainingHunterSpecies, trackingTarget, huntPlan)) {
             return scoreCatchUpToScout(player);
         }
@@ -171,6 +191,12 @@ public final class HunterAi {
             return Optional.of(simulation.map.base);
         }
 
+        Optional<Dinosaur> unsupportedHuntTarget = visibleHuntTargetWithoutAmbushPlan(player);
+        if (unsupportedHuntTarget.isPresent()) {
+            return huntStagingPointFor(player, unsupportedHuntTarget.get())
+                    .or(() -> Optional.of(unsupportedHuntTarget.get().position));
+        }
+
         if (shouldCatchUpToScout(player, remainingNeededHunterSpecies(player), trackingTarget, huntPlan)) {
             return Optional.of(player.scoutRanger.position());
         }
@@ -213,7 +239,7 @@ public final class HunterAi {
         Point hunterPosition = player.hunterRanger.position();
         int distance = hunterPathDistance(hunterPosition, plan.baitPosition());
         int turns = simulation.dinosaurAi.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition());
-        double failurePenalty = player.failedHuntAttempts(plan.dinosaur().id) * FAILED_HUNT_ATTEMPT_PENALTY;
+        double failurePenalty = huntFailurePenalty(player, plan.dinosaur());
 
         if (hunterPosition.equals(plan.baitPosition())) {
             return new AiScore(
@@ -328,6 +354,48 @@ public final class HunterAi {
         );
     }
 
+    /**
+     * Ищет видимого HUNT-хищника, для которого пока нет рабочей клетки засады.
+     *
+     * @param player игрок, чей охотник оценивается
+     * @return цель, вокруг которой нужно сближаться и разведывать биомы
+     */
+    private Optional<Dinosaur> visibleHuntTargetWithoutAmbushPlan(PlayerState player) {
+        if (player.hunterBait <= 0) {
+            return Optional.empty();
+        }
+
+        return visibleNeededHuntTargets(player)
+                .filter(dinosaur -> bestHuntAmbushPointFor(player, dinosaur).isEmpty())
+                .min(Comparator.comparingInt(dinosaur -> dinosaur.position.chebyshev(player.hunterRanger.position())));
+    }
+
+    /**
+     * Выбирает клетку сближения с видимым хищником, если засада пока не найдена.
+     *
+     * Охотник не лезет на клетку к хищнику, а занимает ближайшую достижимую
+     * соседнюю позицию. Это поддерживает давление на цель, пока разведчик
+     * открывает вокруг неё новые биомы для нормальной засады.
+     *
+     * @param player игрок, чей охотник двигается
+     * @param dinosaur видимый HUNT-хищник
+     * @return достижимая клетка рядом с хищником
+     */
+    private Optional<Point> huntStagingPointFor(PlayerState player, Dinosaur dinosaur) {
+        return dinosaur.position.neighbors8().stream()
+                .filter(simulation.map::canGroundRangerStandOn)
+                .filter(point -> simulation.map.groundRangerPathDistance(player.hunterRanger.position(), point) != Integer.MAX_VALUE)
+                .filter(point -> simulation.dinosaurs.stream()
+                        .filter(other -> !other.captured && !other.removed)
+                        .noneMatch(other -> other.position.equals(point)))
+                .min(Comparator
+                        .comparingInt((Point point) -> simulation.map.groundRangerPathDistance(
+                                player.hunterRanger.position(),
+                                point
+                        ))
+                        .thenComparingInt(point -> point.chebyshev(dinosaur.position)));
+    }
+
     /** Проверяет, стоит ли охотнику подтянуться к разведчику. */
     private boolean shouldCatchUpToScout(
             PlayerState player,
@@ -417,6 +485,66 @@ public final class HunterAi {
                         )));
     }
 
+    /**
+     * Проверяет, нужна ли разведка вокруг уже видимого HUNT-хищника.
+     *
+     * Видимый Велоцитаурус ещё не означает готовую охоту: если предсказанная
+     * био-тропа не даёт нормальной клетки засады или вокруг цели почти нет
+     * открытых соседей, разведчик должен помогать своему игроку биомами, а не
+     * выключаться с видом «цель же найдена». Робот, пожалуйста, хотя бы ты не будь
+     * таким буквальным.
+     *
+     * @param player игрок, чьей охоте нужна разведка
+     * @return true, если есть видимый HUNT-хищник без нормальной прогнозируемости
+     */
+    public boolean needsScoutSupportForVisibleHuntTarget(PlayerState player) {
+        return bestVisibleHuntTargetNeedingScoutSupport(player).isPresent();
+    }
+
+    /**
+     * Выбирает видимого HUNT-хищника, вокруг которого разведчик должен открывать карту.
+     *
+     * @param player игрок, чьё задание анализируется
+     * @return HUNT-цель, требующая разведки окружения
+     */
+    public Optional<Dinosaur> bestVisibleHuntTargetNeedingScoutSupport(PlayerState player) {
+        return visibleNeededHuntTargets(player)
+                .filter(dinosaur -> huntTargetNeedsScoutSupport(player, dinosaur))
+                .max(Comparator
+                        .comparingInt((Dinosaur dinosaur) -> player.failedHuntAttempts(dinosaur.id))
+                        .thenComparingInt(dinosaur -> -openedNeighborsAround(dinosaur.position))
+                        .thenComparingInt(dinosaur -> -dinosaur.position.chebyshev(player.scoutRanger.position())));
+    }
+
+    /**
+     * Проверяет слабость информации для планирования охоты на конкретного хищника.
+     */
+    private boolean huntTargetNeedsScoutSupport(PlayerState player, Dinosaur dinosaur) {
+        boolean weakBioTrailPrediction = strictBioTrailHuntCandidatesFor(dinosaur).stream()
+                .noneMatch(point -> isLegalHuntAmbushPoint(player, point, true));
+        boolean sparseLocalMap = openedNeighborsAround(dinosaur.position) < 6;
+        return weakBioTrailPrediction || sparseLocalMap;
+    }
+
+    /** Возвращает поток видимых непойманных HUNT-целей игрока. */
+    private java.util.stream.Stream<Dinosaur> visibleNeededHuntTargets(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.HUNT);
+    }
+
+    /** Считает открытые соседние клетки вокруг точки. */
+    private int openedNeighborsAround(Point point) {
+        int count = 0;
+        for (Point neighbor : point.neighbors8()) {
+            if (simulation.map.isPlaced(neighbor)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /** Ищет ближайшего нужного игроку динозавра с одним из указанных способов поимки. */
     private Optional<Dinosaur> nearestNeededDinosaur(PlayerState player, Point from, CaptureMethod... methods) {
         List<CaptureMethod> allowedMethods = List.of(methods);
@@ -459,6 +587,25 @@ public final class HunterAi {
         return turns + " ход.";
     }
 
+    /**
+     * Рассчитывает ограниченный штраф за прошлые провалы охоты.
+     *
+     * Штраф нужен, чтобы AI сравнивал альтернативы, но он не должен превращать
+     * последнего видимого хищника в запретную тему. Если цель одна, охотник обязан
+     * продолжать попытки, а не уходить в духовный отпуск рядом с разведчиком.
+     *
+     * @param player игрок, чей штраф считается
+     * @param dinosaur целевой хищник
+     * @return ограниченный штраф в очках AI
+     */
+    private double huntFailurePenalty(PlayerState player, Dinosaur dinosaur) {
+        double rawPenalty = player.failedHuntAttempts(dinosaur.id) * FAILED_HUNT_ATTEMPT_PENALTY;
+        double cap = remainingNeededHunterSpecies(player).size() <= 1
+                ? MAX_LAST_HUNT_TARGET_PENALTY
+                : MAX_FAILED_HUNT_ATTEMPT_PENALTY;
+        return Math.min(rawPenalty, cap);
+    }
+
     private String failurePenaltyText(double failurePenalty) {
         return failurePenalty <= 0 ? "" : "; штраф за прошлые провалы " + (int) failurePenalty;
     }
@@ -471,9 +618,9 @@ public final class HunterAi {
     }
 
     /** Проверяет, может ли указанная клетка быть клеткой охотничьей засады. */
-    private boolean isLegalHuntAmbushPoint(PlayerState player, Point point) {
+    private boolean isLegalHuntAmbushPoint(PlayerState player, Point point, boolean ignoreRejected) {
         if (point == null || !simulation.map.canPlaceBait(point)) return false;
-        if (player.rejectedHuntBaitPositions.contains(point)) return false;
+        if (!ignoreRejected && player.rejectedHuntBaitPositions.contains(point)) return false;
         if (!simulation.map.canGroundRangerStandOn(point)) return false;
         if (simulation.map.groundRangerPathDistance(player.hunterRanger.position(), point) == Integer.MAX_VALUE) return false;
 
@@ -485,6 +632,12 @@ public final class HunterAi {
     /**
      * Выбирает лучшую клетку для охотничьей засады на конкретного M-хищника.
      *
+     * Сначала AI ищет неотвергнутую клетку на предсказанном маршруте или на
+     * вероятном случайном шаге хищника. Если все рабочие клетки уже помечены как
+     * отвергнутые, запрет игнорируется: это не новая цель, а последний видимый
+     * хищник, которого всё равно придётся ловить. Иначе Велоцитаурус получает
+     * пенсию, а охотник — диплом по созерцанию кустов.
+     *
      * @param player игрок, чей охотник планирует засаду
      * @param dinosaur целевой M-хищник
      * @return лучшая клетка для приманки или Optional.empty(), если охота невозможна
@@ -494,8 +647,32 @@ public final class HunterAi {
             return Optional.empty();
         }
 
-        return huntAmbushCandidatesFor(dinosaur).stream()
-                .filter(point -> isLegalHuntAmbushPoint(player, point))
+        List<Point> candidates = huntAmbushCandidatesFor(dinosaur);
+        Optional<Point> preferred = chooseBestHuntAmbushPoint(player, dinosaur, candidates, false);
+        if (preferred.isPresent()) {
+            return preferred;
+        }
+
+        return chooseBestHuntAmbushPoint(player, dinosaur, candidates, true);
+    }
+
+    /**
+     * Выбирает лучшую клетку засады из готового списка кандидатов.
+     *
+     * @param player игрок, чей охотник планирует засаду
+     * @param dinosaur целевой хищник
+     * @param candidates кандидаты на клетку приманки
+     * @param ignoreRejected true, если можно повторно использовать ранее отвергнутые клетки
+     * @return лучшая клетка или пустой результат
+     */
+    private Optional<Point> chooseBestHuntAmbushPoint(
+            PlayerState player,
+            Dinosaur dinosaur,
+            List<Point> candidates,
+            boolean ignoreRejected
+    ) {
+        return candidates.stream()
+                .filter(point -> isLegalHuntAmbushPoint(player, point, ignoreRejected))
                 .min(Comparator
                         .comparingInt((Point point) -> huntAmbushTimingPenalty(dinosaur, point))
                         .thenComparingInt(point -> simulation.map.groundRangerPathDistance(
@@ -508,6 +685,11 @@ public final class HunterAi {
     /**
      * Возвращает клетки, где охотник может ждать M-хищника с приманкой.
      *
+     * Основной источник — прогноз био-тропы. Если прогноз не даёт клеток, AI
+     * добавляет соседние клетки, куда хищник может шагнуть случайно. Это не такая
+     * красивая засада, как по маршруту, зато она лучше, чем 200 раундов стоять
+     * рядом с разведчиком и делать вид, что Велоцитаурус невидимый.
+     *
      * @param dinosaur хищник, под маршрут которого ищутся клетки
      * @return список возможных клеток засады
      */
@@ -515,6 +697,26 @@ public final class HunterAi {
         if (dinosaur == null || dinosaur.captureMethod != CaptureMethod.HUNT) {
             return List.of();
         }
+
+        LinkedHashSet<Point> result = new LinkedHashSet<>();
+        result.addAll(strictBioTrailHuntCandidatesFor(dinosaur));
+
+        for (Point neighbor : dinosaur.position.neighbors8()) {
+            if (!simulation.map.canPlaceBait(neighbor)) continue;
+            if (!simulation.dinosaurAi.canDinosaurStandOn(neighbor, dinosaur)) continue;
+            result.add(neighbor);
+        }
+
+        return new ArrayList<>(result);
+    }
+
+    /**
+     * Возвращает только клетки с предсказанной био-тропы без fallback-соседей.
+     *
+     * @param dinosaur хищник, чью тропу нужно спрогнозировать
+     * @return клетки маршрута, пригодные для приманки
+     */
+    private List<Point> strictBioTrailHuntCandidatesFor(Dinosaur dinosaur) {
         return simulation.dinosaurAi.predictDinosaurBioTrailRoute(dinosaur, 5).stream()
                 .filter(point -> !point.equals(dinosaur.position))
                 .filter(simulation.map::canPlaceBait)
