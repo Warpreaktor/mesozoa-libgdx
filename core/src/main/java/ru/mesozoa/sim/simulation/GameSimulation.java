@@ -2,6 +2,7 @@ package ru.mesozoa.sim.simulation;
 
 import ru.mesozoa.sim.action.RangerActionExecutor;
 import ru.mesozoa.sim.ranger.ai.RangerTurnPlanner;
+import ru.mesozoa.sim.rules.HeadquartersTaskGenerator;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.config.GameConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
@@ -47,6 +48,9 @@ public final class GameSimulation {
 
     private RangerActionExecutor rangerActionExecutor;
     private RangerTurnPlanner rangerTurnPlanner;
+
+    /** Генератор случайных заданий штаба для игроков. */
+    private HeadquartersTaskGenerator headquartersTaskGenerator;
 
     /** AI и прогнозы движения динозавров. */
     public DinosaurAi dinosaurAi;
@@ -102,6 +106,7 @@ public final class GameSimulation {
         dinosaurPhaseConsequenceResolver = new DinosaurPhaseConsequenceResolver(this);
         rangerTurnPlanner = new RangerTurnPlanner(this);
         rangerActionExecutor = new RangerActionExecutor(this);
+        headquartersTaskGenerator = new HeadquartersTaskGenerator(gameConfig);
 
         for (int i = 0; i < gameConfig.players; i++) {
             int playerId = i + 1;
@@ -277,13 +282,13 @@ public final class GameSimulation {
         }
     }
 
+    /**
+     * Выдаёт игроку случайное задание штаба по текущему игровому конфигу.
+     *
+     * @param player игрок, которому назначается набор целей для отлова
+     */
     private void assignTask(PlayerState player) {
-        Species[] sTargets = {Species.GALLIMIMON, Species.DRIORNIS, Species.CRYPTOGNATH};
-        Species[] mHerbTargets = {Species.MONOCERATUS, Species.VOCAREZAUROLOPH};
-
-        player.task.add(sTargets[random.nextInt(sTargets.length)]);
-        player.task.add(mHerbTargets[random.nextInt(mHerbTargets.length)]);
-        player.task.add(Species.VELOCITAURUS);
+        player.task.addAll(headquartersTaskGenerator.createTask(random));
     }
 
     private String taskToText(PlayerState player) {
