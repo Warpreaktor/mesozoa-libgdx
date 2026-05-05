@@ -4,7 +4,6 @@ import ru.mesozoa.sim.action.RangerActionExecutor;
 import ru.mesozoa.sim.ranger.ai.RangerTurnPlanner;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.config.GameConfig;
-import ru.mesozoa.sim.config.GameMechanicConfig;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.dinosaur.DinosaurAi;
@@ -30,8 +29,6 @@ public final class GameSimulation {
 
     public final InventoryConfig inventoryConfig;
 
-    public final GameMechanicConfig gameMechanicConfig;
-
     public final Random random;
 
     public GameMap map;
@@ -53,8 +50,11 @@ public final class GameSimulation {
     /** AI и прогнозы движения динозавров. */
     public DinosaurAi dinosaurAi;
 
-    /** Исполнитель фазы «Динозавры живут». */
+    /** Исполнитель перемещения динозавров в фазу «Динозавры живут». */
     private DinosaurActionPlanner dinosaurActionPlanner;
+
+    /** Технический резолвер последствий после завершения перемещения динозавров. */
+    private DinosaurPhaseConsequenceResolver dinosaurPhaseConsequenceResolver;
 
     private boolean roundStarted = false;
     private int activeRangerIndex = 0;
@@ -73,12 +73,10 @@ public final class GameSimulation {
 
     public GameSimulation(GameConfig gameConfig,
                           InventoryConfig inventoryConfig,
-                          GameMechanicConfig gameMechanicConfig,
                           long seed) {
 
         this.gameConfig = gameConfig;
         this.inventoryConfig = inventoryConfig;
-        this.gameMechanicConfig = gameMechanicConfig;
         this.random = new Random(seed);
         reset();
     }
@@ -100,8 +98,9 @@ public final class GameSimulation {
 
         dinosaurAi = new DinosaurAi(this);
         dinosaurActionPlanner = new DinosaurActionPlanner(this, dinosaurAi);
+        dinosaurPhaseConsequenceResolver = new DinosaurPhaseConsequenceResolver(this);
         rangerTurnPlanner = new RangerTurnPlanner(this);
-        rangerActionExecutor = new RangerActionExecutor(this, rangerTurnPlanner);
+        rangerActionExecutor = new RangerActionExecutor(this);
 
         for (int i = 0; i < gameConfig.players; i++) {
             int playerId = i + 1;
@@ -164,6 +163,7 @@ public final class GameSimulation {
 
         log("Ход динозавров");
         dinosaurActionPlanner.dinosaurPhase();
+        dinosaurPhaseConsequenceResolver.resolveAfterDinosaurPhase();
         updateResult();
         finishRound();
     }
@@ -378,21 +378,22 @@ public final class GameSimulation {
         }
 
         Optional<Trap> trap = trapHoldingDinosaur(player, dinosaur);
-        if (trap.isEmpty()) {
-            return false;
-        }
 
         dinosaur.trapped = false;
         dinosaur.trappedByPlayerId = 0;
         dinosaur.captured = true;
         player.captured.add(dinosaur.species);
+        player.clearCaptureFailures(dinosaur.id);
 
-        trap.get().trappedDinosaurId = 0;
-        trap.get().active = false;
+        trap.ifPresent(value -> {
+            value.trappedDinosaurId = 0;
+            value.active = false;
+        });
 
         log("ДОСТАВЛЕН: водитель игрока " + player.id
                 + " вывез " + dinosaur.displayName
-                + " #" + dinosaur.id + " на базу");
+                + " #" + dinosaur.id + " на базу"
+                + (trap.isPresent() ? " из ловушки" : " по жетону следа"));
         return true;
     }
 

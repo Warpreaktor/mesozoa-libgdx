@@ -23,18 +23,15 @@ import java.util.Set;
 public final class RangerActionExecutor {
 
     private final GameSimulation simulation;
-    private final RangerTurnPlanner planner;
     private final ScoutAction scoutAction;
     private final HunterAction hunterAction;
     private final EngineerAction engineerAction;
     private final DriverAction driverAction;
     private final DinosaurAction dinosaurAction;
 
-    public RangerActionExecutor(GameSimulation simulation,
-                                RangerTurnPlanner planner) {
+    public RangerActionExecutor(GameSimulation simulation) {
 
         this.simulation = simulation;
-        this.planner = planner;
         this.dinosaurAction = new DinosaurAction(simulation);
         this.scoutAction = new ScoutAction(simulation, this, dinosaurAction);
         this.hunterAction = new HunterAction(simulation, this);

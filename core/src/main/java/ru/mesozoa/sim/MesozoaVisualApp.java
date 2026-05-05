@@ -116,7 +116,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         InventoryConfig inventoryConfig = new InventoryConfig();
         GameMechanicConfig gameMechanicConfig = new GameMechanicConfig();
         currentSeed = nextSimulationSeed();
-        simulation = new GameSimulation(config, inventoryConfig, gameMechanicConfig, currentSeed);
+        simulation = new GameSimulation(config, inventoryConfig, currentSeed);
         inputHandler = new InputHandler(this);
         paused = true;
         timer = 0f;

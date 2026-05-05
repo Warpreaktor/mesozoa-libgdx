@@ -351,6 +351,80 @@ public final class GameMap {
         return path.size() - 1;
     }
 
+    /**
+     * Возвращает следующий шаг охотника по следу M-травоядного.
+     *
+     * Во время выслеживания охотник может пересекать любые уже открытые клетки,
+     * включая воду, горы и другие биомы, недоступные обычному наземному движению.
+     *
+     * @param from текущая клетка охотника
+     * @param target клетка целевого динозавра
+     * @return следующий шаг или исходная клетка, если движение невозможно
+     */
+    public Point stepHunterTrackingToward(Point from, Point target) {
+        List<Point> exactPath = findHunterTrackingPath(from, target);
+        if (!exactPath.isEmpty()) {
+            return exactPath.size() < 2 ? from : exactPath.get(1);
+        }
+
+        Point closestReachable = nearestHunterTrackingReachablePointTo(from, target);
+        if (closestReachable == null || closestReachable.equals(from)) {
+            return from;
+        }
+
+        List<Point> approachPath = findHunterTrackingPath(from, closestReachable);
+        if (approachPath.isEmpty() || approachPath.size() < 2) {
+            return from;
+        }
+
+        return approachPath.get(1);
+    }
+
+    /**
+     * Возвращает длину пути охотника по следу M-травоядного.
+     *
+     * @param from стартовая клетка
+     * @param target целевая клетка
+     * @return количество шагов или Integer.MAX_VALUE, если путь не найден
+     */
+    public int hunterTrackingPathDistance(Point from, Point target) {
+        List<Point> path = findHunterTrackingPath(from, target);
+        if (path.isEmpty()) return Integer.MAX_VALUE;
+        return path.size() - 1;
+    }
+
+    /**
+     * Проверяет, может ли охотник стоять на клетке во время выслеживания.
+     *
+     * @param point проверяемая клетка
+     * @return true для любой уже открытой клетки, включая базу
+     */
+    public boolean canHunterTrackStandOn(Point point) {
+        return point != null && isPlaced(point);
+    }
+
+    /**
+     * Возвращает соседние клетки, доступные охотнику при движении по следу.
+     *
+     * @param from текущая клетка
+     * @return список соседей по восьми направлениям
+     */
+    public List<Point> hunterTrackingReachableNeighbors(Point from) {
+        ArrayList<Point> result = new ArrayList<>();
+        if (!canHunterTrackStandOn(from)) {
+            return result;
+        }
+
+        for (Direction direction : Direction.values()) {
+            Point neighbor = direction.from(from);
+            if (canHunterTrackStandOn(neighbor)) {
+                result.add(neighbor);
+            }
+        }
+
+        return result;
+    }
+
 
     /**
      * Проверяет, можно ли поставить ловушку на указанную клетку.
@@ -404,6 +478,37 @@ public final class GameMap {
 
         if (!previous.containsKey(target)) return List.of();
 
+        return restorePath(previous, target);
+    }
+
+    private List<Point> findHunterTrackingPath(Point from, Point target) {
+        if (from == null || target == null) return List.of();
+        if (from.equals(target)) return canHunterTrackStandOn(from) ? List.of(from) : List.of();
+        if (!canHunterTrackStandOn(from) || !canHunterTrackStandOn(target)) return List.of();
+
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+        HashMap<Point, Point> previous = new HashMap<>();
+
+        queue.add(from);
+        previous.put(from, null);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            if (current.equals(target)) break;
+
+            for (Point neighbor : hunterTrackingReachableNeighbors(current)) {
+                if (previous.containsKey(neighbor)) continue;
+                previous.put(neighbor, current);
+                queue.addLast(neighbor);
+            }
+        }
+
+        if (!previous.containsKey(target)) return List.of();
+
+        return restorePath(previous, target);
+    }
+
+    private List<Point> restorePath(HashMap<Point, Point> previous, Point target) {
         ArrayList<Point> path = new ArrayList<>();
         Point step = target;
         while (step != null) {
@@ -435,6 +540,35 @@ public final class GameMap {
             }
 
             for (Point neighbor : groundRangerReachableNeighbors(current)) {
+                if (visited.add(neighbor)) {
+                    queue.addLast(neighbor);
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private Point nearestHunterTrackingReachablePointTo(Point from, Point target) {
+        if (from == null || target == null || !canHunterTrackStandOn(from)) return null;
+
+        ArrayDeque<Point> queue = new ArrayDeque<>();
+        LinkedHashSet<Point> visited = new LinkedHashSet<>();
+        Point best = from;
+        int bestDistance = from.manhattan(target);
+
+        queue.add(from);
+        visited.add(from);
+
+        while (!queue.isEmpty()) {
+            Point current = queue.removeFirst();
+            int distance = current.manhattan(target);
+            if (distance < bestDistance) {
+                best = current;
+                bestDistance = distance;
+            }
+
+            for (Point neighbor : hunterTrackingReachableNeighbors(current)) {
                 if (visited.add(neighbor)) {
                     queue.addLast(neighbor);
                 }

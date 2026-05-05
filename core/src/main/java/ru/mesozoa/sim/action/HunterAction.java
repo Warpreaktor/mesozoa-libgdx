@@ -2,11 +2,13 @@ package ru.mesozoa.sim.action;
 
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.CaptureMethod;
+import ru.mesozoa.sim.model.Direction;
 import ru.mesozoa.sim.model.HuntAmbush;
 import ru.mesozoa.sim.model.HuntCard;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
+import ru.mesozoa.sim.model.TrackingTrail;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.ranger.ai.HunterAi;
 import ru.mesozoa.sim.simulation.GameSimulation;
@@ -14,14 +16,14 @@ import ru.mesozoa.sim.simulation.GameSimulation;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Исполнение действий охотника.
  *
- * Охотник разделён на два режима: старое выслеживание M-травоядных и новая
- * засада на M-хищников. Хищник больше не ловится мгновенной проверкой рядом с
- * фигуркой: охотник выбирает клетку био-тропы, кладёт приманку, берёт стартовые
- * карты и дальше каждый свой ход либо добирает подготовку, либо ждёт.
+ * Охотник разделён на два режима: засада на M-хищников и цепочка следов для
+ * M-травоядных. Активный режим имеет приоритет над новым выбором цели, чтобы AI
+ * не метался между целями и не сбрасывал уже начатую механику без результата.
  */
 public class HunterAction {
 
@@ -74,12 +76,12 @@ public class HunterAction {
      * @param movementPoints очки движения/действия охотника
      */
     public void action(PlayerState player, int movementPoints) {
-        action(player, null, movementPoints);
+        action(player, hunterAi.chooseHunterTarget(player).orElse(null), movementPoints);
     }
 
     /**
-     * Центральная логика охотника: сначала обязательная активная засада, затем
-     * точечное выслеживание, затем подготовка новой охоты на хищника.
+     * Центральная логика охотника: сначала обязательные активные режимы, затем
+     * новый выбор между выслеживанием и охотой с приманкой.
      */
     private void action(PlayerState player, Point plannedTarget, int movementPoints) {
         boolean hadActiveHunt = player.activeHunt != null;
@@ -87,20 +89,36 @@ public class HunterAction {
             return;
         }
         if (hadActiveHunt && player.activeHunt == null) {
-            plannedTarget = null;
+            plannedTarget = hunterAi.chooseHunterTarget(player).orElse(null);
+        }
+
+        if (continueActiveTracking(player, movementPoints)) {
+            return;
+        }
+
+        if (plannedTarget == null) {
+            plannedTarget = hunterAi.chooseHunterTarget(player).orElse(null);
+        }
+
+        Optional<Dinosaur> trackingTarget = trackingTargetAt(player, plannedTarget);
+        if (trackingTarget.isPresent()) {
+            executeTrackingPlan(player, trackingTarget.get(), movementPoints);
+            return;
         }
 
         if (refillOrReturnForBait(player, movementPoints)) {
             return;
         }
 
-        Optional<HuntPlan> huntPlan = bestHuntPlan(player);
+        Optional<HunterAi.HuntPlan> huntPlan = bestHuntPlan(player);
         if (huntPlan.isPresent() && plannedTarget != null && plannedTarget.equals(huntPlan.get().baitPosition())) {
             executeHuntPlan(player, huntPlan.get(), movementPoints);
             return;
         }
 
-        if (attemptTrackingCaptureOrMove(player)) {
+        Optional<Dinosaur> fallbackTrackingTarget = hunterAi.bestTrackingTarget(player);
+        if (fallbackTrackingTarget.isPresent()) {
+            executeTrackingPlan(player, fallbackTrackingTarget.get(), movementPoints);
             return;
         }
 
@@ -129,6 +147,9 @@ public class HunterAction {
             return false;
         }
         if (!hasVisibleNeededHuntTarget(player)) {
+            return false;
+        }
+        if (hunterAi.bestTrackingTarget(player).isPresent()) {
             return false;
         }
 
@@ -203,6 +224,44 @@ public class HunterAction {
     }
 
     /**
+     * Продолжает уже начатую цепочку выслеживания M-травоядного.
+     *
+     * @param player игрок, чей охотник идёт по следу
+     * @param movementPoints очки движения охотника
+     * @return true, если действие занято выслеживанием
+     */
+    private boolean continueActiveTracking(PlayerState player, int movementPoints) {
+        TrackingTrail trail = player.activeTracking;
+        if (trail == null) {
+            return false;
+        }
+
+        Optional<Dinosaur> target = dinosaurById(trail.dinosaurId);
+        if (target.isEmpty() || !player.needs(trail.species)) {
+            player.activeTracking = null;
+            simulation.log("След " + trail.species.displayName
+                    + " для игрока " + player.id
+                    + " оборвался: целевой динозавр больше не подходит");
+            return false;
+        }
+
+        Dinosaur dinosaur = target.get();
+        if (!player.hunterRanger.position().equals(dinosaur.position)) {
+            moveHunterByTracking(player, dinosaur.position, movementPoints);
+            simulation.log("Охотник игрока " + player.id
+                    + " идёт по следу " + dinosaur.displayName
+                    + " #" + dinosaur.id
+                    + " к " + dinosaur.position
+                    + "; карты " + trail.preparationScore() + " / 10"
+                    + ", следов " + trail.trailTokens().size());
+            return true;
+        }
+
+        resolveTrackingAttempt(player, dinosaur);
+        return true;
+    }
+
+    /**
      * Проверяет, пора ли бросить текущую засаду и перенести приманку.
      *
      * Засада считается плохой, если хищник больше не имеет понятного пути к
@@ -236,6 +295,7 @@ public class HunterAction {
      */
     private void abandonAmbushForRelocation(PlayerState player, HuntAmbush hunt, int turnsUntilArrival) {
         player.rejectedHuntBaitPositions.add(hunt.baitPosition);
+        player.registerFailedHuntAttempt(hunt.dinosaurId);
         player.activeHunt = null;
         player.hunterBait = Math.min(MAX_HUNTER_BAIT, player.hunterBait + 1);
 
@@ -266,6 +326,7 @@ public class HunterAction {
      */
     private void failOverPreparedHunt(PlayerState player) {
         HuntAmbush hunt = player.activeHunt;
+        player.registerFailedHuntAttempt(hunt.dinosaurId);
         player.activeHunt = null;
         player.hunterRanger.setPosition(simulation.map.base);
         simulation.log("ПРОВАЛ ОХОТЫ: охотник игрока " + player.id
@@ -274,40 +335,166 @@ public class HunterAction {
     }
 
     /**
-     * Пытается поймать или приблизиться к цели выслеживания.
+     * Исполняет план выслеживания: идёт к М-травоядному или начинает/продолжает
+     * попытку поимки, если охотник уже стоит с ним на одной клетке.
      *
-     * @param player игрок, чей охотник активируется
-     * @return true, если действие было потрачено на выслеживание
+     * @param player игрок, чей охотник действует
+     * @param dinosaur целевой М-травоядный
+     * @param movementPoints очки движения охотника
      */
-    private boolean attemptTrackingCaptureOrMove(PlayerState player) {
-        Optional<Dinosaur> target = nearestNeededDinosaur(
-                player,
-                player.hunterRanger.position(),
-                CaptureMethod.TRACKING
-        );
-
-        if (target.isEmpty()) {
-            return false;
-        }
-
-        Dinosaur dinosaur = target.get();
-        if (player.hunterRanger.position().manhattan(dinosaur.position) <= 1) {
-            double chance = simulation.gameMechanicConfig.trackingBaseSuccess
-                    + simulation.gameMechanicConfig.trackingStepBonus
-                    * simulation.random.nextInt(simulation.gameMechanicConfig.trackingMaxSteps);
-
-            if (simulation.random.nextDouble() < chance) {
-                capture(player, dinosaur, "выслеживание");
-                simulation.result.trackingCaptures++;
+    private void executeTrackingPlan(PlayerState player, Dinosaur dinosaur, int movementPoints) {
+        if (!player.hunterRanger.position().equals(dinosaur.position)) {
+            moveHunterByTracking(player, dinosaur.position, movementPoints);
+            if (!player.hunterRanger.position().equals(dinosaur.position)) {
+                return;
             }
-            return true;
         }
 
-        player.setPosition(
-                RangerRole.HUNTER,
-                simulation.map.stepGroundRangerToward(player.hunterRanger.position(), dinosaur.position)
-        );
-        return true;
+        if (player.activeTracking == null || player.activeTracking.dinosaurId != dinosaur.id) {
+            player.activeTracking = new TrackingTrail(
+                    player.id,
+                    dinosaur.id,
+                    dinosaur.species,
+                    HuntCard.createShuffledDeck(simulation.random)
+            );
+            simulation.log("Охотник игрока " + player.id
+                    + " начал выслеживание " + dinosaur.displayName
+                    + " #" + dinosaur.id
+                    + " на " + dinosaur.position);
+        }
+
+        resolveTrackingAttempt(player, dinosaur);
+    }
+
+    /**
+     * Выполняет одну попытку поимки М-травоядного по активной цепочке следов.
+     *
+     * @param player игрок, чей охотник совершает попытку
+     * @param dinosaur целевой М-травоядный
+     */
+    private void resolveTrackingAttempt(PlayerState player, Dinosaur dinosaur) {
+        TrackingTrail trail = player.activeTracking;
+        if (trail == null || trail.dinosaurId != dinosaur.id) {
+            return;
+        }
+
+        int attempt = trail.startAttempt();
+        if (trail.isFirstAttempt()) {
+            List<HuntCard> cards = trail.drawInitialCards();
+            simulation.log("Выслеживание " + dinosaur.displayName
+                    + " #" + dinosaur.id
+                    + ": стартовые карты " + cardsText(cards)
+                    + ", сумма " + trail.preparationScore());
+        } else {
+            Optional<HuntCard> card = trail.drawFollowUpCard();
+            simulation.log("Выслеживание " + dinosaur.displayName
+                    + " #" + dinosaur.id
+                    + ": добор карты " + cardText(card)
+                    + ", сумма " + trail.preparationScore());
+        }
+
+        if (trail.isOverPrepared()) {
+            moveTrackingTargetAway(trail, dinosaur);
+            failTracking(player, trail, "охотник набрал " + trail.preparationScore()
+                    + " очков карт и зверь ушёл от него");
+            return;
+        }
+
+        int dinosaurRoll = simulation.random.nextInt(6) + 1;
+        int dinosaurScore = dinosaur.agility + dinosaurRoll;
+        int hunterScore = trail.preparationScore();
+
+        if (hunterScore > dinosaurScore) {
+            captureByTracking(player, dinosaur, trail, dinosaurRoll, dinosaurScore, hunterScore);
+            return;
+        }
+
+        moveTrackingTargetAway(trail, dinosaur);
+
+        if (attempt >= TrackingTrail.MAX_ATTEMPTS) {
+            failTracking(player, trail, "после третьей попытки след простыл; карты сброшены");
+            return;
+        }
+
+        simulation.log("СЛЕД: " + dinosaur.displayName
+                + " #" + dinosaur.id
+                + " ушёл от охотника игрока " + player.id
+                + "; охотник " + hunterScore
+                + " против " + dinosaurScore
+                + " (ловк. " + dinosaur.agility + " + 1d6=" + dinosaurRoll + ")"
+                + "; цепочка " + trail.trailTokens().size() + " / " + (TrackingTrail.MAX_ATTEMPTS - 1));
+    }
+
+    /**
+     * Обездвиживает М-травоядного после успешного выслеживания.
+     *
+     * @param player игрок, чей охотник поймал зверя
+     * @param dinosaur пойманный динозавр
+     * @param trail завершённая цепочка следов
+     * @param dinosaurRoll бросок 1d6 динозавра
+     * @param dinosaurScore итог динозавра
+     * @param hunterScore итог охотника
+     */
+    private void captureByTracking(
+            PlayerState player,
+            Dinosaur dinosaur,
+            TrackingTrail trail,
+            int dinosaurRoll,
+            int dinosaurScore,
+            int hunterScore
+    ) {
+        dinosaur.trapped = true;
+        dinosaur.trappedByPlayerId = player.id;
+        player.activeTracking = null;
+        player.clearCaptureFailures(dinosaur.id);
+        simulation.result.trackingCaptures++;
+        simulation.log("ПОЙМАН ПО СЛЕДУ: охотник игрока " + player.id
+                + " обездвижил " + dinosaur.displayName
+                + " #" + dinosaur.id
+                + "; карты " + hunterScore
+                + " против " + dinosaurScore
+                + " (ловк. " + dinosaur.agility + " + 1d6=" + dinosaurRoll + ")"
+                + "; жетон следа остаётся на клетке до вывоза водителем");
+    }
+
+    /**
+     * Завершает цепочку выслеживания провалом и даёт AI мягкий штраф выбора.
+     *
+     * @param player игрок, чей след сорвался
+     * @param trail активная цепочка следов
+     * @param reason причина провала для лога
+     */
+    private void failTracking(PlayerState player, TrackingTrail trail, String reason) {
+        player.registerFailedTrackingChain(trail.dinosaurId);
+        player.activeTracking = null;
+        simulation.log("ПРОВАЛ ВЫСЛЕЖИВАНИЯ: " + trail.species.displayName
+                + " для игрока " + player.id
+                + " — " + reason);
+    }
+
+    /**
+     * Уводит М-травоядного на следующую клетку био-тропы и кладёт жетон следа.
+     *
+     * @param trail активная цепочка следов
+     * @param dinosaur целевой динозавр
+     */
+    private void moveTrackingTargetAway(TrackingTrail trail, Dinosaur dinosaur) {
+        Point before = dinosaur.position;
+        dinosaur.lastPosition = before;
+        simulation.dinosaurAi.moveByBioTrail(dinosaur);
+        Point after = dinosaur.position;
+
+        if (before.equals(after)) {
+            simulation.log(dinosaur.displayName + " #" + dinosaur.id
+                    + " сорвался с места, но не нашёл доступный шаг био-тропы и остался на " + after);
+            return;
+        }
+
+        Direction direction = directionBetween(before, after);
+        trail.addTrailToken(before, after, direction);
+        simulation.log(dinosaur.displayName + " #" + dinosaur.id
+                + " оставил след " + direction
+                + ": " + before + " -> " + after);
     }
 
     /**
@@ -317,7 +504,7 @@ public class HunterAction {
      * @param huntPlan выбранная клетка и хищник
      * @param movementPoints очки движения охотника
      */
-    private void executeHuntPlan(PlayerState player, HuntPlan huntPlan, int movementPoints) {
+    private void executeHuntPlan(PlayerState player, HunterAi.HuntPlan huntPlan, int movementPoints) {
         Point hunterPosition = player.hunterRanger.position();
         Point baitPosition = huntPlan.baitPosition();
 
@@ -372,17 +559,8 @@ public class HunterAction {
      * @param player игрок, чей охотник планирует охоту
      * @return план охоты или Optional.empty(), если подходящей охоты нет
      */
-    private Optional<HuntPlan> bestHuntPlan(PlayerState player) {
-        return simulation.dinosaurs.stream()
-                .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
-                .filter(d -> d.captureMethod == CaptureMethod.HUNT)
-                .map(dinosaur -> hunterAi.bestHuntAmbushPointFor(player, dinosaur)
-                        .map(point -> new HuntPlan(dinosaur, point)))
-                .flatMap(Optional::stream)
-                .min(Comparator
-                        .comparingInt((HuntPlan plan) -> simulation.dinosaurAi.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition()))
-                        .thenComparingInt(plan -> player.hunterRanger.position().manhattan(plan.baitPosition())));
+    private Optional<HunterAi.HuntPlan> bestHuntPlan(PlayerState player) {
+        return hunterAi.bestHuntPlan(player);
     }
 
     /** Ищет ближайшего нужного динозавра с одним из указанных способов поимки. */
@@ -396,20 +574,54 @@ public class HunterAction {
                 .findFirst();
     }
 
+    /** Ищет нужную цель выслеживания на запланированной клетке. */
+    private Optional<Dinosaur> trackingTargetAt(PlayerState player, Point point) {
+        if (point == null) {
+            return Optional.empty();
+        }
+
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.TRACKING)
+                .filter(d -> d.position.equals(point))
+                .findFirst()
+                .or(() -> nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.TRACKING)
+                        .filter(dinosaur -> dinosaur.position.equals(point)));
+    }
+
+    /** Двигает охотника по особому режиму следов через любые открытые клетки. */
+    private void moveHunterByTracking(PlayerState player, Point target, int movementPoints) {
+        Point position = player.hunterRanger.position();
+        for (int i = 0; i < movementPoints; i++) {
+            if (position.equals(target)) break;
+            Point next = simulation.map.stepHunterTrackingToward(position, target);
+            if (next.equals(position)) break;
+            position = next;
+        }
+        player.setPosition(RangerRole.HUNTER, position);
+    }
+
     /** Ищет динозавра по ID. */
     private Optional<Dinosaur> dinosaurById(int dinosaurId) {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> dinosaur.id == dinosaurId)
-                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
                 .findFirst();
     }
 
-    /** Засчитывает динозавра игроку. */
-    private void capture(PlayerState player, Dinosaur dinosaur, String method) {
-        dinosaur.captured = true;
-        player.captured.add(dinosaur.species);
-        simulation.log("ПОЙМАН: игрок " + player.id + " поймал "
-                + dinosaur.displayName + " (" + method + ")");
+    /** Определяет направление следа по смещению между клетками. */
+    private Direction directionBetween(Point from, Point to) {
+        int dx = Integer.compare(to.x, from.x);
+        int dy = Integer.compare(to.y, from.y);
+
+        for (Direction direction : Direction.values()) {
+            if (direction.dx == dx && direction.dy == dy) {
+                return direction;
+            }
+        }
+
+        return Direction.NORTH;
     }
 
     /** Форматирует карту охоты для лога. */
@@ -419,15 +631,22 @@ public class HunterAction {
                 .orElse("нет карты");
     }
 
+    /** Форматирует список карт охоты для лога. */
+    private String cardsText(List<HuntCard> cards) {
+        if (cards.isEmpty()) {
+            return "нет карт";
+        }
+
+        return cards.stream()
+                .map(card -> card.displayName + " (+" + card.points + ")")
+                .collect(Collectors.joining(", "));
+    }
+
     /** Форматирует оценку ожидания для лога. */
     private String turnsText(int turnsUntilArrival) {
         if (turnsUntilArrival == Integer.MAX_VALUE) {
             return "неизвестно";
         }
         return turnsUntilArrival + " ход.";
-    }
-
-    /** План охотничьей засады: целевой динозавр и клетка с приманкой. */
-    private record HuntPlan(Dinosaur dinosaur, Point baitPosition) {
     }
 }

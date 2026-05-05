@@ -8,6 +8,7 @@ import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -17,23 +18,26 @@ import java.util.Set;
 /**
  * AI-оценка полезности охотника для очередной активации игрока.
  *
- * Охотник теперь не бросается грудью на M-хищника. Для HUNT-целей он ищет клетку
- * будущего маршрута, начинает засаду и затем обязан каждый ход поддерживать эту
- * засаду. Иначе это была не охота с транквилизатором, а доставка охотника в пасть.
+ * Охотник выбирает между двумя взрослыми занятиями: засадой на M-хищника и
+ * выслеживанием M-травоядного по цепочке следов. Уже начатую охоту он не бросает
+ * до успеха или провала, чтобы не возникало бесконечного переключения целей.
  */
 public final class HunterAi {
 
     /** Вес невозможного или полностью бесполезного действия. */
     private static final double SCORE_IMPOSSIBLE = -100.0;
 
-    /** Вес обязательного продолжения уже начатой охоты. */
-    private static final double SCORE_ACTIVE_HUNT = 120.0;
+    /** Вес обязательного продолжения уже начатой охоты на хищника. */
+    private static final double SCORE_ACTIVE_HUNT = 125.0;
+
+    /** Вес обязательного продолжения уже начатого выслеживания. */
+    private static final double SCORE_ACTIVE_TRACKING = 122.0;
 
     /** Максимальный вес ситуации, когда охотник уже может начать выслеживание. */
-    private static final double SCORE_TRACKING_READY = 100.0;
+    private static final double SCORE_TRACKING_READY = 106.0;
 
     /** Вес ситуации, когда охотник может дойти до цели выслеживания за текущую активацию. */
-    private static final double SCORE_TRACKING_REACHABLE_NOW = 90.0;
+    private static final double SCORE_TRACKING_REACHABLE_NOW = 96.0;
 
     /** Вес ситуации, когда охотник уже стоит на клетке будущей засады. */
     private static final double SCORE_HUNT_AMBUSH_READY = 105.0;
@@ -46,6 +50,12 @@ public final class HunterAi {
 
     /** Вес ситуации, когда охотник не может осмысленно действовать прямо сейчас. */
     private static final double SCORE_LOW_IDLE = 5.0;
+
+    /** Штраф за каждую проваленную засаду на того же конкретного хищника. */
+    private static final double FAILED_HUNT_ATTEMPT_PENALTY = 15.0;
+
+    /** Штраф за каждую сорванную цепочку выслеживания на того же конкретного травоядного. */
+    private static final double FAILED_TRACKING_CHAIN_PENALTY = 12.0;
 
     /** Количество очков движения охотника за одну активацию в текущей модели симуляции. */
     private static final int HUNTER_ACTION_POINTS = 2;
@@ -76,8 +86,6 @@ public final class HunterAi {
      */
     public AiScore scoreHunter(PlayerState player) {
         Set<Species> remainingHunterSpecies = remainingNeededHunterSpecies(player);
-        Optional<Dinosaur> trackingTarget = nearestTrackingTarget(player);
-        Optional<HuntPlan> huntPlan = bestHuntPlan(player);
 
         if (player.activeHunt != null) {
             return new AiScore(
@@ -88,6 +96,16 @@ public final class HunterAi {
             );
         }
 
+        if (player.activeTracking != null) {
+            return new AiScore(
+                    SCORE_ACTIVE_TRACKING,
+                    "охотник обязан идти по следу "
+                            + player.activeTracking.species.displayName
+                            + "; попытка " + player.activeTracking.attempts()
+                            + ", карты " + player.activeTracking.preparationScore() + " / 10"
+            );
+        }
+
         if (remainingHunterSpecies.isEmpty()) {
             return new AiScore(
                     SCORE_IMPOSSIBLE,
@@ -95,31 +113,12 @@ public final class HunterAi {
             );
         }
 
-        if (isHunterOnTrackingTarget(player, trackingTarget)) {
-            Dinosaur dinosaur = trackingTarget.get();
-            return new AiScore(
-                    SCORE_TRACKING_READY,
-                    "охотник стоит на клетке цели выслеживания: " + dinosaur.displayName
-            );
-        }
+        Optional<Dinosaur> trackingTarget = bestTrackingTarget(player);
+        Optional<HuntPlan> huntPlan = bestHuntPlan(player);
 
-        if (canReachTrackingTargetThisActivation(player, trackingTarget)) {
-            Dinosaur dinosaur = trackingTarget.get();
-            int distance = hunterPathDistance(player.hunterRanger.position(), dinosaur.position);
-            return new AiScore(
-                    SCORE_TRACKING_REACHABLE_NOW,
-                    "охотник может дойти до цели выслеживания за текущую активацию: "
-                            + dinosaur.displayName
-                            + ", расстояние по пути: " + distance
-            );
-        }
-
-        if (huntPlan.isPresent()) {
-            return scoreHuntAmbushPlan(player, huntPlan.get());
-        }
-
-        if (trackingTarget.isPresent()) {
-            return scoreVisibleTrackingTarget(player, trackingTarget.get());
+        Optional<AiScore> bestCaptureScore = bestCaptureScore(player, trackingTarget, huntPlan);
+        if (bestCaptureScore.isPresent()) {
+            return bestCaptureScore.get();
         }
 
         if (hasVisibleHuntTargetWithoutBait(player)) {
@@ -143,56 +142,160 @@ public final class HunterAi {
         );
     }
 
+    /**
+     * Выбирает точку, куда должен двигаться охотник по лучшему текущему плану.
+     *
+     * @param player игрок, чей охотник планируется
+     * @return целевая клетка или пустой результат, если охотнику лучше ждать
+     */
+    public Optional<Point> chooseHunterTarget(PlayerState player) {
+        if (player.activeHunt != null) {
+            return Optional.of(player.activeHunt.baitPosition);
+        }
+
+        if (player.activeTracking != null) {
+            return dinosaurById(player.activeTracking.dinosaurId)
+                    .map(dinosaur -> dinosaur.position)
+                    .or(() -> Optional.of(player.hunterRanger.position()));
+        }
+
+        Optional<Dinosaur> trackingTarget = bestTrackingTarget(player);
+        Optional<HuntPlan> huntPlan = bestHuntPlan(player);
+
+        Optional<WeightedTarget> bestCaptureTarget = bestCaptureTarget(player, trackingTarget, huntPlan);
+        if (bestCaptureTarget.isPresent()) {
+            return Optional.of(bestCaptureTarget.get().target());
+        }
+
+        if (hasVisibleHuntTargetWithoutBait(player)) {
+            return Optional.of(simulation.map.base);
+        }
+
+        if (shouldCatchUpToScout(player, remainingNeededHunterSpecies(player), trackingTarget, huntPlan)) {
+            return Optional.of(player.scoutRanger.position());
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<AiScore> bestCaptureScore(
+            PlayerState player,
+            Optional<Dinosaur> trackingTarget,
+            Optional<HuntPlan> huntPlan
+    ) {
+        ArrayList<AiScore> scores = new ArrayList<>();
+        trackingTarget.map(dinosaur -> scoreTrackingTarget(player, dinosaur)).ifPresent(scores::add);
+        huntPlan.map(plan -> scoreHuntAmbushPlan(player, plan)).ifPresent(scores::add);
+
+        return scores.stream().max(Comparator.comparingDouble(AiScore::value));
+    }
+
+    private Optional<WeightedTarget> bestCaptureTarget(
+            PlayerState player,
+            Optional<Dinosaur> trackingTarget,
+            Optional<HuntPlan> huntPlan
+    ) {
+        ArrayList<WeightedTarget> targets = new ArrayList<>();
+        trackingTarget.ifPresent(dinosaur -> targets.add(new WeightedTarget(
+                dinosaur.position,
+                scoreTrackingTarget(player, dinosaur).value()
+        )));
+        huntPlan.ifPresent(plan -> targets.add(new WeightedTarget(
+                plan.baitPosition(),
+                scoreHuntAmbushPlan(player, plan).value()
+        )));
+
+        return targets.stream().max(Comparator.comparingDouble(WeightedTarget::score));
+    }
+
     /** Оценивает план засады на M-хищника. */
     private AiScore scoreHuntAmbushPlan(PlayerState player, HuntPlan plan) {
         Point hunterPosition = player.hunterRanger.position();
         int distance = hunterPathDistance(hunterPosition, plan.baitPosition());
         int turns = simulation.dinosaurAi.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition());
+        double failurePenalty = player.failedHuntAttempts(plan.dinosaur().id) * FAILED_HUNT_ATTEMPT_PENALTY;
 
         if (hunterPosition.equals(plan.baitPosition())) {
             return new AiScore(
-                    SCORE_HUNT_AMBUSH_READY,
+                    SCORE_HUNT_AMBUSH_READY - failurePenalty,
                     "охотник на клетке засады для " + plan.dinosaur().displayName
                             + ", ожидаемый приход через " + turnsText(turns)
+                            + failurePenaltyText(failurePenalty)
             );
         }
 
         if (distance != UNREACHABLE_DISTANCE && distance <= HUNTER_ACTION_POINTS) {
             return new AiScore(
-                    SCORE_HUNT_AMBUSH_REACHABLE_NOW,
+                    SCORE_HUNT_AMBUSH_REACHABLE_NOW - failurePenalty,
                     "охотник может занять клетку засады для " + plan.dinosaur().displayName
                             + " за текущую активацию; расстояние: " + distance
                             + ", ожидаемый приход через " + turnsText(turns)
+                            + failurePenaltyText(failurePenalty)
             );
         }
 
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
-                    25.0,
+                    25.0 - failurePenalty,
                     "клетка засады видна, но путь охотника не найден: " + plan.dinosaur().displayName
+                            + failurePenaltyText(failurePenalty)
             );
         }
 
-        double score = 75.0 - Math.min(35.0, distance * 4.0);
+        double score = 75.0 - Math.min(35.0, distance * 4.0) - failurePenalty;
         return new AiScore(
                 score,
                 "охотник идёт к клетке засады для " + plan.dinosaur().displayName
                         + "; расстояние: " + distance
                         + ", ожидаемый приход через " + turnsText(turns)
+                        + failurePenaltyText(failurePenalty)
         );
     }
 
-    /** Проверяет, стоит ли охотник на клетке с нужной целью для выслеживания. */
-    private boolean isHunterOnTrackingTarget(PlayerState player, Optional<Dinosaur> trackingTarget) {
-        return trackingTarget.isPresent()
-                && player.hunterRanger.position().equals(trackingTarget.get().position);
-    }
+    /** Рассчитывает вес видимой цели выслеживания. */
+    private AiScore scoreTrackingTarget(PlayerState player, Dinosaur dinosaur) {
+        Point hunterPosition = player.hunterRanger.position();
+        int distance = trackingPathDistance(hunterPosition, dinosaur.position);
+        double agilityBonus = Math.max(0, 5 - dinosaur.agility) * 2.5;
+        double failurePenalty = player.failedTrackingChains(dinosaur.id) * FAILED_TRACKING_CHAIN_PENALTY;
 
-    /** Проверяет, может ли охотник дойти до цели выслеживания за текущую активацию. */
-    private boolean canReachTrackingTargetThisActivation(PlayerState player, Optional<Dinosaur> trackingTarget) {
-        if (trackingTarget.isEmpty()) return false;
-        int distance = hunterPathDistance(player.hunterRanger.position(), trackingTarget.get().position);
-        return distance > 0 && distance <= HUNTER_ACTION_POINTS;
+        if (hunterPosition.equals(dinosaur.position)) {
+            return new AiScore(
+                    SCORE_TRACKING_READY + agilityBonus - failurePenalty,
+                    "охотник стоит на клетке цели выслеживания: " + dinosaur.displayName
+                            + "; ловкость " + dinosaur.agility
+                            + failurePenaltyText(failurePenalty)
+            );
+        }
+
+        if (distance != UNREACHABLE_DISTANCE && distance <= HUNTER_ACTION_POINTS) {
+            return new AiScore(
+                    SCORE_TRACKING_REACHABLE_NOW + agilityBonus - failurePenalty,
+                    "охотник может дойти до цели выслеживания за текущую активацию: "
+                            + dinosaur.displayName
+                            + ", расстояние по следовому пути: " + distance
+                            + failurePenaltyText(failurePenalty)
+            );
+        }
+
+        if (distance == UNREACHABLE_DISTANCE) {
+            return new AiScore(
+                    25.0 - failurePenalty,
+                    "цель выслеживания видна, но даже следовой путь до неё не найден: "
+                            + dinosaur.displayName
+                            + failurePenaltyText(failurePenalty)
+            );
+        }
+
+        double score = 72.0 + agilityBonus - Math.min(36.0, distance * 4.0) - failurePenalty;
+        return new AiScore(
+                score,
+                "видимая цель выслеживания: "
+                        + dinosaur.displayName
+                        + ", расстояние по следовому пути: " + distance
+                        + ", ловкость " + dinosaur.agility
+                        + failurePenaltyText(failurePenalty)
+        );
     }
 
     /** Проверяет, есть ли видимая HUNT-цель, но нет приманки. */
@@ -253,26 +356,6 @@ public final class HunterAi {
         return distance <= NEAR_SCOUT_DISTANCE;
     }
 
-    /** Рассчитывает вес видимой цели выслеживания, если до неё нельзя дойти прямо сейчас. */
-    private AiScore scoreVisibleTrackingTarget(PlayerState player, Dinosaur dinosaur) {
-        int distance = hunterPathDistance(player.hunterRanger.position(), dinosaur.position);
-
-        if (distance == UNREACHABLE_DISTANCE) {
-            return new AiScore(
-                    25.0,
-                    "цель выслеживания видна, но путь до неё не найден: " + dinosaur.displayName
-            );
-        }
-
-        double score = 65.0 - Math.min(35.0, distance * 4.0);
-        return new AiScore(
-                score,
-                "видимая цель выслеживания: "
-                        + dinosaur.displayName
-                        + ", расстояние по пути: " + distance
-        );
-    }
-
     /** Рассчитывает вес движения охотника к разведчику. */
     private AiScore scoreCatchUpToScout(PlayerState player) {
         int distance = hunterPathDistance(player.hunterRanger.position(), player.scoutRanger.position());
@@ -304,9 +387,13 @@ public final class HunterAi {
         return result;
     }
 
-    /** Ищет ближайшую живую и непойманную цель выслеживания, нужную игроку. */
-    private Optional<Dinosaur> nearestTrackingTarget(PlayerState player) {
-        return nearestNeededDinosaur(player, player.hunterRanger.position(), CaptureMethod.TRACKING);
+    /** Ищет лучшую живую и непойманную цель выслеживания, нужную игроку. */
+    public Optional<Dinosaur> bestTrackingTarget(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.TRACKING)
+                .max(Comparator.comparingDouble(dinosaur -> scoreTrackingTarget(player, dinosaur).value()));
     }
 
     /** Выбирает лучшую засаду на видимого M-хищника. */
@@ -319,7 +406,8 @@ public final class HunterAi {
                         .map(point -> new HuntPlan(dinosaur, point)))
                 .flatMap(Optional::stream)
                 .min(Comparator
-                        .comparingInt((HuntPlan plan) -> simulation.dinosaurAi.estimateDinosaurTurnsTo(
+                        .comparingInt((HuntPlan plan) -> player.failedHuntAttempts(plan.dinosaur().id))
+                        .thenComparingInt(plan -> simulation.dinosaurAi.estimateDinosaurTurnsTo(
                                 plan.dinosaur(),
                                 plan.baitPosition()
                         ))
@@ -336,7 +424,7 @@ public final class HunterAi {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
-                .min(Comparator.comparingInt(d -> normalizedPathDistance(from, d.position)));
+                .min(Comparator.comparingInt(d -> normalizedPathDistance(from, d.position, d.captureMethod)));
     }
 
     /** Проверяет, относится ли способ поимки к задачам охотника. */
@@ -345,15 +433,22 @@ public final class HunterAi {
                 || captureMethod == CaptureMethod.HUNT;
     }
 
-    /** Возвращает расстояние по реальному пути охотника или большое число для сортировки. */
-    private int normalizedPathDistance(Point from, Point target) {
-        int distance = hunterPathDistance(from, target);
+    /** Возвращает расстояние по подходящему пути или большое число для сортировки. */
+    private int normalizedPathDistance(Point from, Point target, CaptureMethod method) {
+        int distance = method == CaptureMethod.TRACKING
+                ? trackingPathDistance(from, target)
+                : hunterPathDistance(from, target);
         return distance == UNREACHABLE_DISTANCE ? Integer.MAX_VALUE - 1 : distance;
     }
 
-    /** Считает кратчайшее расстояние по уже открытой карте для обычного движения охотника. */
+    /** Считает кратчайшее расстояние по обычной открытой карте для охоты с приманкой. */
     private int hunterPathDistance(Point from, Point target) {
         return simulation.map.groundRangerPathDistance(from, target);
+    }
+
+    /** Считает кратчайшее расстояние по следовому режиму охотника. */
+    private int trackingPathDistance(Point from, Point target) {
+        return simulation.map.hunterTrackingPathDistance(from, target);
     }
 
     /** Форматирует оценку прихода хищника для лога AI. */
@@ -364,8 +459,15 @@ public final class HunterAi {
         return turns + " ход.";
     }
 
-    /** План засады на M-хищника. */
-    private record HuntPlan(Dinosaur dinosaur, Point baitPosition) {
+    private String failurePenaltyText(double failurePenalty) {
+        return failurePenalty <= 0 ? "" : "; штраф за прошлые провалы " + (int) failurePenalty;
+    }
+
+    private Optional<Dinosaur> dinosaurById(int dinosaurId) {
+        return simulation.dinosaurs.stream()
+                .filter(dinosaur -> dinosaur.id == dinosaurId)
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
+                .findFirst();
     }
 
     /** Проверяет, может ли указанная клетка быть клеткой охотничьей засады. */
@@ -450,5 +552,10 @@ public final class HunterAi {
         return Integer.MAX_VALUE;
     }
 
+    /** План засады на M-хищника. */
+    public record HuntPlan(Dinosaur dinosaur, Point baitPosition) {
+    }
 
+    private record WeightedTarget(Point target, double score) {
+    }
 }
