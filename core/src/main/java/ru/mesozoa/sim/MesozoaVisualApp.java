@@ -62,7 +62,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
     private BitmapFont font;
     private AssetCatalog assets;
     private MesozoaHudStage hudStage;
-    private String nextStepLabel = "новый раунд";
 
     public boolean paused = true;
     public boolean showGrid = true;
@@ -214,7 +213,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     /**
      * Обновляет Scene2D HUD только после изменения игрового состояния или настроек.
-     *
      * Рендер больше не должен заново вычислять содержимое панели каждый кадр.
      */
     public void refreshHud() {
@@ -222,10 +220,9 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             return;
         }
 
-        nextStepLabel = simulation.nextStepLabel();
         hudStage.update(
                 simulation,
-                nextStepLabel,
+                simulation.nextStepLabel(),
                 paused,
                 showDebug,
                 zoomPercent(),
@@ -362,7 +359,6 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
 
     /**
      * Рисует стартовую базу отдельно от обычных тайлов биомов.
-     *
      * База больше не является Tile и не имеет Biome, поэтому она не участвует
      * в общем цикле отрисовки terrain-тайлов. Да, базовый лагерь наконец-то
      * перестал притворяться лугом с административными привилегиями.
