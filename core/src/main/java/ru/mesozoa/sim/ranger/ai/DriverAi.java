@@ -19,7 +19,7 @@ public class DriverAi {
     /** Вес ситуации, когда динозавр в ловушке есть, но дороги для вывоза нет. */
     private static final double SCORE_TRAPPED_DINO_WITHOUT_ROUTE = -25.0;
 
-    /** Вес готового вывоза динозавра из ловушки. */
+    /** Вес рейса водителя к динозавру или обратно на базу с грузом. */
     private static final double SCORE_READY_EXTRACTION = 120.0;
 
     private final GameSimulation simulation;
@@ -32,9 +32,8 @@ public class DriverAi {
      * Рассчитывает вес активации водителя для текущего игрока.
      *
      * Водитель не получает очки за сближение с охотником, инженером или разведчиком:
-     * по текущим правилам он телепортируется по связанной дорожной сети за одно
-     * действие. Его работа начинается только тогда, когда в ловушке уже сидит
-     * нужный динозавр.
+     * по текущим правилам он ездит только по связанной дорожной сети. Его работа
+     * начинается только тогда, когда в ловушке уже сидит нужный динозавр.
      *
      * @param player игрок, для которого оценивается полезность водителя
      * @return оценка полезности водителя и причина этой оценки
@@ -43,9 +42,12 @@ public class DriverAi {
         Optional<Dinosaur> reachableTarget = nearestReachableTrappedDinosaur(player);
         if (reachableTarget.isPresent()) {
             Dinosaur dinosaur = reachableTarget.get();
+            String driverTask = player.driverRanger.position().equals(dinosaur.position)
+                    ? "водитель уже у ловушки, можно везти на базу: "
+                    : "водитель должен ехать к динозавру в ловушке: ";
             return new AiScore(
                     SCORE_READY_EXTRACTION,
-                    "динозавр в ловушке готов к вывозу: "
+                    driverTask
                             + dinosaur.displayName
                             + " на " + dinosaur.position
             );
@@ -69,7 +71,7 @@ public class DriverAi {
     }
 
     /**
-     * Выбирает клетку для вывоза динозавра водителем.
+     * Выбирает клетку, к которой водитель должен ехать или с которой должен возвращаться.
      *
      * @param player игрок, для которого выбирается цель
      * @return клетка динозавра в ловушке или null, если цель недоступна
@@ -81,10 +83,10 @@ public class DriverAi {
     }
 
     /**
-     * Ищет ближайшего динозавра в ловушке, которого можно вывезти сейчас.
+     * Ищет ближайшего динозавра в ловушке, к которому готов водительский маршрут.
      *
      * @param player игрок, чей водитель оценивается
-     * @return ближайшая доступная цель вывоза
+     * @return ближайшая доступная цель водительского рейса
      */
     private Optional<Dinosaur> nearestReachableTrappedDinosaur(PlayerState player) {
         return simulation.nearestTrappedNeededDinosaurAwaitingPickup(

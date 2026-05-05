@@ -25,9 +25,10 @@ public class DriverAction {
     /**
      * Выполняет активацию водителя.
      *
-     * Водитель больше не пытается «приближаться» к другим рейнджерам. Его полезная
-     * задача появляется только после срабатывания ловушки: доехать по готовой
-     * дорожной сети до динозавра, забрать его и вернуться на базу.
+     * Водитель работает в два видимых этапа: сначала приезжает к клетке с
+     * обездвиженным динозавром, а уже следующей активацией везёт его на базу.
+     * Иначе фишка зверя исчезает с карты мгновенно, будто джип освоил
+     * телепортацию, а это уже не настолка, а финансовый отчёт с чудесами.
      *
      * @param player игрок, чей водитель активируется
      * @param plan выбранный AI-план
@@ -41,6 +42,10 @@ public class DriverAction {
 
     /**
      * Выполняет водительское действие по выбранной клетке.
+     *
+     * Если водитель ещё не приехал к ловушке, эта активация только ставит джип на
+     * клетку с динозавром. Доставка и зачёт происходят отдельной активацией, когда
+     * водитель уже стоит рядом с грузом.
      *
      * @param player игрок, чей водитель действует
      * @param target целевая клетка с ловушкой и динозавром
@@ -58,11 +63,17 @@ public class DriverAction {
             return;
         }
 
-        extractTrappedDinosaur(player, trappedDinosaur.get(), actionPoints);
+        Dinosaur dinosaur = trappedDinosaur.get();
+        if (!player.driverRanger.position().equals(dinosaur.position)) {
+            driveToTrappedDinosaur(player, dinosaur, actionPoints);
+            return;
+        }
+
+        extractTrappedDinosaur(player, dinosaur, actionPoints);
     }
 
     /**
-     * Выбирает ближайшего динозавра, которого водитель может вывезти прямо сейчас.
+     * Выбирает ближайшего динозавра, к которому водитель может начать рейс.
      *
      * @param player игрок, для которого выбирается цель водителя
      * @return клетка динозавра в ловушке или null, если готовой цели нет
@@ -92,26 +103,60 @@ public class DriverAction {
     }
 
     /**
-     * Вывозит динозавра из ловушки, если хватает действий и дорожная сеть готова.
+     * Перегоняет джип к клетке с обездвиженным динозавром без зачёта по заданию.
      *
-     * @param player игрок, чей водитель выполняет вывоз
+     * @param player игрок, чей водитель едет к ловушке
+     * @param dinosaur динозавр, ожидающий вывоза
+     * @param actionPoints доступные очки действий
+     */
+    private void driveToTrappedDinosaur(PlayerState player, Dinosaur dinosaur, int actionPoints) {
+        if (actionPoints < 1) {
+            simulation.log("Водителю игрока " + player.id + " не хватает действий, чтобы доехать до ловушки");
+            return;
+        }
+
+        if (!simulation.canDriverExtractTrappedDinosaur(player, dinosaur)) {
+            simulation.log("Водитель игрока " + player.id
+                    + " не может доехать до " + dinosaur.displayName
+                    + ": нет связанной дороги до ловушки и обратного маршрута на базу");
+            return;
+        }
+
+        player.setPosition(RangerRole.DRIVER, dinosaur.position);
+        simulation.log("ВОДИТЕЛЬ ПРИЕХАЛ: водитель игрока " + player.id
+                + " доехал до " + dinosaur.displayName
+                + " #" + dinosaur.id
+                + " на " + dinosaur.position
+                + "; динозавр всё ещё ждёт доставки на базу");
+    }
+
+    /**
+     * Доставляет динозавра на базу, если водитель уже стоит на клетке ловушки.
+     *
+     * @param player игрок, чей водитель выполняет обратный рейс
      * @param dinosaur динозавр в ловушке
      * @param actionPoints доступные очки действий
      */
     private void extractTrappedDinosaur(PlayerState player, Dinosaur dinosaur, int actionPoints) {
-        if (actionPoints < 2) {
-            simulation.log("Водителю игрока " + player.id + " не хватает действий для рейса туда-обратно");
+        if (actionPoints < 1) {
+            simulation.log("Водителю игрока " + player.id + " не хватает действий для обратного рейса на базу");
+            return;
+        }
+
+        if (!player.driverRanger.position().equals(dinosaur.position)) {
+            simulation.log("Водитель игрока " + player.id
+                    + " ещё не приехал к " + dinosaur.displayName
+                    + " #" + dinosaur.id + "; сначала нужен рейс к ловушке");
             return;
         }
 
         if (!simulation.canDriverExtractTrappedDinosaur(player, dinosaur)) {
             simulation.log("Водитель игрока " + player.id
                     + " не может вывезти " + dinosaur.displayName
-                    + ": нет связанной дороги до ловушки и обратно на базу");
+                    + ": нет связанной дороги обратно на базу");
             return;
         }
 
-        player.setPosition(RangerRole.DRIVER, dinosaur.position);
         if (simulation.extractTrappedDinosaurToBase(player, dinosaur)) {
             player.setPosition(RangerRole.DRIVER, simulation.map.base);
         }
