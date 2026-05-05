@@ -51,8 +51,13 @@ public class EngineerAi {
     /** Вес движения инженера вслед за разведкой без срочной инженерной задачи. */
     private static final double SCORE_FOLLOW_SCOUT = 22.0;
 
-    /** Низкий вес ожидания, если инженер уже стоит рядом с разведчиком. */
-    private static final double SCORE_WAIT_NEAR_SCOUT = 8.0;
+    /**
+     * Вес ожидания, если инженер уже стоит рядом с разведчиком.
+     *
+     * Нулевой вес не даёт планировщику тратить активацию на рейнджера,
+     * который не может выполнить реальную работу в этот ход.
+     */
+    private static final double SCORE_WAIT_NEAR_SCOUT = 0.0;
 
     /** Дистанция, на которой инженер считается рядом с разведчиком. */
     private static final int NEAR_SCOUT_DISTANCE = 2;
@@ -171,8 +176,8 @@ public class EngineerAi {
         }
 
         return new AiScore(
-                5.0,
-                "для инженера сейчас нет срочной ловушечной или инфраструктурной задачи"
+                SCORE_IMPOSSIBLE,
+                "для инженера сейчас нет реального инженерного действия"
         );
     }
 
@@ -274,26 +279,26 @@ public class EngineerAi {
     private boolean hasNoRoadOutOfBase(PlayerState player) {
         return simulation.map.openedCount() > 1
                 && !simulation.map.hasRoadOutOfBase()
-                && hasRemainingRoadRelevantGoal(player);
+                && hasConcreteRoadTarget(player);
     }
 
     /**
-     * Проверяет, остались ли у игрока цели, для которых дорожная сеть реально нужна.
-     * HUNT-хищники сюда не входят: охотник сам идёт в засаду, а водитель после
-     * транквилизатора не требуется. Иначе инженер опять будет строить автобан к
-     * кусту, где человек просто лежит с приманкой. Удобно, но бессмысленно.
+     * Проверяет, есть ли уже видимая причина начинать дорожную сеть.
      *
-     * @param player игрок, чьи оставшиеся цели анализируются
-     * @return true, если есть TRAP/TRACKING-цели или динозавр в ловушке без вывоза
+     * Одна лишь запись в задании штаба больше не заставляет инженера строить
+     * первую дорогу куда попало. Дорога появляется только если на открытой карте
+     * уже есть конкретная цель: пойманный динозавр без вывоза, видимая зона
+     * работы охотника или нужный биом, который действительно можно подключать.
+     * Иначе инженер превращается в дорожного художника, а не в полезного члена
+     * экспедиции.
+     *
+     * @param player игрок, чьи инфраструктурные цели анализируются
+     * @return true, если первая дорога сейчас ведёт к понятной игровой задаче
      */
-    private boolean hasRemainingRoadRelevantGoal(PlayerState player) {
-        if (nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent()) {
-            return true;
-        }
-
-        return player.task.stream()
-                .filter(species -> !player.captured.contains(species))
-                .anyMatch(species -> Dinosaur.captureMethodOf(species) != CaptureMethod.HUNT);
+    private boolean hasConcreteRoadTarget(PlayerState player) {
+        return nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent()
+                || nearestNeededHunterTargetWithoutDriverAccess(player).isPresent()
+                || nearestUnconnectedNeededBiome(player).isPresent();
     }
 
     /**

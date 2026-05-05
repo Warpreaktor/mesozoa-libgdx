@@ -129,7 +129,7 @@ public final class RangerTurnPlanner {
     private Point targetFor(PlayerState player, RangerRole role) {
         return switch (role) {
             case SCOUT -> null;
-            case ENGINEER -> engineerTarget(player).orElse(player.scoutRanger.position());
+            case ENGINEER -> engineerTarget(player).orElse(null);
             case HUNTER -> hunterTarget(player).orElse(player.scoutRanger.position());
             case DRIVER -> driverTarget(player);
         };
