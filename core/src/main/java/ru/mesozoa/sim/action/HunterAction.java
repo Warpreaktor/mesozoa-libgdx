@@ -9,6 +9,7 @@ import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.RangerRole;
 import ru.mesozoa.sim.model.TrackingTrail;
+import ru.mesozoa.sim.model.TrailToken;
 import ru.mesozoa.sim.ranger.RangerPlan;
 import ru.mesozoa.sim.ranger.ai.HunterAi;
 import ru.mesozoa.sim.simulation.GameSimulation;
@@ -379,7 +380,7 @@ public class HunterAction {
         }
 
         if (!trail.canStartAttempt()) {
-            failTracking(player, trail, "нет свободного жетона следа или карты Охота для новой попытки");
+            failTracking(player, trail, "у охотника не осталось жетонов следа или карт Охоты");
             return;
         }
 
@@ -421,7 +422,7 @@ public class HunterAction {
                 + "; охотник " + hunterScore
                 + " против " + dinosaurScore
                 + " (ловк. " + dinosaur.agility + " + 1d6=" + dinosaurRoll + ")"
-                + "; цепочка " + trail.trailTokens().size() + " / " + (TrackingTrail.MAX_ATTEMPTS - 1));
+                + "; цепочка " + trail.trailTokens().size() + " / " + TrackingTrail.MAX_ATTEMPTS);
     }
 
     /**
@@ -442,10 +443,12 @@ public class HunterAction {
             int dinosaurScore,
             int hunterScore
     ) {
+        removeTrailTokensFromMap(player, trail);
+        TrailToken marker = trail.createTrailToken(dinosaur.position, Direction.NORTH, true);
+        player.trailTokens.add(marker);
+
         dinosaur.trapped = true;
         dinosaur.trappedByPlayerId = player.id;
-        clearTrackingTrailTokens(player, trail);
-        player.trailTokens.add(trail.createTrailToken(dinosaur.position, Direction.NORTH, true));
         player.activeTracking = null;
         player.clearCaptureFailures(dinosaur.id);
         simulation.result.trackingCaptures++;
@@ -467,7 +470,7 @@ public class HunterAction {
      */
     private void failTracking(PlayerState player, TrackingTrail trail, String reason) {
         player.registerFailedTrackingChain(trail.dinosaurId);
-        clearTrackingTrailTokens(player, trail);
+        removeTrailTokensFromMap(player, trail);
         player.activeTracking = null;
         simulation.log("ПРОВАЛ ВЫСЛЕЖИВАНИЯ: " + trail.species.displayName
                 + " для игрока " + player.id
@@ -477,6 +480,7 @@ public class HunterAction {
     /**
      * Уводит М-травоядного на следующую клетку био-тропы и кладёт жетон следа.
      *
+     * @param player игрок, чей охотник ведёт след
      * @param trail активная цепочка следов
      * @param dinosaur целевой динозавр
      */
@@ -486,34 +490,28 @@ public class HunterAction {
         simulation.dinosaurAi.moveByBioTrail(dinosaur);
         Point after = dinosaur.position;
 
+        Direction direction = directionBetween(before, after);
+        TrailToken token = trail.createTrailToken(before, direction, false);
+        player.trailTokens.add(token);
+
         if (before.equals(after)) {
             simulation.log(dinosaur.displayName + " #" + dinosaur.id
-                    + " сорвался с места, но не нашёл доступный шаг био-тропы и остался на " + after);
+                    + " сорвался с места, но не нашёл доступный шаг био-тропы и оставил след на " + after);
             return;
         }
 
-        Direction direction = directionBetween(before, after);
-        player.trailTokens.add(trail.createTrailToken(before, direction, false));
         simulation.log(dinosaur.displayName + " #" + dinosaur.id
                 + " оставил след " + direction
                 + ": " + before + " -> " + after);
     }
 
     /**
-     * Снимает с карты все жетоны текущей цепочки выслеживания.
-     *
-     * При срыве следа или успешной поимке старая цепочка больше не должна
-     * занимать физические жетоны игрока. На успешной поимке после этого
-     * создаётся один отдельный маркер на клетке обездвиженного динозавра.
+     * Убирает с карты все обычные жетоны текущей цепочки следов.
      *
      * @param player владелец жетонов
-     * @param trail цепочка выслеживания, которую нужно очистить
+     * @param trail цепочка, чьи следы снимаются
      */
-    private void clearTrackingTrailTokens(PlayerState player, TrackingTrail trail) {
-        if (trail == null) {
-            return;
-        }
-
+    private void removeTrailTokensFromMap(PlayerState player, TrackingTrail trail) {
         player.trailTokens.removeIf(token -> token.dinosaurId == trail.dinosaurId && !token.captureMarker);
     }
 

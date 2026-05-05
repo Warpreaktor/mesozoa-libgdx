@@ -162,7 +162,7 @@ public final class GameSimulation {
         }
 
         log("Ход динозавров");
-        dinosaurActionPlanner.dinosaurPhase();
+        dinosaurActionPlanner.dinosaurPhase(activeTrackingDinosaurIds());
         dinosaurPhaseConsequenceResolver.resolveAfterDinosaurPhase();
         updateResult();
         finishRound();
@@ -252,6 +252,25 @@ public final class GameSimulation {
         activeRangerIndex++;
         activePlayerUsedRoles = EnumSet.noneOf(RangerRole.class);
         activePlayerActionIndex = 0;
+    }
+
+    /**
+     * Собирает динозавров, которые временно выключены из обычной фазы
+     * «Динозавры живут», потому что сейчас находятся в активной цепочке
+     * выслеживания. Такой М-травоядный двигается только при попытке охотника,
+     * иначе зверь получает лишний бесплатный шаг, а след превращается в вечный
+     * беговой симулятор.
+     *
+     * @return ID динозавров, которым нельзя давать штатный шаг био-тропы в эту фазу
+     */
+    private Set<Integer> activeTrackingDinosaurIds() {
+        Set<Integer> ids = new java.util.HashSet<>();
+        for (PlayerState player : players) {
+            if (player.activeTracking != null) {
+                ids.add(player.activeTracking.dinosaurId);
+            }
+        }
+        return ids;
     }
 
     private void finishRound() {
@@ -389,23 +408,13 @@ public final class GameSimulation {
             value.trappedDinosaurId = 0;
             value.active = false;
         });
-        clearTrailMarkerHoldingDinosaur(player, dinosaur);
+        player.trailTokens.removeIf(token -> token.dinosaurId == dinosaur.id);
 
         log("ДОСТАВЛЕН: водитель игрока " + player.id
                 + " вывез " + dinosaur.displayName
                 + " #" + dinosaur.id + " на базу"
                 + (trap.isPresent() ? " из ловушки" : " по жетону следа"));
         return true;
-    }
-
-    /**
-     * Снимает жетон следа, которым отмечали обездвиженного по выслеживанию динозавра.
-     *
-     * @param player владелец жетона
-     * @param dinosaur доставленный динозавр
-     */
-    private void clearTrailMarkerHoldingDinosaur(PlayerState player, Dinosaur dinosaur) {
-        player.trailTokens.removeIf(token -> token.captureMarker && token.dinosaurId == dinosaur.id);
     }
 
     /**
