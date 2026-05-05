@@ -21,6 +21,7 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Класс отвечает за подсчёт очков, за очередность ходов игрока и за прочими общими(системными) игровыми механиками.
@@ -63,6 +64,9 @@ public final class GameSimulation {
 
     private boolean roundStarted = false;
     private int activeRangerIndex = 0;
+
+    /** Внешний слушатель полного журнала для headless-прогонов баланса. */
+    private Consumer<String> logListener;
 
     /**
      * Роли, уже активированные текущим игроком в рамках его хода.
@@ -193,6 +197,19 @@ public final class GameSimulation {
      *
      * @return игрок для правой UI-панели или null, если игроки ещё не созданы
      */
+    /**
+     * Подключает внешний обработчик полного журнала партии.
+     *
+     * HUD хранит только ограниченный хвост сообщений, а batch-прогон баланса
+     * должен видеть все события партии: выбор AI, провалы охоты, дороги, ловушки
+     * и прочие маленькие радости автоматизированного зоопарка.
+     *
+     * @param logListener обработчик новых сообщений или null, если внешний сбор не нужен
+     */
+    public void setLogListener(Consumer<String> logListener) {
+        this.logListener = logListener;
+    }
+
     public PlayerState playerForHud() {
         if (players.isEmpty()) {
             return null;
@@ -459,6 +476,9 @@ public final class GameSimulation {
      * @param message текст сообщения
      */
     public void log(String message) {
+        if (logListener != null) {
+            logListener.accept(message);
+        }
         log.addFirst(message);
         while (log.size() > 500) log.removeLast();
     }
