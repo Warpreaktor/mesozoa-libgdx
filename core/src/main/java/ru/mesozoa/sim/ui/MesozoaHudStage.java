@@ -12,6 +12,7 @@ import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.model.PlayerState;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.model.Trap;
+import ru.mesozoa.sim.model.TrackingTrail;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.Locale;
@@ -211,6 +212,14 @@ public final class MesozoaHudStage {
         if (player.activeHunt != null) {
             inventory.add(label("Охота", "small")).growX();
             inventory.add(valueLabel("подг. " + player.activeHunt.preparationScore() + " / 10", "warning")).width(118).right().row();
+        }
+
+        if (player.activeTracking != null) {
+            inventory.add(label("Следы", "small")).growX();
+            inventory.add(valueLabel(
+                    player.activeTracking.remainingTrailTokens() + " / " + TrackingTrail.MAX_ATTEMPTS + " жет.",
+                    player.activeTracking.remainingTrailTokens() > 0 ? "warning" : "danger"
+            )).width(118).right().row();
         }
 
         parent.add(inventory).growX().padBottom(8).row();

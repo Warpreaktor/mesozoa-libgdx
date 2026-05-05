@@ -9,15 +9,16 @@ import java.util.Optional;
  * Активное выслеживание М-травоядного охотником.
  *
  * Состояние хранит целевого динозавра, вытянутые карты «Охота», сумму подготовки
- * и цепочку следов. Пока оно активно, охотник должен продолжать идти за этим
- * зверем, а не внезапно переключиться на другую цель до успеха или провала.
+ * и жетоны следов текущей цепочки. Одна попытка выслеживания тратит один жетон
+ * следа и даёт право взять одну карту «Охота». Нет жетона — нет карты и новой
+ * попытки, иначе цепочка превращается в бесконечный бумажный змей из логов.
  */
 public final class TrackingTrail {
 
     /** Максимальная сумма карт, после которой зверь уходит от охотника. */
     public static final int MAX_PREPARATION_SCORE = 10;
 
-    /** Максимальное число попыток в одной цепочке следов. */
+    /** Максимальное число попыток и жетонов следа в одной цепочке. */
     public static final int MAX_ATTEMPTS = 3;
 
     /** ID игрока, который ведёт выслеживание. */
@@ -36,10 +37,13 @@ public final class TrackingTrail {
     private final ArrayList<HuntCard> drawnCards = new ArrayList<>();
 
     /** Жетоны следов, лежащие на карте для текущей цепочки. */
-    private final ArrayList<TrackingTrailToken> trailTokens = new ArrayList<>();
+    private final ArrayList<TrailToken> trailTokens = new ArrayList<>();
 
     /** Сколько попыток поимки уже сделано в текущей цепочке. */
     private int attempts;
+
+    /** Сколько жетонов следа уже потрачено на попытки. */
+    private int spentTrailTokens;
 
     /** Текущая сумма очков по вытянутым картам охоты. */
     private int preparationScore;
@@ -60,48 +64,57 @@ public final class TrackingTrail {
     }
 
     /**
-     * Начинает очередную попытку поимки.
+     * Проверяет, можно ли начать ещё одну попытку выслеживания.
+     *
+     * @return true, если остался хотя бы один жетон следа и одна карта «Охота»
+     */
+    public boolean canStartAttempt() {
+        return spentTrailTokens < MAX_ATTEMPTS && !deck.isEmpty();
+    }
+
+    /**
+     * Начинает очередную попытку поимки и тратит один жетон следа.
      *
      * @return номер попытки в текущей цепочке
      */
     public int startAttempt() {
+        if (!canStartAttempt()) {
+            throw new IllegalStateException("Нет жетона следа или карты Охота для новой попытки");
+        }
+
         attempts++;
+        spentTrailTokens++;
         return attempts;
     }
 
     /**
-     * Добирает две стартовые карты для первой попытки выслеживания.
-     *
-     * @return фактически вытянутые карты
-     */
-    public List<HuntCard> drawInitialCards() {
-        ArrayList<HuntCard> result = new ArrayList<>(2);
-        drawOneCard().ifPresent(result::add);
-        drawOneCard().ifPresent(result::add);
-        return result;
-    }
-
-    /**
-     * Добирает одну карту для продолжения выслеживания по уже выложенным следам.
+     * Добирает одну карту для текущей попытки выслеживания.
      *
      * @return вытянутая карта или пустой результат, если колода закончилась
      */
-    public Optional<HuntCard> drawFollowUpCard() {
+    public Optional<HuntCard> drawAttemptCard() {
         return drawOneCard();
     }
 
     /**
-     * Запоминает жетон следа, который зверь оставил после неудачной попытки.
+     * Создаёт и запоминает жетон следа текущей попытки.
      *
-     * @param from клетка, откуда ушёл динозавр
-     * @param to клетка, куда он ушёл
-     * @param direction направление жетона следа
+     * @param position клетка, где лежит жетон
+     * @param direction направление следа
+     * @param captureMarker true, если жетон отмечает обездвиженного динозавра
+     * @return созданный жетон следа
      */
-    public void addTrailToken(Point from, Point to, Direction direction) {
-        if (from == null || to == null || direction == null) {
-            return;
-        }
-        trailTokens.add(new TrackingTrailToken(from, to, direction, trailTokens.size() + 1));
+    public TrailToken createTrailToken(Point position, Direction direction, boolean captureMarker) {
+        TrailToken token = new TrailToken(
+                playerId,
+                dinosaurId,
+                position,
+                direction,
+                Math.max(1, attempts),
+                captureMarker
+        );
+        trailTokens.add(token);
+        return token;
     }
 
     /** @return true, если сумма карт уже превысила допустимый лимит */
@@ -109,14 +122,14 @@ public final class TrackingTrail {
         return preparationScore > MAX_PREPARATION_SCORE;
     }
 
-    /** @return true, если это первая попытка в цепочке следов */
-    public boolean isFirstAttempt() {
-        return attempts == 1;
-    }
-
     /** @return сколько попыток уже сделано */
     public int attempts() {
         return attempts;
+    }
+
+    /** @return сколько жетонов следа ещё доступно в текущей цепочке */
+    public int remainingTrailTokens() {
+        return Math.max(0, MAX_ATTEMPTS - spentTrailTokens);
     }
 
     /** @return текущая сумма очков карт охоты */
@@ -130,7 +143,7 @@ public final class TrackingTrail {
     }
 
     /** @return неизменяемая копия жетонов следов на карте */
-    public List<TrackingTrailToken> trailTokens() {
+    public List<TrailToken> trailTokens() {
         return List.copyOf(trailTokens);
     }
 

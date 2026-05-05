@@ -4,11 +4,13 @@ import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
 import java.util.ArrayList;
+import java.util.Set;
 
 /**
  * Исполнитель движения динозавров в фазу «Динозавры живут».
  * Класс отвечает только за то, чтобы активные звери сделали свой шаг по
- * био-тропе или другие возможные активности относящиеся к фазе хода.
+ * био-тропе. Какие звери получают обычный шаг в этой фазе, решает внешний
+ * дирижёр симуляции, а не сам исполнитель движения.
  */
 public final class DinosaurActionPlanner {
 
@@ -27,11 +29,17 @@ public final class DinosaurActionPlanner {
     }
 
     /**
-     * Выполняет только перемещение всех активных динозавров.
+     * Выполняет перемещение всех активных динозавров, которым разрешён обычный
+     * шаг фазы «Динозавры живут».
+     *
+     * @param skippedDinosaurIds динозавры, чей обычный шаг в эту фазу пропускается
      */
-    public void dinosaurPhase() {
+    public void dinosaurPhase(Set<Integer> skippedDinosaurIds) {
+        Set<Integer> skipped = skippedDinosaurIds == null ? Set.of() : skippedDinosaurIds;
+
         for (Dinosaur dinosaur : new ArrayList<>(simulation.dinosaurs)) {
             if (dinosaur.captured || dinosaur.trapped || dinosaur.removed) continue;
+            if (skipped.contains(dinosaur.id)) continue;
 
             Point before = dinosaur.position;
             dinosaur.lastPosition = before;

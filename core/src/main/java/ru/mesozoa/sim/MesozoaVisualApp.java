@@ -182,6 +182,7 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
         drawTiles();
         drawPlacementFrontier();
         drawTraps();
+        drawTrailTokens();
         drawHuntAmbushes();
         drawPieces();
         drawHud();
@@ -792,6 +793,85 @@ public final class MesozoaVisualApp extends ApplicationAdapter {
             }
         }
         shapes.end();
+    }
+
+    /**
+     * Рисует жетоны следов М-травоядных.
+     *
+     * Жетон использует тот же подход, что и ловушки: если ассет найден, рисуем
+     * картинку; если нет — показываем простой fallback-указатель направления.
+     * Основной путь ассета: assets/tokens/tracking-trail.png.
+     */
+    private void drawTrailTokens() {
+        float size = tilePixelSize();
+        Texture trailTexture = assets.get("tokens/tracking-trail.png");
+
+        if (trailTexture != null) {
+            batch.begin();
+            for (PlayerState player : simulation.players) {
+                for (TrailToken token : player.trailTokens) {
+                    if (!token.active || !isVisibleOnBoard(token.position)) continue;
+
+                    float iconSize = size * 0.34f;
+                    float x = screenX(token.position) + (size - iconSize) / 2f;
+                    float y = screenY(token.position) + (size - iconSize) / 2f;
+                    float origin = iconSize / 2f;
+
+                    batch.draw(
+                            trailTexture,
+                            x,
+                            y,
+                            origin,
+                            origin,
+                            iconSize,
+                            iconSize,
+                            1f,
+                            1f,
+                            trailRotationDegrees(token.direction),
+                            0,
+                            0,
+                            trailTexture.getWidth(),
+                            trailTexture.getHeight(),
+                            false,
+                            false
+                    );
+                }
+            }
+            batch.end();
+            return;
+        }
+
+        shapes.begin(ShapeRenderer.ShapeType.Line);
+        shapes.setColor(1f, 0.75f, 0.20f, 0.95f);
+        for (PlayerState player : simulation.players) {
+            for (TrailToken token : player.trailTokens) {
+                if (!token.active || !isVisibleOnBoard(token.position)) continue;
+
+                float cx = screenX(token.position) + size * 0.50f;
+                float cy = screenY(token.position) + size * 0.50f;
+                float length = size * 0.24f;
+                float tx = cx + token.direction.dx * length;
+                float ty = cy + token.direction.dy * length;
+
+                shapes.line(cx, cy, tx, ty);
+                shapes.circle(cx, cy, Math.max(3f, size * 0.04f));
+            }
+        }
+        shapes.end();
+    }
+
+    /** Возвращает угол поворота ассета следа, если картинка по умолчанию смотрит на север. */
+    private float trailRotationDegrees(Direction direction) {
+        return switch (direction) {
+            case NORTH -> 0f;
+            case NORTH_EAST -> -45f;
+            case EAST -> -90f;
+            case SOUTH_EAST -> -135f;
+            case SOUTH -> 180f;
+            case SOUTH_WEST -> 135f;
+            case WEST -> 90f;
+            case NORTH_WEST -> 45f;
+        };
     }
 
     /**

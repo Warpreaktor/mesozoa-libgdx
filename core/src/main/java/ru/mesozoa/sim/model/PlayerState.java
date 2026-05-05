@@ -35,6 +35,15 @@ public final class PlayerState {
 
     public final List<Trap> traps = new ArrayList<>();
 
+    /**
+     * Жетоны следов, которые игрок сейчас держит на карте.
+     *
+     * Это такие же физические маркеры игрока, как ловушки: они лежат на поле,
+     * ограничивают число попыток выслеживания и убираются при срыве цепочки или
+     * после вывоза пойманного по следу динозавра.
+     */
+    public final List<TrailToken> trailTokens = new ArrayList<>();
+
     /** Активная засада охотника на M-хищника или null, если охота не начата. */
     public HuntAmbush activeHunt;
 
