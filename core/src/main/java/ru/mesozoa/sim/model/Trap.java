@@ -29,4 +29,16 @@ public final class Trap {
     public boolean hasDinosaur() {
         return trappedDinosaurId != 0;
     }
+
+    /**
+     * Проверяет, может ли ловушка сейчас поймать динозавра.
+     *
+     * Ловушка с уже сидящим внутри динозавром занята и не может поймать второго,
+     * как бы заманчиво ни было устроить биологический автобус.
+     *
+     * @return true, если ловушка активна на карте и пуста
+     */
+    public boolean canCatchDinosaur() {
+        return active && !hasDinosaur();
+    }
 }

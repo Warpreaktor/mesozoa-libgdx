@@ -12,7 +12,6 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Matrix4;
 import ru.mesozoa.sim.config.InventoryConfig;
 import ru.mesozoa.sim.config.GameMechanicConfig;
-import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.input.InputHandler;
 import ru.mesozoa.sim.model.*;
 import ru.mesozoa.sim.simulation.GameSimulation;
