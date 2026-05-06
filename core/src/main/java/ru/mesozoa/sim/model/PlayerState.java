@@ -76,6 +76,24 @@ public final class PlayerState {
 
     /** Количество оставшейся мясной приманки для охоты. */
     public int hunterBait = 3;
+
+    /**
+     * Победные очки за всех доставленных этим игроком динозавров.
+     *
+     * Очки начисляются тому, чей водитель реально вывез добычу на базу.
+     * Не важно, кто поставил ловушку или усыпил зверя: в конкурентном режиме
+     * карта не признаёт личной собственности на лежащего динозавра.
+     */
+    public int capturePoints = 0;
+
+    /**
+     * Сколько отдельных фишек динозавров этот игрок доставил на базу.
+     *
+     * Набор {@link #captured} хранит виды, закрывающие задание штаба, а не
+     * количество всех вывезенных зверей, поэтому счётчику нужно отдельное поле.
+     */
+    public int deliveredDinosaurs = 0;
+
     public int turnsSkipped = 0;
 
     public PlayerState(int id, Point base) {
@@ -206,5 +224,18 @@ public final class PlayerState {
         rejectedHuntBaitPositions.clear();
     }
 
+    /**
+     * Начисляет игроку очки и, если вид был в задании, закрывает цель штаба.
+     *
+     * @param species доставленный вид
+     * @param points очки за размер/тип поимки
+     */
+    public void registerDeliveredDinosaur(Species species, int points) {
+        deliveredDinosaurs++;
+        capturePoints += Math.max(0, points);
+        if (task.contains(species)) {
+            captured.add(species);
+        }
+    }
 
 }

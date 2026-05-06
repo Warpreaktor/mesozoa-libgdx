@@ -16,11 +16,14 @@ public class DriverAi {
     /** Вес ситуации, когда водитель сейчас не имеет полезной задачи. */
     private static final double SCORE_NO_USEFUL_TASK = -10.0;
 
-    /** Вес ситуации, когда динозавр в ловушке есть, но дороги для вывоза нет. */
-    private static final double SCORE_TRAPPED_DINO_WITHOUT_ROUTE = -25.0;
+    /** Вес ситуации, когда нужный динозавр ждёт вывоза, но дороги для рейса нет. */
+    private static final double SCORE_NEEDED_DINO_WITHOUT_ROUTE = -25.0;
 
-    /** Вес рейса водителя к динозавру или обратно на базу с грузом. */
-    private static final double SCORE_READY_EXTRACTION = 120.0;
+    /** Вес рейса за динозавром, который закрывает задание штаба. */
+    private static final double SCORE_READY_TASK_EXTRACTION = 150.0;
+
+    /** Вес бонусного рейса за чужой/лишней добычей ради очков. */
+    private static final double SCORE_READY_BONUS_EXTRACTION = 28.0;
 
     private final GameSimulation simulation;
 
@@ -31,34 +34,43 @@ public class DriverAi {
     /**
      * Рассчитывает вес активации водителя для текущего игрока.
      *
-     * Водитель не получает очки за сближение с охотником, инженером или разведчиком:
-     * по текущим правилам он ездит только по связанной дорожной сети. Его работа
-     * начинается только тогда, когда в ловушке уже сидит нужный динозавр.
+     * Водитель больше не смотрит на владельца ловушки. Если добыча лежит на
+     * карте и есть дорога, её можно увезти. Цель из задания получает высокий
+     * приоритет, бонусная добыча — низкий, чтобы AI не бросал важную охоту ради
+     * случайного Криптогната, но мог украсть очки, когда других дел нет.
      *
      * @param player игрок, для которого оценивается полезность водителя
      * @return оценка полезности водителя и причина этой оценки
      */
     public AiScore scoreDriver(PlayerState player) {
-        Optional<Dinosaur> reachableTarget = nearestReachableTrappedDinosaur(player);
-        if (reachableTarget.isPresent()) {
-            Dinosaur dinosaur = reachableTarget.get();
-            String driverTask = player.driverRanger.position().equals(dinosaur.position)
-                    ? "водитель уже у ловушки, можно везти на базу: "
-                    : "водитель должен ехать к динозавру в ловушке: ";
+        Optional<Dinosaur> reachableTaskTarget = nearestReachableTaskDinosaur(player);
+        if (reachableTaskTarget.isPresent()) {
+            Dinosaur dinosaur = reachableTaskTarget.get();
             return new AiScore(
-                    SCORE_READY_EXTRACTION,
-                    driverTask
+                    SCORE_READY_TASK_EXTRACTION,
+                    "водитель может вывезти нужную добычу: "
                             + dinosaur.displayName
                             + " на " + dinosaur.position
             );
         }
 
-        Optional<Dinosaur> blockedTarget = nearestBlockedTrappedDinosaur(player);
+        Optional<Dinosaur> reachableBonusTarget = nearestReachableBonusDinosaur(player);
+        if (reachableBonusTarget.isPresent()) {
+            Dinosaur dinosaur = reachableBonusTarget.get();
+            return new AiScore(
+                    SCORE_READY_BONUS_EXTRACTION + simulation.capturePointsFor(dinosaur),
+                    "водитель может украсть/вывезти бонусную добычу за очки: "
+                            + dinosaur.displayName
+                            + " на " + dinosaur.position
+            );
+        }
+
+        Optional<Dinosaur> blockedTarget = nearestBlockedTaskDinosaur(player);
         if (blockedTarget.isPresent()) {
             Dinosaur dinosaur = blockedTarget.get();
             return new AiScore(
-                    SCORE_TRAPPED_DINO_WITHOUT_ROUTE,
-                    "динозавр в ловушке ждёт вывоза, но дороги нет: "
+                    SCORE_NEEDED_DINO_WITHOUT_ROUTE,
+                    "нужный динозавр ждёт вывоза, но дороги нет: "
                             + dinosaur.displayName
                             + " на " + dinosaur.position
             );
@@ -66,47 +78,54 @@ public class DriverAi {
 
         return new AiScore(
                 SCORE_NO_USEFUL_TASK,
-                "нет динозавров в ловушках, водитель не тратит ход на бессмысленные покатушки"
+                "нет доступной добычи для водительского рейса"
         );
     }
 
     /**
-     * Выбирает клетку, к которой водитель должен ехать или с которой должен возвращаться.
+     * Выбирает клетку, к которой водитель должен ехать за добычей.
      *
      * @param player игрок, для которого выбирается цель
-     * @return клетка динозавра в ловушке или null, если цель недоступна
+     * @return клетка динозавра или null, если цель недоступна
      */
     public Point chooseDriverTarget(PlayerState player) {
-        return nearestReachableTrappedDinosaur(player)
+        Optional<Dinosaur> task = nearestReachableTaskDinosaur(player);
+        if (task.isPresent()) {
+            return task.get().position;
+        }
+
+        return nearestReachableBonusDinosaur(player)
                 .map(dinosaur -> dinosaur.position)
                 .orElse(null);
     }
 
-    /**
-     * Ищет ближайшего динозавра в ловушке, к которому готов водительский маршрут.
-     *
-     * @param player игрок, чей водитель оценивается
-     * @return ближайшая доступная цель водительского рейса
-     */
-    private Optional<Dinosaur> nearestReachableTrappedDinosaur(PlayerState player) {
-        return simulation.nearestTrappedNeededDinosaurAwaitingPickup(
+    /** Ищет ближайшую доступную добычу, закрывающую задание. */
+    private Optional<Dinosaur> nearestReachableTaskDinosaur(PlayerState player) {
+        return simulation.nearestAwaitingPickupDinosaur(
                 player,
                 player.driverRanger.position(),
+                true,
                 true
         );
     }
 
-    /**
-     * Ищет ближайшего динозавра в ловушке, до которого ещё нет дорожного доступа.
-     *
-     * @param player игрок, чей водитель оценивается
-     * @return ближайшая заблокированная цель вывоза
-     */
-    private Optional<Dinosaur> nearestBlockedTrappedDinosaur(PlayerState player) {
-        return simulation.nearestTrappedNeededDinosaurAwaitingPickup(
+    /** Ищет ближайшую доступную бонусную добычу. */
+    private Optional<Dinosaur> nearestReachableBonusDinosaur(PlayerState player) {
+        return simulation.nearestAwaitingPickupDinosaur(
                 player,
                 player.driverRanger.position(),
+                true,
                 false
+        ).filter(dinosaur -> !player.needs(dinosaur.species));
+    }
+
+    /** Ищет ближайшую нужную добычу без готового водительского маршрута. */
+    private Optional<Dinosaur> nearestBlockedTaskDinosaur(PlayerState player) {
+        return simulation.nearestAwaitingPickupDinosaur(
+                player,
+                player.driverRanger.position(),
+                false,
+                true
         ).filter(dinosaur -> !simulation.canDriverExtractTrappedDinosaur(player, dinosaur));
     }
 }

@@ -83,18 +83,6 @@ public final class RangerTurnPlanner {
         }
 
         if (bestScore.value() <= MIN_USEFUL_SCORE) {
-            Optional<RangerPlan> fallbackPlan = fallbackPlanForVisibleUncapturedTarget(player, candidates);
-            if (fallbackPlan.isPresent()) {
-                RangerPlan selected = fallbackPlan.get();
-                simulation.log("AI игрок " + player.id
-                        + ": цель видна, поэтому планировщик запрещает плохой skip и выбирает "
-                        + roleToText(selected.role())
-                        + " [" + selected.type() + "]"
-                        + " с оценкой " + selected.scoreValue()
-                        + " — " + selected.reason());
-                return selected;
-            }
-
             RangerPlan bestCandidate = candidates.stream()
                     .max(Comparator.comparingDouble(RangerPlan::scoreValue))
                     .orElse(null);
@@ -121,55 +109,6 @@ public final class RangerTurnPlanner {
                 + " — " + selected.reason());
 
         return selected;
-    }
-
-    /**
-     * Возвращает слабый, но физически осмысленный план вместо пропуска хода.
-     *
-     * Если незавершённый игрок уже видит непойманную цель, skip допустим только
-     * как последний аварийный вариант. Иначе AI снова начинает стоять 200 раундов
-     * рядом с Криптогнатом и философствовать о ценности бездействия.
-     */
-    private Optional<RangerPlan> fallbackPlanForVisibleUncapturedTarget(
-            PlayerState player,
-            List<RangerPlan> candidates
-    ) {
-        if (player.isComplete() || !hasVisibleUncapturedNeededTarget(player)) {
-            return Optional.empty();
-        }
-
-        if (player.activeHunt != null || player.activeTracking != null) {
-            return Optional.empty();
-        }
-
-        return firstCandidate(candidates, SCOUT)
-                .or(() -> firstExecutableEngineerFallback(candidates))
-                .or(() -> firstCandidate(candidates, HUNTER));
-    }
-
-    /** Проверяет, есть ли видимая непойманная цель задания игрока. */
-    private boolean hasVisibleUncapturedNeededTarget(PlayerState player) {
-        return simulation.dinosaurs.stream()
-                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
-                .filter(dinosaur -> !dinosaur.trapped || dinosaur.trappedByPlayerId == player.id)
-                .anyMatch(dinosaur -> player.needs(dinosaur.species));
-    }
-
-    /** Возвращает первый доступный кандидат указанной роли, если он не невозможен. */
-    private Optional<RangerPlan> firstCandidate(List<RangerPlan> candidates, RangerRole role) {
-        return candidates.stream()
-                .filter(candidate -> candidate.role() == role)
-                .filter(candidate -> candidate.scoreValue() > -100.0)
-                .findFirst();
-    }
-
-    /** Возвращает инженерный fallback только если у него есть конкретная цель. */
-    private Optional<RangerPlan> firstExecutableEngineerFallback(List<RangerPlan> candidates) {
-        return candidates.stream()
-                .filter(candidate -> candidate.role() == ENGINEER)
-                .filter(candidate -> candidate.target() != null)
-                .filter(candidate -> candidate.scoreValue() > -100.0)
-                .findFirst();
     }
 
     private RangerPlan planRole(PlayerState player, RangerRole role) {
@@ -280,7 +219,9 @@ public final class RangerTurnPlanner {
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> simulation.map.canPlaceTrap(point))
-                .filter(point -> player.traps.stream().noneMatch(trap -> trap.active && trap.position.equals(point)))
+                .filter(point -> simulation.players.stream()
+                        .flatMap(owner -> owner.traps.stream())
+                        .noneMatch(trap -> trap.active && trap.position.equals(point)))
                 .filter(point -> simulation.dinosaurs.stream()
                         .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
                         .noneMatch(dinosaur -> dinosaur.position.equals(point)))

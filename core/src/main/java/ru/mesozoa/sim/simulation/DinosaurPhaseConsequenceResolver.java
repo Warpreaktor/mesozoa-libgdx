@@ -45,18 +45,16 @@ public final class DinosaurPhaseConsequenceResolver {
             if (dinosaur.captureMethod != CaptureMethod.TRAP) continue;
 
             for (PlayerState player : simulation.players) {
-                if (!player.needs(dinosaur.species)) continue;
-
                 for (Trap trap : player.traps) {
                     if (trap.canCatchDinosaur() && trap.position.equals(dinosaur.position)) {
                         dinosaur.trapped = true;
                         dinosaur.trappedByPlayerId = player.id;
                         trap.trappedDinosaurId = dinosaur.id;
                         simulation.result.trapCaptures++;
-                        simulation.log("В ЛОВУШКЕ: игрок " + player.id + " поймал "
+                        simulation.log("В ЛОВУШКЕ: ловушка игрока " + player.id + " удержала "
                                 + dinosaur.displayName
                                 + " #" + dinosaur.id
-                                + "; нужен водитель для вывоза на базу");
+                                + "; вывезти добычу может любой водитель с дорогой к клетке");
                         break;
                     }
                 }
@@ -100,16 +98,16 @@ public final class DinosaurPhaseConsequenceResolver {
             if (hunterScore > dinosaurScore) {
                 dinosaur.trapped = true;
                 dinosaur.trappedByPlayerId = player.id;
-                dinosaur.captured = false;
                 player.clearCaptureFailures(dinosaur.id);
                 player.activeHunt = null;
                 simulation.result.huntCaptures++;
                 simulation.log("УСЫПЛЁН: охотник игрока " + player.id
                         + " обездвижил " + dinosaur.displayName
                         + " #" + dinosaur.id
-                        + " в засаде; нужен водитель для вывоза на базу; подготовка " + hunterScore
+                        + " в засаде; подготовка " + hunterScore
                         + " против " + dinosaurScore
-                        + " (1d6=" + dinosaurRoll + ")");
+                        + " (1d6=" + dinosaurRoll + ")"
+                        + "; добычу засчитает первый водитель, который вывезет её на базу");
                 return;
             }
 

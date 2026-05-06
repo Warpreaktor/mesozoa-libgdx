@@ -228,9 +228,11 @@ public final class MesozoaHudStage {
     private void addCapturedBlock(Table parent, PlayerState player) {
         parent.add(separator()).height(1).padTop(3).padBottom(7).row();
         parent.add(sectionLabel("Поймано")).padBottom(5).row();
+        parent.add(label("Очки: " + player.capturePoints
+                + ", доставлено: " + player.deliveredDinosaurs, "good")).padBottom(4).row();
 
         if (player.captured.isEmpty()) {
-            parent.add(wrappingLabel("Пока никого. Экспедиция делает вид, что это план.", "muted")).padBottom(4).row();
+            parent.add(wrappingLabel("Цели штаба пока не закрыты. Очки за наглость уже могут быть, цивилизация же.", "muted")).padBottom(4).row();
             return;
         }
 
@@ -366,17 +368,21 @@ public final class MesozoaHudStage {
     }
 
     /**
-     * Проверяет, ждёт ли нужный вид вывоза из ловушки текущего игрока.
+     * Проверяет, ждёт ли нужный вид вывоза на карте.
+     *
+     * В конкурентном режиме HUD показывает «в ловушке» даже для чужой добычи:
+     * если водитель игрока успеет подвести дорогу и вывезти зверя первым, цель
+     * штаба закроется именно ему. Милое семейное воровство, всё как просили.
      *
      * @param simulation текущая симуляция
      * @param player игрок, чей HUD собирается
      * @param species вид из задания
-     * @return true, если вид сидит в ловушке игрока и ещё не доставлен
+     * @return true, если подходящий вид обездвижен и ещё не доставлен
      */
     private boolean isTrappedNeededSpecies(GameSimulation simulation, PlayerState player, Species species) {
         return simulation.dinosaurs.stream()
-                .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
-                .anyMatch(dinosaur -> dinosaur.species == species);
+                .filter(simulation::isAwaitingPickup)
+                .anyMatch(dinosaur -> dinosaur.species == species && player.needs(species));
     }
 
     private boolean isVisibleNeededSpecies(GameSimulation simulation, Species species) {
