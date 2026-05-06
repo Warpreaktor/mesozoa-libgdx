@@ -86,6 +86,7 @@ public final class MesozoaBatchReportRunner {
         gameConfig.players = config.players();
         gameConfig.maxRounds = config.maxRounds();
         gameConfig.headquartersTaskDinosaurCount = config.taskDinosaurCount();
+        gameConfig.capturePointsToWin = config.capturePointsToWin();
 
         GameSimulation simulation = new GameSimulation(gameConfig, new InventoryConfig(), seed);
         GameStats stats = new GameStats(index, seed, config.players(), simulation);
@@ -114,6 +115,7 @@ public final class MesozoaBatchReportRunner {
             int maxRounds,
             long seedStart,
             int taskDinosaurCount,
+            int capturePointsToWin,
             Path outputDir
     ) {
         private static RunnerConfig fromSystemProperties() {
@@ -123,6 +125,7 @@ public final class MesozoaBatchReportRunner {
                     intProperty("meso.maxRounds", 100),
                     longProperty("meso.seedStart", 20260505L),
                     intProperty("meso.taskDinosaurCount", 3),
+                    intProperty("meso.capturePointsToWin", 10),
                     Path.of(System.getProperty("meso.outputDir", "build/reports/mesozoa-balance"))
             );
         }
@@ -700,6 +703,8 @@ public final class MesozoaBatchReportRunner {
                 out.write("seedStart = " + config.seedStart());
                 out.newLine();
                 out.write("taskDinosaurCount = " + config.taskDinosaurCount());
+                out.newLine();
+                out.write("capturePointsToWin = " + config.capturePointsToWin());
                 out.newLine();
                 out.write("elapsedMillis = " + elapsedMillis);
                 out.newLine();

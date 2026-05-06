@@ -16,7 +16,7 @@ dependencies {
  *
  * Usage examples:
  *   ./gradlew :core:runBalanceReport
- *   ./gradlew :core:runBalanceReport -Pgames=100 -Pplayers=2 -PmaxRounds=280 -PseedStart=20260505
+ *   ./gradlew :core:runBalanceReport -Pgames=100 -Pplayers=2 -PmaxRounds=100 -PcapturePointsToWin=10 -PseedStart=20260505
  *   ./gradlew :core:runBalanceReport -PoutputDir=build/reports/my-meso-report
  */
 tasks.register('runBalanceReport', JavaExec) {
@@ -26,10 +26,11 @@ tasks.register('runBalanceReport', JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'ru.mesozoa.sim.report.MesozoaBatchReportRunner'
 
-    systemProperty 'meso.games', project.findProperty('games') ?: '100'
+    systemProperty 'meso.games', project.findProperty('games') ?: '1000'
     systemProperty 'meso.players', project.findProperty('players') ?: '4'
     systemProperty 'meso.maxRounds', project.findProperty('maxRounds') ?: '100'
     systemProperty 'meso.seedStart', project.findProperty('seedStart') ?: '20260505'
     systemProperty 'meso.taskDinosaurCount', project.findProperty('taskDinosaurCount') ?: '3'
+    systemProperty 'meso.capturePointsToWin', project.findProperty('capturePointsToWin') ?: '10'
     systemProperty 'meso.outputDir', project.findProperty('outputDir') ?: "$buildDir/reports/mesozoa-balance"
 }

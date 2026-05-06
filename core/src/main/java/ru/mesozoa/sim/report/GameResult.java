@@ -15,5 +15,7 @@ public final class GameResult {
     public int trapCaptures;
     public int trackingCaptures;
     public int huntCaptures;
+    public int totalCapturePoints;
+    public int topCapturePoints;
     public final Map<Species, Integer> firstSpawnRound = new EnumMap<>(Species.class);
 }

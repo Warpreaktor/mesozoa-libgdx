@@ -86,7 +86,7 @@ public final class DinosaurPhaseConsequenceResolver {
             if (player.activeHunt == null) continue;
             if (player.activeHunt.dinosaurId != dinosaur.id) continue;
             if (!player.activeHunt.baitPosition.equals(dinosaur.position)) continue;
-            if (!player.needs(dinosaur.species)) {
+            if (!simulation.isWorthCapturing(player, dinosaur)) {
                 player.activeHunt = null;
                 continue;
             }

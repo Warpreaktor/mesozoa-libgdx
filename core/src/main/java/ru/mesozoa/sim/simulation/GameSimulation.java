@@ -301,10 +301,11 @@ public final class GameSimulation {
     }
 
     private void finishRound() {
-        if (hasReachedRoundOrExplorationLimit()
-                || (gameConfig.endByCompletedPlayers && hasEnoughCompletedPlayersToEnd())) {
+        Optional<String> endReason = gameEndReason();
+        if (endReason.isPresent()) {
             gameOver = true;
-            log("Партия завершена.");
+            log(endReason.get());
+            logFinalStandings();
             return;
         }
 
@@ -315,28 +316,77 @@ public final class GameSimulation {
     }
 
     private void checkGameOverAfterPartialStep() {
-        if (hasReachedRoundOrExplorationLimit()) {
+        Optional<String> endReason = gameEndReason();
+        if (endReason.isPresent()) {
             gameOver = true;
-            log("Партия завершена: достигнут лимит раундов или открыты все основные тайлы");
-            return;
-        }
-
-        if (gameConfig.endByCompletedPlayers && hasEnoughCompletedPlayersToEnd()) {
-            gameOver = true;
-            log("Партия завершена: выполнено заданий "
-                    + completedPlayersCount() + " / " + players.size()
-                    + ", порог завершения " + completedPlayersToEnd());
+            log(endReason.get());
+            logFinalStandings();
         }
     }
 
     /**
-     * Проверяет лимиты нового очкового режима.
+     * Возвращает причину завершения партии, если выполнено одно из условий конца.
      *
-     * @return true, если партия должна закончиться по раундам или пустому мешку тайлов
+     * В очковом режиме партия может закончиться не только по лимиту раундов или
+     * полному открытию основных тайлов, но и сразу после достижения победного
+     * порога очков. Это делает партию короче и не заставляет лидера досиживать
+     * формальные раунды, пока остальные изображают экспедиционный комитет.
+     *
+     * @return текст причины завершения или пустой результат
      */
-    private boolean hasReachedRoundOrExplorationLimit() {
-        return round >= gameConfig.maxRounds
-                || (gameConfig.endWhenMainTileBagIsEmpty && tileBag.isEmpty());
+    private Optional<String> gameEndReason() {
+        if (gameConfig.endWhenCapturePointsReached && topCapturePoints() >= gameConfig.capturePointsToWin) {
+            PlayerState leader = players.stream()
+                    .max(Comparator.comparingInt(player -> player.capturePoints))
+                    .orElse(null);
+            return Optional.of("Партия завершена: игрок "
+                    + (leader == null ? "?" : leader.id)
+                    + " набрал " + topCapturePoints()
+                    + " очк. из " + gameConfig.capturePointsToWin);
+        }
+
+        if (round >= gameConfig.maxRounds) {
+            return Optional.of("Партия завершена: достигнут лимит раундов " + gameConfig.maxRounds);
+        }
+
+        if (gameConfig.endWhenMainTileBagIsEmpty && tileBag.isEmpty()) {
+            return Optional.of("Партия завершена: открыты все основные тайлы острова");
+        }
+
+        if (gameConfig.endByCompletedPlayers && hasEnoughCompletedPlayersToEnd()) {
+            return Optional.of("Партия завершена: выполнено заданий "
+                    + completedPlayersCount() + " / " + players.size()
+                    + ", порог завершения " + completedPlayersToEnd());
+        }
+
+        return Optional.empty();
+    }
+
+    /** Возвращает максимальное число очков среди игроков. */
+    private int topCapturePoints() {
+        return players.stream()
+                .mapToInt(player -> player.capturePoints)
+                .max()
+                .orElse(0);
+    }
+
+    /**
+     * Пишет итоговую таблицу мест по текущим очкам.
+     */
+    private void logFinalStandings() {
+        ArrayList<PlayerState> standings = new ArrayList<>(players);
+        standings.sort(Comparator
+                .comparingInt((PlayerState player) -> player.capturePoints).reversed()
+                .thenComparingInt((PlayerState player) -> player.deliveredDinosaurs).reversed()
+                .thenComparingInt(player -> player.id));
+
+        int place = 1;
+        for (PlayerState player : standings) {
+            log(place + " место: игрок " + player.id
+                    + " — " + player.capturePoints + " очк., доставлено "
+                    + player.deliveredDinosaurs + " динозавров");
+            place++;
+        }
     }
 
     /**
@@ -642,6 +692,8 @@ public final class GameSimulation {
         result.spawnedDinosaurs = dinosaurs.size();
         result.capturedDinosaurs = (int) dinosaurs.stream().filter(d -> d.captured).count();
         result.completedPlayers = (int) players.stream().filter(PlayerState::isComplete).count();
+        result.totalCapturePoints = players.stream().mapToInt(player -> player.capturePoints).sum();
+        result.topCapturePoints = topCapturePoints();
     }
 
     /**

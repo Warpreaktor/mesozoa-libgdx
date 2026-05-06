@@ -75,13 +75,6 @@ public class EngineerAction {
             return;
         }
 
-        if (hasStaleTrapLayout(player)) {
-            boolean done = recoverStaleTrap(player, plannedTarget, movementPoints);
-            if (done) {
-                return;
-            }
-        }
-
         if (hasActionableTrapTarget(player)) {
             moveEngineerTowardTrapTarget(player, movementPoints);
             int placed = placeAvailableTrapsAroundEngineer(player);
@@ -96,6 +89,13 @@ public class EngineerAction {
 
             simulation.log("Инженер игрока " + player.id + " видел ловушечную цель, но не нашёл легальной клетки для ловушки");
             return;
+        }
+
+        if (hasStaleTrapLayout(player)) {
+            boolean done = recoverStaleTrap(player, plannedTarget, movementPoints);
+            if (done) {
+                return;
+            }
         }
 
         if (tryBuildInfrastructure(player, plannedTarget)) {
@@ -360,17 +360,39 @@ public class EngineerAction {
             return Optional.empty();
         }
 
-        boolean hasUsefulTrap = player.traps.stream()
-                .filter(trap -> trap.active && !trap.hasDinosaur())
-                .anyMatch(trap -> usefulTrapPositions.contains(trap.position));
-        if (hasUsefulTrap) {
+        int usefulTrapCount = usefulTrapCount(player, usefulTrapPositions);
+        int desiredCoverage = desiredUsefulTrapCoverage(usefulTrapPositions);
+        if (usefulTrapCount >= desiredCoverage) {
             return Optional.empty();
         }
 
         Point from = preferredPosition != null ? preferredPosition : player.engineerRanger.position();
         return player.traps.stream()
                 .filter(trap -> trap.active && !trap.hasDinosaur())
+                .filter(trap -> !usefulTrapPositions.contains(trap.position))
                 .min(Comparator.comparingInt(trap -> trap.position.chebyshev(from)));
+    }
+
+    /**
+     * Считает, сколько активных пустых ловушек уже стоит в актуальной зоне охоты.
+     */
+    private int usefulTrapCount(PlayerState player, Set<Point> usefulTrapPositions) {
+        return (int) player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .filter(trap -> usefulTrapPositions.contains(trap.position))
+                .count();
+    }
+
+    /**
+     * Возвращает желаемое покрытие актуальной зоны ловушками.
+     *
+     * Если вокруг S-динозавра есть несколько вероятных выходов, инженер должен
+     * держать там не одну случайную ловушку, а плотную зону из двух-трёх жетонов.
+     * Старые ловушки с другого конца острова не считаются полезными только потому,
+     * что когда-то стояли на похожем биоме.
+     */
+    private int desiredUsefulTrapCoverage(Set<Point> usefulTrapPositions) {
+        return Math.min(simulation.inventoryConfig.maxTrapsPerPlayer, usefulTrapPositions.size());
     }
 
     /**

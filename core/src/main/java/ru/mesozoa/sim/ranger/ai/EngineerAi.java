@@ -150,7 +150,7 @@ public class EngineerAi {
         if (staleTrapTarget.isPresent() && canExecuteTrapRecoveryPlan(player, staleTrapTarget.get())) {
             return Optional.of(new EngineerPlanCandidate(
                     SCORE_BAD_TRAP_LAYOUT,
-                    "лимит ловушек занят, но раскладка не перекрывает актуальную S-цель; инженер переставляет ловушку",
+                    "лимит ловушек занят, а актуальная S-зона покрыта не полностью; инженер возвращает старую ловушку",
                     staleTrapTarget.get()
             ));
         }
@@ -642,17 +642,39 @@ public class EngineerAi {
             return Optional.empty();
         }
 
-        boolean hasUsefulTrap = player.traps.stream()
-                .filter(trap -> trap.active && !trap.hasDinosaur())
-                .anyMatch(trap -> usefulTrapPositions.contains(trap.position));
-        if (hasUsefulTrap) {
+        int usefulTrapCount = usefulTrapCount(player, usefulTrapPositions);
+        int desiredCoverage = desiredUsefulTrapCoverage(usefulTrapPositions);
+        if (usefulTrapCount >= desiredCoverage) {
             return Optional.empty();
         }
 
         return player.traps.stream()
                 .filter(trap -> trap.active && !trap.hasDinosaur())
+                .filter(trap -> !usefulTrapPositions.contains(trap.position))
                 .min(Comparator.comparingInt(trap -> player.engineerRanger.position().chebyshev(trap.position)))
                 .map(trap -> trap.position);
+    }
+
+    /**
+     * Считает, сколько пустых активных ловушек уже стоит в актуальной зоне S-целей.
+     */
+    private int usefulTrapCount(PlayerState player, Set<Point> usefulTrapPositions) {
+        return (int) player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .filter(trap -> usefulTrapPositions.contains(trap.position))
+                .count();
+    }
+
+    /**
+     * Возвращает минимально разумное покрытие зоны ловушками.
+     *
+     * Одна ловушка в зоне не должна останавливать инженера, если две другие
+     * забыты в старом лесу после прошлой поимки. Для S-динозавров устойчивость
+     * важнее идеальной экономии действий: лучше держать два-три вероятных выхода,
+     * чем таскать одну ловушку через весь остров как семейную реликвию.
+     */
+    private int desiredUsefulTrapCoverage(Set<Point> usefulTrapPositions) {
+        return Math.min(simulation.inventoryConfig.maxTrapsPerPlayer, usefulTrapPositions.size());
     }
 
     /**
