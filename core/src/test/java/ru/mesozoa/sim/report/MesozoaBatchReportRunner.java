@@ -346,6 +346,7 @@ public final class MesozoaBatchReportRunner {
         ) {
             return simulation.dinosaurs.stream()
                     .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                    .filter(dinosaur -> !dinosaur.trapped || dinosaur.trappedByPlayerId == player.id)
                     .filter(dinosaur -> player.needs(dinosaur.species))
                     .filter(dinosaur -> method == null || dinosaur.captureMethod == method)
                     .anyMatch(dinosaur -> !player.captured.contains(dinosaur.species));
@@ -403,7 +404,10 @@ public final class MesozoaBatchReportRunner {
                 for (Species species : player.task) {
                     if (player.captured.contains(species)) continue;
                     boolean visible = simulation.dinosaurs.stream()
-                            .anyMatch(dinosaur -> dinosaur.species == species && !dinosaur.removed && !dinosaur.captured);
+                            .anyMatch(dinosaur -> dinosaur.species == species
+                                    && !dinosaur.removed
+                                    && !dinosaur.captured
+                                    && (!dinosaur.trapped || dinosaur.trappedByPlayerId == player.id));
                     if (visible) visibleUncapturedTaskSpeciesAtEnd++;
                     else hiddenUncapturedTaskSpeciesAtEnd++;
                 }
@@ -420,7 +424,8 @@ public final class MesozoaBatchReportRunner {
         private boolean isStillNeededByAnyPlayer(GameSimulation simulation, Dinosaur dinosaur) {
             return simulation.players.stream()
                     .filter(player -> !player.isComplete())
-                    .anyMatch(player -> player.needs(dinosaur.species));
+                    .anyMatch(player -> simulation.isTrappedByPlayer(dinosaur, player)
+                            && player.needs(dinosaur.species));
         }
 
         List<PlayerSpeciesRow> playerSpeciesRows() {

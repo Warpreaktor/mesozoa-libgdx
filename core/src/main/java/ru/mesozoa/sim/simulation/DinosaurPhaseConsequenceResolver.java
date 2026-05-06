@@ -98,15 +98,16 @@ public final class DinosaurPhaseConsequenceResolver {
             int hunterScore = player.activeHunt.preparationScore();
 
             if (hunterScore > dinosaurScore) {
-                dinosaur.captured = true;
-                player.captured.add(dinosaur.species);
+                dinosaur.trapped = true;
+                dinosaur.trappedByPlayerId = player.id;
+                dinosaur.captured = false;
                 player.clearCaptureFailures(dinosaur.id);
                 player.activeHunt = null;
                 simulation.result.huntCaptures++;
-                simulation.log("ПОЙМАН: охотник игрока " + player.id
-                        + " усыпил " + dinosaur.displayName
+                simulation.log("УСЫПЛЁН: охотник игрока " + player.id
+                        + " обездвижил " + dinosaur.displayName
                         + " #" + dinosaur.id
-                        + " в засаде; подготовка " + hunterScore
+                        + " в засаде; нужен водитель для вывоза на базу; подготовка " + hunterScore
                         + " против " + dinosaurScore
                         + " (1d6=" + dinosaurRoll + ")");
                 return;

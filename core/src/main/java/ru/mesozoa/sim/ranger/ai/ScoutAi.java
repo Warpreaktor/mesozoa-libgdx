@@ -4,6 +4,7 @@ import ru.mesozoa.sim.model.AiScore;
 import ru.mesozoa.sim.model.CaptureMethod;
 import ru.mesozoa.sim.dinosaur.Dinosaur;
 import ru.mesozoa.sim.model.PlayerState;
+import ru.mesozoa.sim.model.Point;
 import ru.mesozoa.sim.model.Species;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
@@ -16,8 +17,10 @@ import java.util.stream.Collectors;
 /**
  * AI-оценка полезности разведчика для очередной активации игрока.
  *
- * Разведчик оценивает только пользу исследования новых тайлов. Он не знает,
- * как работают ловушки инженера, охота охотника или маршруты водителя.
+ * Разведчик оценивает пользу исследования новых тайлов. Он не исполняет
+ * ловушки или охоту, но понимает, когда уже найденной цели не хватает
+ * открытого окружения: иначе AI видит Криптогната в тупике и гордо объявляет,
+ * что разведка закончена. Это не стратегия, это музейная табличка.
  */
 public class ScoutAi {
 
@@ -78,27 +81,27 @@ public class ScoutAi {
             );
         }
 
+        Optional<Dinosaur> huntTargetNeedingBiomes = hunterAi.bestVisibleHuntTargetNeedingScoutSupport(player);
+        if (huntTargetNeedingBiomes.isPresent()) {
+            Dinosaur dinosaur = huntTargetNeedingBiomes.get();
+            return new AiScore(
+                    SCORE_HUNT_BIOME_SUPPORT,
+                    "для охоты на " + dinosaur.displayName
+                            + " нужны открытые биомы вокруг хищника"
+            );
+        }
+
+        Optional<Dinosaur> trapTargetNeedingBiomes = bestVisibleTrapTargetNeedingScoutSupport(player);
+        if (trapTargetNeedingBiomes.isPresent()) {
+            Dinosaur dinosaur = trapTargetNeedingBiomes.get();
+            return new AiScore(
+                    SCORE_TRAP_BIOME_SUPPORT,
+                    "для ловушек на " + dinosaur.displayName
+                            + " нужно раскрыть клетки вокруг S-цели"
+            );
+        }
+
         if (areAllRemainingNeededSpeciesVisible(missingNeededSpecies)) {
-            Optional<Dinosaur> huntTargetNeedingBiomes = hunterAi.bestVisibleHuntTargetNeedingScoutSupport(player);
-            if (huntTargetNeedingBiomes.isPresent()) {
-                Dinosaur dinosaur = huntTargetNeedingBiomes.get();
-                return new AiScore(
-                        SCORE_HUNT_BIOME_SUPPORT,
-                        "все цели уже видны, но для охоты на " + dinosaur.displayName
-                                + " нужны открытые биомы вокруг хищника"
-                );
-            }
-
-            Optional<Dinosaur> trapTargetNeedingBiomes = bestVisibleTrapTargetNeedingScoutSupport(player);
-            if (trapTargetNeedingBiomes.isPresent()) {
-                Dinosaur dinosaur = trapTargetNeedingBiomes.get();
-                return new AiScore(
-                        SCORE_TRAP_BIOME_SUPPORT,
-                        "все цели уже видны, но для ловушек на " + dinosaur.displayName
-                                + " нужно раскрыть биомы вокруг S-цели"
-                );
-            }
-
             return new AiScore(
                     SCORE_ALL_TARGETS_VISIBLE,
                     "все оставшиеся цели уже обнаружены: "
@@ -141,9 +144,9 @@ public class ScoutAi {
      */
     public Optional<Dinosaur> bestVisibleTrapTargetNeedingScoutSupport(PlayerState player) {
         return visibleNeededTrapTargets(player)
-                .filter(dinosaur -> trapTargetNeedsScoutSupport(dinosaur))
+                .filter(dinosaur -> trapTargetNeedsScoutSupport(player, dinosaur))
                 .max(Comparator
-                        .comparingInt((Dinosaur dinosaur) -> trapSupportUrgency(dinosaur))
+                        .comparingInt((Dinosaur dinosaur) -> trapSupportUrgency(player, dinosaur))
                         .thenComparingInt(dinosaur -> -dinosaur.position.chebyshev(player.scoutRanger.position())));
     }
 
@@ -153,11 +156,18 @@ public class ScoutAi {
      * @param dinosaur проверяемая S-цель
      * @return true, если вокруг цели стоит продолжать разведку
      */
-    private boolean trapTargetNeedsScoutSupport(Dinosaur dinosaur) {
+    private boolean trapTargetNeedsScoutSupport(PlayerState player, Dinosaur dinosaur) {
         boolean noPredictableBioTrail = simulation.dinosaurAi.predictDinosaurBioTrailDestination(dinosaur).isEmpty();
-        boolean sparseLocalMap = openedNeighborsAround(dinosaur.position) < 6;
-        boolean weakTrapCoverage = simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).size() < 2;
-        return noPredictableBioTrail || sparseLocalMap || weakTrapCoverage;
+        boolean hasExplorableFrontier = hasExplorableFrontierAround(dinosaur.position);
+        boolean sparseLocalMap = openedNeighborsAround(dinosaur.position) < 7;
+        java.util.List<Point> trapZone = simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur);
+        boolean weakTrapZone = trapZone.size() < 3;
+        boolean noFreeTrapCell = trapZone.stream().noneMatch(point -> canUseTrapPoint(player, point));
+        int desiredCoverage = desiredTrapCoverage(trapZone);
+        boolean weakCurrentCoverage = desiredCoverage > 0 && activeTrapCoverage(player, trapZone) < Math.min(2, desiredCoverage);
+
+        return hasExplorableFrontier
+                && (noPredictableBioTrail || sparseLocalMap || weakTrapZone || noFreeTrapCell || weakCurrentCoverage);
     }
 
     /**
@@ -166,11 +176,13 @@ public class ScoutAi {
      * @param dinosaur динозавр, вокруг которого оценивается карта
      * @return чем больше число, тем сильнее разведчик должен помогать
      */
-    private int trapSupportUrgency(Dinosaur dinosaur) {
+    private int trapSupportUrgency(PlayerState player, Dinosaur dinosaur) {
         int urgency = 0;
         if (simulation.dinosaurAi.predictDinosaurBioTrailDestination(dinosaur).isEmpty()) urgency += 100;
         urgency += Math.max(0, 8 - openedNeighborsAround(dinosaur.position)) * 10;
-        urgency += Math.max(0, 3 - simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).size()) * 15;
+        java.util.List<Point> trapZone = simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur);
+        urgency += Math.max(0, 3 - trapZone.size()) * 15;
+        urgency += Math.max(0, desiredTrapCoverage(trapZone) - activeTrapCoverage(player, trapZone)) * 12;
         return urgency;
     }
 
@@ -183,14 +195,42 @@ public class ScoutAi {
     }
 
     /** Считает количество открытых клеток вокруг указанной позиции. */
-    private int openedNeighborsAround(ru.mesozoa.sim.model.Point point) {
+    private int openedNeighborsAround(Point point) {
         int count = 0;
-        for (ru.mesozoa.sim.model.Point neighbor : point.neighbors8()) {
+        for (Point neighbor : point.neighbors8()) {
             if (simulation.map.isPlaced(neighbor)) {
                 count++;
             }
         }
         return count;
+    }
+
+    /** Проверяет, можно ли разведкой открыть новые клетки рядом с целью. */
+    private boolean hasExplorableFrontierAround(Point point) {
+        return point != null && point.neighbors8().stream().anyMatch(simulation.map::canPlace);
+    }
+
+    /** Считает активные ловушки игрока в текущей зоне вероятного движения цели. */
+    private int activeTrapCoverage(PlayerState player, java.util.List<Point> trapZone) {
+        return (int) player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .filter(trap -> trapZone.contains(trap.position))
+                .count();
+    }
+
+    /** Возвращает желаемое покрытие ловушками для видимой S-цели. */
+    private int desiredTrapCoverage(java.util.List<Point> trapZone) {
+        if (trapZone.isEmpty()) return 0;
+        return Math.min(3, trapZone.size());
+    }
+
+    /** Проверяет, есть ли в зоне клетка, куда игрок ещё может поставить ловушку. */
+    private boolean canUseTrapPoint(PlayerState player, Point point) {
+        return simulation.map.canPlaceTrap(point)
+                && player.traps.stream().noneMatch(trap -> trap.active && trap.position.equals(point))
+                && simulation.dinosaurs.stream()
+                .filter(dinosaur -> !dinosaur.captured && !dinosaur.removed)
+                .noneMatch(dinosaur -> dinosaur.position.equals(point));
     }
 
     /**
@@ -335,6 +375,7 @@ public class ScoutAi {
     ) {
         return !dinosaur.captured
                 && !dinosaur.removed
+                && (!dinosaur.trapped || dinosaur.trappedByPlayerId == player.id)
                 && player.needs(dinosaur.species)
                 && remainingNeededSpecies.contains(dinosaur.species);
     }

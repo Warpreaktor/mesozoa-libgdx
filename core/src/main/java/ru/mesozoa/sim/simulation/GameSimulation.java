@@ -416,8 +416,19 @@ public final class GameSimulation {
         log("ДОСТАВЛЕН: водитель игрока " + player.id
                 + " вывез " + dinosaur.displayName
                 + " #" + dinosaur.id + " на базу"
-                + (trap.isPresent() ? " из ловушки" : " по жетону следа"));
+                + deliverySourceText(dinosaur, trap.isPresent()));
         return true;
+    }
+
+    /** Возвращает текст источника обездвиживания для лога доставки. */
+    private String deliverySourceText(Dinosaur dinosaur, boolean fromTrapToken) {
+        if (fromTrapToken) {
+            return " из ловушки";
+        }
+        if (dinosaur.captureMethod == CaptureMethod.HUNT) {
+            return " после охоты";
+        }
+        return " по жетону следа";
     }
 
     /**

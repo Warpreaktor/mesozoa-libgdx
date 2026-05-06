@@ -274,15 +274,6 @@ public final class DinosaurAi {
             result.add(neighbor);
         }
 
-        Biome nextBiome = dinosaur.nextBioTrailBiome(currentTile.biome);
-        simulation.map.entries().stream()
-                .filter(entry -> entry.getValue().biome == nextBiome)
-                .map(entry -> entry.getKey())
-                .filter(point -> !point.equals(dinosaur.position))
-                .filter(simulation.map::canPlaceTrap)
-                .sorted(Comparator.comparingInt(point -> dinosaur.position.chebyshev(point)))
-                .forEach(result::add);
-
         return new ArrayList<>(result);
     }
 

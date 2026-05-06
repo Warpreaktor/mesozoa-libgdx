@@ -37,6 +37,12 @@ public class EngineerAi {
     /** Вес видимой S-цели, когда инженер ещё должен подойти или подготовить ловушки. */
     private static final double SCORE_VISIBLE_TRAP_TARGET = 90.0;
 
+    /** Вес строительства подхода к S-цели, если ловушечная зона пока недоступна инженеру. */
+    private static final double SCORE_TRAP_TARGET_INFRASTRUCTURE = 72.0;
+
+    /** Минимальный желаемый размер ловушечной зоны вокруг S-цели. */
+    private static final int DESIRED_TRAP_ZONE_COVERAGE = 3;
+
     /** Вес ситуации, когда текущие ловушки уже заняли весь лимит и не помогают. */
     private static final double SCORE_BAD_TRAP_LAYOUT = 78.0;
 
@@ -126,7 +132,7 @@ public class EngineerAi {
                 && trapAmbushPoint.isPresent()
                 && activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer
                 && canExecuteTrapPlan(player, trapAmbushPoint.get())) {
-            Dinosaur dinosaur = trapTarget.get();
+            Dinosaur dinosaur = trapTargetForTrapPoint(player, trapAmbushPoint.get()).orElse(trapTarget.get());
             Point trapPoint = trapAmbushPoint.get();
 
             if (isAdjacentOrSame(player.engineerRanger.position(), trapPoint)) {
@@ -147,6 +153,20 @@ public class EngineerAi {
                             + ", расстояние до клетки засады: " + distance
                             + ", ловушек: " + activeTraps + "/" + simulation.inventoryConfig.maxTrapsPerPlayer,
                     trapPoint
+            ));
+        }
+
+        if (trapTarget.isPresent()
+                && trapAmbushPoint.isPresent()
+                && activeTrapCount(player) < simulation.inventoryConfig.maxTrapsPerPlayer
+                && !canExecuteTrapPlan(player, trapAmbushPoint.get())
+                && canExecuteInfrastructurePlan(player, trapAmbushPoint.get())) {
+            Dinosaur dinosaur = trapTargetForTrapPoint(player, trapAmbushPoint.get()).orElse(trapTarget.get());
+            return Optional.of(new EngineerPlanCandidate(
+                    SCORE_TRAP_TARGET_INFRASTRUCTURE,
+                    "S-цель видна, но инженер не может дойти до зоны ловушек; строит подход к "
+                            + dinosaur.displayName,
+                    trapAmbushPoint.get()
             ));
         }
 
@@ -459,8 +479,6 @@ public class EngineerAi {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
-                .filter(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
-                        .anyMatch(point -> isUsableTrapPoint(player, point)))
                 .min(Comparator.comparingInt(d -> d.position.chebyshev(player.engineerRanger.position())));
     }
 
@@ -628,23 +646,22 @@ public class EngineerAi {
             return Optional.empty();
         }
 
-        Set<Point> usefulTrapPositions = usefulTrapPositions(player);
-        if (usefulTrapPositions.isEmpty()) {
+        Optional<Dinosaur> target = trapTargetNeedingMoreCoverage(player);
+        if (target.isEmpty()) {
             return Optional.empty();
         }
 
-        boolean hasUsefulTrap = player.traps.stream()
-                .filter(trap -> trap.active && !trap.hasDinosaur())
-                .anyMatch(trap -> usefulTrapPositions.contains(trap.position));
-        if (hasUsefulTrap) {
+        List<Point> targetZone = stableTrapZoneFor(target.get());
+        if (targetZone.stream().noneMatch(point -> isUsableTrapPoint(player, point))) {
             return Optional.empty();
         }
 
         return player.traps.stream()
                 .filter(trap -> trap.active && !trap.hasDinosaur())
                 .map(trap -> trap.position)
+                .filter(point -> !targetZone.contains(point))
                 .filter(point -> canExecuteTrapRecoveryPlan(player, point))
-                .min(Comparator.comparingInt(point -> player.engineerRanger.position().chebyshev(point)));
+                .max(Comparator.comparingInt(point -> point.chebyshev(target.get().position)));
     }
 
     /**
@@ -661,7 +678,7 @@ public class EngineerAi {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
-                .forEach(dinosaur -> result.addAll(highConfidenceTrapPositions(dinosaur)));
+                .forEach(dinosaur -> result.addAll(stableTrapZoneFor(dinosaur)));
 
         return result;
     }
@@ -718,9 +735,66 @@ public class EngineerAi {
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
                 .filter(d -> player.needs(d.species))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
-                .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
+                .filter(dinosaur -> trapCoverage(player, dinosaur) < desiredTrapCoverage(dinosaur))
+                .flatMap(dinosaur -> stableTrapZoneFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))
                 .min(Comparator.comparingInt(point -> from == null ? 0 : point.chebyshev(from)));
+    }
+
+    /** Возвращает S-цель, ради которой выбрана конкретная клетка ловушки. */
+    private Optional<Dinosaur> trapTargetForTrapPoint(PlayerState player, Point point) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
+                .filter(dinosaur -> stableTrapZoneFor(dinosaur).contains(point))
+                .min(Comparator.comparingInt(dinosaur -> dinosaur.position.chebyshev(player.engineerRanger.position())));
+    }
+
+    /**
+     * Выбирает видимую S-цель, у которой ловушечная зона покрыта недостаточно.
+     * Это удерживает инженера от карусели: сначала набрать 2-3 полезные ловушки
+     * вокруг текущей цели, и только потом считать раскладку нормальной.
+     */
+    private Optional<Dinosaur> trapTargetNeedingMoreCoverage(PlayerState player) {
+        return simulation.dinosaurs.stream()
+                .filter(d -> !d.captured && !d.trapped && !d.removed)
+                .filter(d -> player.needs(d.species))
+                .filter(d -> d.captureMethod == CaptureMethod.TRAP)
+                .filter(dinosaur -> trapCoverage(player, dinosaur) < desiredTrapCoverage(dinosaur))
+                .min(Comparator
+                        .comparingInt((Dinosaur dinosaur) -> trapCoverage(player, dinosaur))
+                        .thenComparingInt(dinosaur -> dinosaur.position.chebyshev(player.engineerRanger.position())));
+    }
+
+    /**
+     * Возвращает стабильную ловушечную зону вокруг S-динозавра.
+     *
+     * Зона намеренно шире трёх клеток: три ловушки остаются лимитом покрытия,
+     * но уже выставленная ловушка рядом с текущим маршрутом не должна считаться
+     * устаревшей только потому, что зверь сделал один случайный шаг и порядок
+     * кандидатов слегка поменялся.
+     */
+    private List<Point> stableTrapZoneFor(Dinosaur dinosaur) {
+        return simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
+                .filter(point -> !point.equals(dinosaur.position))
+                .toList();
+    }
+
+    /** Считает, сколько активных пустых ловушек уже перекрывает зону цели. */
+    private int trapCoverage(PlayerState player, Dinosaur dinosaur) {
+        List<Point> zone = stableTrapZoneFor(dinosaur);
+        return (int) player.traps.stream()
+                .filter(trap -> trap.active && !trap.hasDinosaur())
+                .filter(trap -> zone.contains(trap.position))
+                .count();
+    }
+
+    /** Желаемое число ловушек вокруг S-цели. */
+    private int desiredTrapCoverage(Dinosaur dinosaur) {
+        int zoneSize = stableTrapZoneFor(dinosaur).size();
+        if (zoneSize == 0) return 0;
+        return Math.min(Math.min(DESIRED_TRAP_ZONE_COVERAGE, zoneSize), simulation.inventoryConfig.maxTrapsPerPlayer);
     }
 
     /**
