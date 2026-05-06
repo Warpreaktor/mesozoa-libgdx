@@ -7,6 +7,7 @@ import ru.mesozoa.sim.ranger.Ranger;
 import ru.mesozoa.sim.ranger.Scout;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -18,8 +19,31 @@ public final class PlayerState {
     public final int id;
     public final RangerColor color;
 
+    /**
+     * Уникальные виды, которые есть у игрока на картах задания.
+     *
+     * Полный список карт хранится в {@link #taskCards}: там могут быть дубли.
+     * Этот набор оставлен как компактная совместимая проекция для старого UI и AI.
+     */
     public final Set<Species> task = EnumSet.noneOf(Species.class);
+
+    /** Виды, по которым игрок уже закрыл все карты задания. */
     public final Set<Species> captured = EnumSet.noneOf(Species.class);
+
+    /**
+     * Фактические карты задания на руке игрока.
+     *
+     * В новом очковом режиме игрок тянет три карты из общей колоды: один и тот же
+     * вид может встретиться несколько раз. Каждая карта даёт x2 очков за одну
+     * доставку соответствующего вида.
+     */
+    public final List<Species> taskCards = new ArrayList<>();
+
+    /** Количество карт задания по каждому виду. */
+    private final Map<Species, Integer> taskCardCounts = new EnumMap<>(Species.class);
+
+    /** Сколько карт задания по виду уже закрыто доставкой динозавра. */
+    private final Map<Species, Integer> deliveredTaskCardCounts = new EnumMap<>(Species.class);
 
     /** Фигурка разведчика игрока. */
     public final Scout scoutRanger;
@@ -89,8 +113,8 @@ public final class PlayerState {
     /**
      * Сколько отдельных фишек динозавров этот игрок доставил на базу.
      *
-     * Набор {@link #captured} хранит виды, закрывающие задание штаба, а не
-     * количество всех вывезенных зверей, поэтому счётчику нужно отдельное поле.
+     * Набор {@link #captured} хранит виды, полностью закрывающие карты задания,
+     * а не количество всех вывезенных зверей, поэтому счётчику нужно отдельное поле.
      */
     public int deliveredDinosaurs = 0;
 
@@ -109,12 +133,79 @@ public final class PlayerState {
         this.hunterRanger = new Hunter(base);
     }
 
-    public boolean isComplete() {
-        return captured.containsAll(task);
+    /**
+     * Добавляет игроку карту задания.
+     *
+     * Дубли одного вида не схлопываются: две карты Галлимимона означают две
+     * отдельные бонусные доставки Галлимимона с x2 очками.
+     *
+     * @param species вид на карте задания
+     */
+    public void addTaskCard(Species species) {
+        if (species == null) return;
+        taskCards.add(species);
+        task.add(species);
+        taskCardCounts.merge(species, 1, Integer::sum);
     }
 
+    /** Добавляет сразу несколько карт задания. */
+    public void addTaskCards(List<Species> speciesCards) {
+        if (speciesCards == null) return;
+        for (Species species : speciesCards) {
+            addTaskCard(species);
+        }
+    }
+
+    /** Возвращает число карт задания указанного вида. */
+    public int taskCardCount(Species species) {
+        return taskCardCounts.getOrDefault(species, 0);
+    }
+
+    /** Возвращает число уже закрытых карт задания указанного вида. */
+    public int deliveredTaskCardCount(Species species) {
+        return deliveredTaskCardCounts.getOrDefault(species, 0);
+    }
+
+    /** Возвращает число незакрытых карт задания указанного вида. */
+    public int remainingTaskCardCount(Species species) {
+        return Math.max(0, taskCardCount(species) - deliveredTaskCardCount(species));
+    }
+
+    /**
+     * Проверяет, закрыты ли все карты задания на руке.
+     *
+     * В очковом режиме это больше не останавливает игрока: он всё равно может
+     * ловить бонусных динозавров до конца партии. Но этот флаг нужен отчёту и HUD.
+     */
+    public boolean isComplete() {
+        if (taskCards.isEmpty()) return true;
+        for (Map.Entry<Species, Integer> entry : taskCardCounts.entrySet()) {
+            if (deliveredTaskCardCount(entry.getKey()) < entry.getValue()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Проверяет, остались ли у игрока незакрытые карты задания указанного вида.
+     */
     public boolean needs(Species species) {
-        return task.contains(species) && !captured.contains(species);
+        return remainingTaskCardCount(species) > 0;
+    }
+
+    /** Проверяет, даст ли следующая доставка вида бонус x2 по карте задания. */
+    public boolean hasTaskBonusAvailable(Species species) {
+        return needs(species);
+    }
+
+    /**
+     * Возвращает множитель очков за следующую доставку вида.
+     *
+     * Любой динозавр даёт базовые очки, но вид с незакрытой картой задания даёт x2.
+     */
+    public int scoreMultiplierFor(Species species) {
+        return hasTaskBonusAvailable(species) ? 2 : 1;
     }
 
     /**
@@ -225,16 +316,23 @@ public final class PlayerState {
     }
 
     /**
-     * Начисляет игроку очки и, если вид был в задании, закрывает цель штаба.
+     * Начисляет игроку очки и закрывает одну карту задания, если она подходит.
+     *
+     * Если у игрока есть незакрытая карта этого вида, доставка закрывает ровно
+     * одну копию. Две одинаковые карты требуют двух доставок, каждая с бонусом x2.
      *
      * @param species доставленный вид
-     * @param points очки за размер/тип поимки
+     * @param points очки за доставку с уже учтённым множителем
      */
     public void registerDeliveredDinosaur(Species species, int points) {
         deliveredDinosaurs++;
         capturePoints += Math.max(0, points);
-        if (task.contains(species)) {
-            captured.add(species);
+
+        if (needs(species)) {
+            deliveredTaskCardCounts.merge(species, 1, Integer::sum);
+            if (deliveredTaskCardCount(species) >= taskCardCount(species)) {
+                captured.add(species);
+            }
         }
     }
 

@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -112,12 +113,13 @@ public final class GameSimulation {
         rangerActionExecutor = new RangerActionExecutor(this);
         headquartersTaskGenerator = new HeadquartersTaskGenerator(gameConfig);
 
+        List<Species> headquartersTaskDeck = headquartersTaskGenerator.createTaskDeck(random);
         for (int i = 0; i < gameConfig.players; i++) {
             int playerId = i + 1;
             PlayerState player = new PlayerState(playerId, RangerColor.forPlayerId(playerId), map.base);
-            assignTask(player);
+            assignTask(player, headquartersTaskDeck);
             players.add(player);
-            log("Игрок " + player.id + " (" + player.color.assetSuffix + ") задание: " + taskToText(player));
+            log("Игрок " + player.id + " (" + player.color.assetSuffix + ") карты штаба: " + taskToText(player));
         }
 
         updateResult();
@@ -144,6 +146,11 @@ public final class GameSimulation {
                     checkGameOverAfterPartialStep();
                     return;
                 }
+                executeMandatoryScoutAction(player);
+                activePlayerUsedRoles.add(RangerRole.SCOUT);
+                updateResult();
+                checkGameOverAfterPartialStep();
+                if (gameOver) return;
             }
 
             RangerPlan plan = rangerTurnPlanner.chooseNextPlanForTurn(player, activePlayerUsedRoles);
@@ -244,6 +251,27 @@ public final class GameSimulation {
         return "динозавры";
     }
 
+    /**
+     * Выполняет обязательную бесплатную разведку в начале хода игрока.
+     *
+     * Разведчик больше не конкурирует за две обычные активации. Каждый игрок
+     * сначала открывает тайл, а уже затем выбирает двух специалистов из
+     * инженера, охотника и водителя. Да, вертолёт наконец-то перестал спорить
+     * с инженером за рабочее время, цивилизация шевельнулась.
+     *
+     * @param player игрок, чей разведчик действует
+     */
+    private void executeMandatoryScoutAction(PlayerState player) {
+        RangerPlan scoutPlan = new RangerPlan(
+                player.scoutRanger,
+                ru.mesozoa.sim.ranger.RangerPlanType.SCOUT_EXPLORE,
+                new AiScore(100.0, "обязательная разведка в начале хода"),
+                null
+        );
+        log("Обязательная разведка игрока " + player.id);
+        rangerActionExecutor.executePlan(player, scoutPlan);
+    }
+
     private void startRoundIfNeeded() {
         if (roundStarted) return;
 
@@ -256,11 +284,6 @@ public final class GameSimulation {
     }
 
     private boolean prepareCurrentPlayerTurn(PlayerState player) {
-        if (player.isComplete()) {
-            log("Игрок " + player.id + " уже выполнил задание.");
-            return false;
-        }
-
         if (player.turnsSkipped > 0) {
             player.turnsSkipped--;
             log("Игрок " + player.id + " пропускает ход.");
@@ -278,7 +301,8 @@ public final class GameSimulation {
     }
 
     private void finishRound() {
-        if (round >= gameConfig.maxRounds || hasEnoughCompletedPlayersToEnd()) {
+        if (hasReachedRoundOrExplorationLimit()
+                || (gameConfig.endByCompletedPlayers && hasEnoughCompletedPlayersToEnd())) {
             gameOver = true;
             log("Партия завершена.");
             return;
@@ -291,12 +315,28 @@ public final class GameSimulation {
     }
 
     private void checkGameOverAfterPartialStep() {
-        if (hasEnoughCompletedPlayersToEnd()) {
+        if (hasReachedRoundOrExplorationLimit()) {
+            gameOver = true;
+            log("Партия завершена: достигнут лимит раундов или открыты все основные тайлы");
+            return;
+        }
+
+        if (gameConfig.endByCompletedPlayers && hasEnoughCompletedPlayersToEnd()) {
             gameOver = true;
             log("Партия завершена: выполнено заданий "
                     + completedPlayersCount() + " / " + players.size()
                     + ", порог завершения " + completedPlayersToEnd());
         }
+    }
+
+    /**
+     * Проверяет лимиты нового очкового режима.
+     *
+     * @return true, если партия должна закончиться по раундам или пустому мешку тайлов
+     */
+    private boolean hasReachedRoundOrExplorationLimit() {
+        return round >= gameConfig.maxRounds
+                || (gameConfig.endWhenMainTileBagIsEmpty && tileBag.isEmpty());
     }
 
     /**
@@ -329,17 +369,20 @@ public final class GameSimulation {
     }
 
     /**
-     * Выдаёт игроку случайное задание штаба по текущему игровому конфигу.
+     * Выдаёт игроку карты задания штаба из общей колоды партии.
      *
-     * @param player игрок, которому назначается набор целей для отлова
+     * @param player игрок, которому назначаются карты
+     * @param taskDeck общая перемешанная колода задания
      */
-    private void assignTask(PlayerState player) {
-        player.task.addAll(headquartersTaskGenerator.createTask(random));
+    private void assignTask(PlayerState player, List<Species> taskDeck) {
+        player.addTaskCards(headquartersTaskGenerator.drawTaskCards(taskDeck));
     }
 
     private String taskToText(PlayerState player) {
         ArrayList<String> names = new ArrayList<>();
-        for (Species species : player.task) names.add(species.displayName);
+        for (Species species : player.taskCards) {
+            names.add(species.displayName + " x2");
+        }
         return String.join(", ", names);
     }
 
@@ -363,6 +406,37 @@ public final class GameSimulation {
         return player != null
                 && player.activeHunt != null
                 && player.activeHunt.species == species;
+    }
+
+    /**
+     * Возвращает ожидаемую ценность доставки динозавра для игрока.
+     *
+     * Базовые очки зависят от метода поимки, а незакрытая карта задания этого
+     * вида удваивает очки за следующую доставку.
+     *
+     * @param player игрок, для которого считается ценность
+     * @param dinosaur потенциальная добыча
+     * @return сколько очков принесёт доставка прямо сейчас
+     */
+    public int capturePointsForPlayer(PlayerState player, Dinosaur dinosaur) {
+        if (player == null || dinosaur == null) return 0;
+        return capturePointsFor(dinosaur) * player.scoreMultiplierFor(dinosaur.species);
+    }
+
+    /**
+     * Проверяет, стоит ли AI активно ловить динозавра в очковом режиме.
+     *
+     * Сейчас любой вид приносит очки, поэтому ответ почти всегда true. Метод
+     * нужен, чтобы стратегии не были размазаны по коду: если завтра появятся
+     * штрафы за лишних динозавров или запретные виды, править придётся здесь,
+     * а не в каждом AI-классе, как любят делать люди перед катастрофой.
+     */
+    public boolean isWorthCapturing(PlayerState player, Dinosaur dinosaur) {
+        return dinosaur != null
+                && !dinosaur.captured
+                && !dinosaur.trapped
+                && !dinosaur.removed
+                && capturePointsForPlayer(player, dinosaur) > 0;
     }
 
     /**
@@ -475,7 +549,9 @@ public final class GameSimulation {
 
         int originalHolderId = dinosaur.trappedByPlayerId;
         Optional<Trap> trap = trapHoldingDinosaur(dinosaur);
-        int points = capturePointsFor(dinosaur);
+        int basePoints = capturePointsFor(dinosaur);
+        int multiplier = player.scoreMultiplierFor(dinosaur.species);
+        int points = basePoints * multiplier;
         boolean taskCapture = player.needs(dinosaur.species);
 
         dinosaur.trapped = false;
@@ -498,7 +574,7 @@ public final class GameSimulation {
         log("ДОСТАВЛЕН: водитель игрока " + player.id
                 + " вывез " + dinosaur.displayName
                 + " #" + dinosaur.id + " на базу"
-                + " (+" + points + " очк.)"
+                + " (+" + points + " очк." + (multiplier > 1 ? ", x" + multiplier + " за карту штаба" : "") + ")"
                 + taskText
                 + theftText
                 + (trap.isPresent() ? " из ловушки" : " по маркеру поимки"));
@@ -579,5 +655,8 @@ public final class GameSimulation {
     public void log(String message) {
         log.addFirst(message);
         while (log.size() > 500) log.removeLast();
+        if (logListener != null) {
+            logListener.accept(message);
+        }
     }
 }

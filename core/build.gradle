@@ -28,7 +28,7 @@ tasks.register('runBalanceReport', JavaExec) {
 
     systemProperty 'meso.games', project.findProperty('games') ?: '100'
     systemProperty 'meso.players', project.findProperty('players') ?: '4'
-    systemProperty 'meso.maxRounds', project.findProperty('maxRounds') ?: '280'
+    systemProperty 'meso.maxRounds', project.findProperty('maxRounds') ?: '100'
     systemProperty 'meso.seedStart', project.findProperty('seedStart') ?: '20260505'
     systemProperty 'meso.taskDinosaurCount', project.findProperty('taskDinosaurCount') ?: '3'
     systemProperty 'meso.outputDir', project.findProperty('outputDir') ?: "$buildDir/reports/mesozoa-balance"

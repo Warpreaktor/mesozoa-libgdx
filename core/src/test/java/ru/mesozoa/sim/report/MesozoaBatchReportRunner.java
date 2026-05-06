@@ -120,7 +120,7 @@ public final class MesozoaBatchReportRunner {
             return new RunnerConfig(
                     intProperty("meso.games", 100),
                     intProperty("meso.players", 2),
-                    intProperty("meso.maxRounds", 280),
+                    intProperty("meso.maxRounds", 100),
                     longProperty("meso.seedStart", 20260505L),
                     intProperty("meso.taskDinosaurCount", 3),
                     Path.of(System.getProperty("meso.outputDir", "build/reports/mesozoa-balance"))
@@ -150,13 +150,15 @@ public final class MesozoaBatchReportRunner {
         final EnumMap<CaptureMethod, Integer> capturedByMethod = new EnumMap<>(CaptureMethod.class);
         final EnumMap<Species, SpeciesStats> speciesStats = new EnumMap<>(Species.class);
         final ArrayList<RoundLog> interestingLogs = new ArrayList<>();
-        final Map<Integer, Set<Species>> observedCapturedByPlayer = new HashMap<>();
+        final Map<Integer, EnumMap<Species, Integer>> observedTaskDeliveriesByPlayer = new HashMap<>();
 
         int rounds;
         int openedTiles;
         int spawnedDinosaurs;
         int capturedDinosaurs;
         int completedPlayers;
+        int totalCapturePoints;
+        int topCapturePoints;
         int microSteps;
         int finalRoadSegments;
         int finalBridges;
@@ -219,8 +221,13 @@ public final class MesozoaBatchReportRunner {
             }
 
             for (PlayerState player : simulation.players) {
-                observedCapturedByPlayer.put(player.id, EnumSet.noneOf(Species.class));
-                for (Species species : player.task) {
+                EnumMap<Species, Integer> deliveredCounts = new EnumMap<>(Species.class);
+                for (Species species : Species.values()) {
+                    deliveredCounts.put(species, 0);
+                }
+                observedTaskDeliveriesByPlayer.put(player.id, deliveredCounts);
+
+                for (Species species : player.taskCards) {
                     CaptureMethod method = Dinosaur.captureMethodOf(species);
                     taskByMethod.merge(method, 1, Integer::sum);
                     speciesStats.get(species).taskCount++;
@@ -349,23 +356,30 @@ public final class MesozoaBatchReportRunner {
                     .filter(dinosaur -> !dinosaur.trapped || dinosaur.trappedByPlayerId == player.id)
                     .filter(dinosaur -> player.needs(dinosaur.species))
                     .filter(dinosaur -> method == null || dinosaur.captureMethod == method)
-                    .anyMatch(dinosaur -> !player.captured.contains(dinosaur.species));
+                    .anyMatch(dinosaur -> player.needs(dinosaur.species));
         }
 
         void observeCaptures(GameSimulation simulation) {
             for (PlayerState player : simulation.players) {
-                Set<Species> observed = observedCapturedByPlayer.get(player.id);
-                for (Species species : player.captured) {
-                    if (observed.add(species)) {
-                        CaptureMethod method = Dinosaur.captureMethodOf(species);
+                EnumMap<Species, Integer> observed = observedTaskDeliveriesByPlayer.get(player.id);
+                if (observed == null) continue;
+
+                for (Species species : Species.values()) {
+                    int currentDelivered = player.deliveredTaskCardCount(species);
+                    int previousDelivered = observed.getOrDefault(species, 0);
+                    if (currentDelivered <= previousDelivered) continue;
+
+                    CaptureMethod method = Dinosaur.captureMethodOf(species);
+                    for (int i = previousDelivered; i < currentDelivered; i++) {
                         capturedByMethod.merge(method, 1, Integer::sum);
                         speciesStats.get(species).capturedCount++;
                         speciesStats.get(species).captureRounds.add(simulation.round);
                         playerSpeciesRows.stream()
-                                .filter(row -> row.playerId == player.id && row.species == species)
+                                .filter(row -> row.playerId == player.id && row.species == species && row.captureRound == null)
                                 .findFirst()
                                 .ifPresent(row -> row.captureRound = simulation.round);
                     }
+                    observed.put(species, currentDelivered);
                 }
             }
         }
@@ -377,6 +391,8 @@ public final class MesozoaBatchReportRunner {
             this.spawnedDinosaurs = simulation.result.spawnedDinosaurs;
             this.capturedDinosaurs = simulation.result.capturedDinosaurs;
             this.completedPlayers = simulation.result.completedPlayers;
+            this.totalCapturePoints = simulation.players.stream().mapToInt(player -> player.capturePoints).sum();
+            this.topCapturePoints = simulation.players.stream().mapToInt(player -> player.capturePoints).max().orElse(0);
             this.microSteps = microSteps;
             this.finalRoadSegments = countRoadSegments(simulation.map);
             this.finalBridges = countBridges(simulation.map);
@@ -401,15 +417,16 @@ public final class MesozoaBatchReportRunner {
             }
 
             for (PlayerState player : simulation.players) {
-                for (Species species : player.task) {
-                    if (player.captured.contains(species)) continue;
+                for (Species species : Species.values()) {
+                    int missingCopies = player.remainingTaskCardCount(species);
+                    if (missingCopies <= 0) continue;
                     boolean visible = simulation.dinosaurs.stream()
                             .anyMatch(dinosaur -> dinosaur.species == species
                                     && !dinosaur.removed
                                     && !dinosaur.captured
-                                    && (!dinosaur.trapped || dinosaur.trappedByPlayerId == player.id));
-                    if (visible) visibleUncapturedTaskSpeciesAtEnd++;
-                    else hiddenUncapturedTaskSpeciesAtEnd++;
+                                    && (!dinosaur.trapped || simulation.isAwaitingPickupForPlayer(dinosaur, player)));
+                    if (visible) visibleUncapturedTaskSpeciesAtEnd += missingCopies;
+                    else hiddenUncapturedTaskSpeciesAtEnd += missingCopies;
                 }
             }
         }
@@ -439,7 +456,7 @@ public final class MesozoaBatchReportRunner {
         int suspiciousScore() {
             int score = 0;
             score += unfinishedPlayers() * 1_000;
-            if (rounds >= 280) score += 600;
+            if (rounds >= 100) score += 600;
             if (microStepLimitHit) score += 800;
             score += activeTrackingAtEnd * 300;
             score += activeHuntsAtEnd * 120;
@@ -564,6 +581,7 @@ public final class MesozoaBatchReportRunner {
             try (BufferedWriter out = writer("games.csv")) {
                 out.write(String.join(",",
                         "game", "seed", "rounds", "completedPlayers", "unfinishedPlayers",
+                        "totalCapturePoints", "topCapturePoints",
                         "openedTiles", "spawnedDinosaurs", "capturedDinosaurs", "microSteps",
                         "roadBuilds", "bridgeBuilds", "finalRoadSegments", "finalBridges",
                         "trapTokensPlaced", "trapRepositions", "staleTrapsRecovered",
@@ -580,6 +598,7 @@ public final class MesozoaBatchReportRunner {
                 for (GameStats game : games) {
                     out.write(csvLine(
                             game.gameIndex, game.seed, game.rounds, game.completedPlayers, game.unfinishedPlayers(),
+                            game.totalCapturePoints, game.topCapturePoints,
                             game.openedTiles, game.spawnedDinosaurs, game.capturedDinosaurs, game.microSteps,
                             game.roadBuilds, game.bridgeBuilds, game.finalRoadSegments, game.finalBridges,
                             game.trapTokensPlaced, game.trapRepositions, game.staleTrapsRecovered,
@@ -712,6 +731,10 @@ public final class MesozoaBatchReportRunner {
             }
             out.write("- Упёрлись в защитный лимит микрошагов: "
                     + games.stream().filter(game -> game.microStepLimitHit).count());
+            out.newLine();
+            out.write("- Средние очки победителя: " + oneDecimal(average(games.stream().map(game -> game.topCapturePoints).toList())));
+            out.newLine();
+            out.write("- Средние суммарные очки партии: " + oneDecimal(average(games.stream().map(game -> game.totalCapturePoints).toList())));
             out.newLine();
             out.newLine();
         }

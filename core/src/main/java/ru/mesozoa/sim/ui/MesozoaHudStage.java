@@ -15,7 +15,9 @@ import ru.mesozoa.sim.model.Trap;
 import ru.mesozoa.sim.model.TrackingTrail;
 import ru.mesozoa.sim.simulation.GameSimulation;
 
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Scene2D HUD поверх ручной отрисовки карты.
@@ -169,7 +171,7 @@ public final class MesozoaHudStage {
     private void addTaskBlock(Table parent, GameSimulation simulation, PlayerState player) {
         parent.add(sectionLabel("Задание штаба")).padTop(2).padBottom(5).row();
 
-        if (player.task.isEmpty()) {
+        if (player.taskCards.isEmpty()) {
             parent.add(label("Задание не выдано", "muted")).padBottom(6).row();
             return;
         }
@@ -177,12 +179,15 @@ public final class MesozoaHudStage {
         Table taskTable = new Table(skin);
         taskTable.defaults().left().padBottom(3);
 
-        for (Species species : player.task) {
-            String status = taskStatus(simulation, player, species);
+        for (Map.Entry<Species, Integer> entry : taskCardsInDisplayOrder(player).entrySet()) {
+            Species species = entry.getKey();
+            int totalCards = entry.getValue();
+            String status = taskStatus(simulation, player, species, totalCards);
             String statusStyle = taskStatusStyle(simulation, player, species);
+            String speciesText = species.displayName + (totalCards > 1 ? " ×" + totalCards : "");
 
-            taskTable.add(label(status, statusStyle)).width(74).top();
-            taskTable.add(label(species.displayName, "default")).growX().padRight(8).top();
+            taskTable.add(label(status, statusStyle)).width(84).top();
+            taskTable.add(label(speciesText, "default")).growX().padRight(8).top();
             taskTable.add(label(captureMethodText(Dinosaur.captureMethodOf(species)), "small")).width(90).right().top().row();
         }
 
@@ -327,24 +332,45 @@ public final class MesozoaHudStage {
         return line;
     }
 
-    private String taskStatus(GameSimulation simulation, PlayerState player, Species species) {
-        if (player.captured.contains(species)) {
-            return "пойман";
+    /**
+     * Готовит статус карты задания с учётом дублей одного вида.
+     *
+     * В очковом режиме штаб выдаёт именно карты, а не уникальный список видов:
+     * две карты Галлимимона требуют двух доставок, обе с x2. HUD показывает
+     * прогресс по копиям, чтобы игрок не гадал, почему «Галлимимон» ещё не
+     * закрыт после первой фишки. Люди и так достаточно гадают по логам.
+     */
+    private String taskStatus(GameSimulation simulation, PlayerState player, Species species, int totalCards) {
+        int delivered = player.deliveredTaskCardCount(species);
+        String progress = delivered + "/" + totalCards;
+
+        if (delivered >= totalCards) {
+            return progress;
         }
 
         if (isTrappedNeededSpecies(simulation, player, species)) {
-            return "в ловушке";
+            return progress + " ждёт";
         }
 
         if (simulation.hasActiveHuntForSpecies(player, species)) {
-            return "в засаде";
+            return progress + " засада";
         }
 
         if (isVisibleNeededSpecies(simulation, species)) {
-            return "на карте";
+            return progress + " карта";
         }
 
-        return "ищем";
+        return progress + " ищем";
+    }
+
+
+    /** Возвращает карты задания в порядке первого появления вида на руке. */
+    private Map<Species, Integer> taskCardsInDisplayOrder(PlayerState player) {
+        Map<Species, Integer> counts = new LinkedHashMap<>();
+        for (Species species : player.taskCards) {
+            counts.merge(species, 1, Integer::sum);
+        }
+        return counts;
     }
 
     private String taskStatusStyle(GameSimulation simulation, PlayerState player, Species species) {

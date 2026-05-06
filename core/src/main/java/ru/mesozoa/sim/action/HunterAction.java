@@ -174,7 +174,7 @@ public class HunterAction {
     private boolean hasVisibleNeededHuntTarget(PlayerState player) {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
-                .filter(dinosaur -> player.needs(dinosaur.species))
+                .filter(dinosaur -> simulation.isWorthCapturing(player, dinosaur))
                 .anyMatch(dinosaur -> dinosaur.captureMethod == CaptureMethod.HUNT);
     }
 
@@ -241,7 +241,7 @@ public class HunterAction {
         }
 
         Optional<Dinosaur> target = dinosaurById(trail.dinosaurId);
-        if (target.isEmpty() || !player.needs(trail.species)) {
+        if (target.isEmpty()) {
             player.activeTracking = null;
             simulation.log("След " + trail.species.displayName
                     + " для игрока " + player.id
@@ -671,7 +671,7 @@ public class HunterAction {
         List<CaptureMethod> allowedMethods = List.of(methods);
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
                 .sorted(Comparator.comparingInt(d -> d.position.chebyshev(from)))
                 .findFirst();
@@ -685,7 +685,7 @@ public class HunterAction {
 
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRACKING)
                 .filter(d -> d.position.equals(point))
                 .findFirst()

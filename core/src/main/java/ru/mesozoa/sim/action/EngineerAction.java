@@ -384,7 +384,7 @@ public class EngineerAction {
 
         simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .forEach(dinosaur -> result.addAll(simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur)));
 
@@ -428,7 +428,7 @@ public class EngineerAction {
     private Optional<Point> bestTrapAmbushPoint(PlayerState player, Point from) {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))
@@ -461,7 +461,7 @@ public class EngineerAction {
 
         simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .sorted(Comparator.comparingInt(d -> d.position.chebyshev(player.engineerRanger.position())))
                 .forEach(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
@@ -480,10 +480,12 @@ public class EngineerAction {
      */
     private Optional<Point> nearestCapturedNeededDinosaurWithoutDriverAccess(PlayerState player) {
         return simulation.dinosaurs.stream()
-                .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
-                .filter(dinosaur -> player.needs(dinosaur.species))
-                .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)))
+                .filter(simulation::isAwaitingPickup)
+                .filter(dinosaur -> !simulation.canDriverExtractTrappedDinosaur(player, dinosaur))
+                .min(Comparator
+                        .comparingInt((Dinosaur dinosaur) -> player.needs(dinosaur.species) ? 0 : 1)
+                        .thenComparing(Comparator.comparingInt((Dinosaur dinosaur) -> simulation.capturePointsForPlayer(player, dinosaur)).reversed())
+                        .thenComparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)))
                 .map(dinosaur -> dinosaur.position);
     }
 
@@ -495,7 +497,7 @@ public class EngineerAction {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> dinosaur.id == player.activeTracking.dinosaurId)
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
-                .filter(dinosaur -> player.needs(dinosaur.species))
+                .filter(dinosaur -> simulation.isWorthCapturing(player, dinosaur))
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .map(dinosaur -> dinosaur.position)
@@ -517,10 +519,21 @@ public class EngineerAction {
         EnumSet<Biome> result = EnumSet.noneOf(Biome.class);
 
         for (Species species : player.task) {
-            if (player.captured.contains(species)) continue;
+            if (!player.needs(species)) continue;
             if (Dinosaur.captureMethodOf(species) == CaptureMethod.HUNT) continue;
             result.add(Dinosaur.spawnBiomeOf(species));
             result.addAll(Dinosaur.bioTrailOf(species));
+        }
+
+        if (result.isEmpty()) {
+            simulation.dinosaurs.stream()
+                    .filter(d -> simulation.isWorthCapturing(player, d))
+                    .filter(d -> d.captureMethod != CaptureMethod.HUNT)
+                    .map(d -> d.species)
+                    .forEach(species -> {
+                        result.add(Dinosaur.spawnBiomeOf(species));
+                        result.addAll(Dinosaur.bioTrailOf(species));
+                    });
         }
 
         return result;

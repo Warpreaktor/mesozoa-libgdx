@@ -1,9 +1,6 @@
 package ru.mesozoa.sim.rules;
 
 import ru.mesozoa.sim.config.GameConfig;
-import ru.mesozoa.sim.dinosaur.Dinosaur;
-import ru.mesozoa.sim.model.DietType;
-import ru.mesozoa.sim.model.SizeClass;
 import ru.mesozoa.sim.model.Species;
 
 import java.util.ArrayList;
@@ -11,24 +8,19 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 /**
- * Генерирует случайное задание штаба для игрока.
+ * Генерирует карты задания штаба для игроков.
  *
- * Базовая структура задания повторяет настольное правило текущего прототипа:
- * один любой S-динозавр, один M-травоядный и один M-хищник. Остальные цели,
- * если в конфиге задано больше трёх динозавров, добираются из доступного
- * парка без дублей. Так новые виды начинают участвовать в заданиях после
- * добавления их в {@link Species} и настройки их спаун-тайлов в {@link GameConfig}.
+ * В новом очковом режиме это настоящая колода: каждый доступный вид кладётся в
+ * неё несколькими копиями, затем игроки тянут карты на руки. Дубли не
+ * схлопываются, а дают отдельные бонусные доставки с x2 очками.
  */
 public final class HeadquartersTaskGenerator {
 
-    /** Игровой конфиг, из которого берутся размер задания и доступные виды. */
+    /** Игровой конфиг, из которого берутся размер руки и доступные виды. */
     private final GameConfig config;
 
     /**
@@ -41,123 +33,68 @@ public final class HeadquartersTaskGenerator {
     }
 
     /**
-     * Создаёт случайное задание штаба для одного игрока.
+     * Создаёт и перемешивает общую колоду карт задания штаба.
      *
      * @param random источник случайности партии
-     * @return набор видов, которых игрок должен поймать
+     * @return перемешанная колода, из которой игроки будут тянуть карты
      */
-    public Set<Species> createTask(Random random) {
+    public List<Species> createTaskDeck(Random random) {
         Objects.requireNonNull(random, "random");
 
-        int targetCount = Math.max(0, config.headquartersTaskDinosaurCount);
-        EnumSet<Species> task = EnumSet.noneOf(Species.class);
-        if (targetCount == 0) {
-            return task;
-        }
-
-        List<TaskSlot> mandatorySlots = List.of(
-                new TaskSlot(this::isSmallDinosaur),
-                new TaskSlot(this::isMediumHerbivore),
-                new TaskSlot(this::isMediumPredator)
-        );
-
-        for (TaskSlot slot : mandatorySlots) {
-            if (task.size() >= targetCount) {
-                return task;
+        ArrayList<Species> deck = new ArrayList<>();
+        int copies = Math.max(0, config.headquartersTaskCardsPerSpecies);
+        for (Species species : availableTaskSpecies()) {
+            for (int i = 0; i < copies; i++) {
+                deck.add(species);
             }
-            pickRandomAvailable(slot.filter(), task, random).ifPresent(task::add);
         }
+        Collections.shuffle(deck, random);
+        return deck;
+    }
 
-        List<Species> remaining = availableTaskSpecies().stream()
-                .filter(species -> !task.contains(species))
-                .collect(Collectors.toCollection(ArrayList::new));
-        Collections.shuffle(remaining, random);
+    /**
+     * Тянет карты задания для одного игрока из общей колоды.
+     *
+     * Если в экспериментальной конфигурации колода оказалась короче числа игроков
+     * и карт на руках, метод просто выдаст столько, сколько осталось, без
+     * драматичной сцены с NullPointerException. У нас тут всё-таки настолка, а не
+     * корпоративная интеграция.
+     *
+     * @param deck общая колода задания штаба
+     * @return список карт игрока, дубли сохраняются
+     */
+    public List<Species> drawTaskCards(List<Species> deck) {
+        Objects.requireNonNull(deck, "deck");
 
-        for (Species species : remaining) {
-            if (task.size() >= targetCount) {
-                break;
-            }
-            task.add(species);
+        int count = Math.max(0, config.headquartersTaskDinosaurCount);
+        ArrayList<Species> cards = new ArrayList<>(count);
+        for (int i = 0; i < count && !deck.isEmpty(); i++) {
+            cards.add(deck.remove(0));
         }
-
-        return task;
+        return cards;
     }
 
     /**
-     * Проверяет, является ли вид любым малым динозавром для первой обязательной цели.
+     * Старый совместимый метод: создаёт независимую руку и возвращает уникальные виды.
      *
-     * @param species вид динозавра
-     * @return true, если вид относится к размеру S
+     * Новый код симуляции использует {@link #createTaskDeck(Random)} и
+     * {@link #drawTaskCards(List)}, но этот метод оставлен, чтобы старые тесты не
+     * спотыкались об переименование.
+     *
+     * @param random источник случайности
+     * @return уникальные виды из случайной руки
      */
-    private boolean isSmallDinosaur(Species species) {
-        return Dinosaur.sizeOf(species) == SizeClass.S;
+    public Set<Species> createTask(Random random) {
+        List<Species> deck = createTaskDeck(random);
+        return drawTaskCards(deck).stream().collect(() -> EnumSet.noneOf(Species.class), Set::add, Set::addAll);
     }
 
-    /**
-     * Проверяет, подходит ли вид под слот M-травоядного.
-     *
-     * @param species вид динозавра
-     * @return true, если это средний травоядный динозавр
-     */
-    private boolean isMediumHerbivore(Species species) {
-        return Dinosaur.sizeOf(species) == SizeClass.M
-                && Dinosaur.dietOf(species) == DietType.HERBIVORE;
-    }
-
-    /**
-     * Проверяет, подходит ли вид под слот M-хищника.
-     *
-     * @param species вид динозавра
-     * @return true, если это средний хищник
-     */
-    private boolean isMediumPredator(Species species) {
-        return Dinosaur.sizeOf(species) == SizeClass.M
-                && Dinosaur.dietOf(species) == DietType.PREDATOR;
-    }
-
-    /**
-     * Выбирает случайный вид из доступного пула с учётом уже выбранных целей.
-     *
-     * @param filter фильтр слота задания
-     * @param alreadySelected уже выбранные цели этого игрока
-     * @param random источник случайности партии
-     * @return выбранный вид или пустой результат, если подходящих видов нет
-     */
-    private Optional<Species> pickRandomAvailable(
-            Predicate<Species> filter,
-            Set<Species> alreadySelected,
-            Random random
-    ) {
-        List<Species> candidates = availableTaskSpecies().stream()
-                .filter(filter)
-                .filter(species -> !alreadySelected.contains(species))
-                .collect(Collectors.toCollection(ArrayList::new));
-
-        if (candidates.isEmpty()) {
-            return Optional.empty();
-        }
-
-        return Optional.of(candidates.get(random.nextInt(candidates.size())));
-    }
-
-    /**
-     * Возвращает виды, которые разрешено выдавать в заданиях штаба.
-     *
-     * Сейчас вид считается доступным, если для него в конфиге есть хотя бы один
-     * спаун-тайл. Это защищает генератор от задания на динозавра, который вообще
-     * не может появиться на карте в текущей настройке партии.
-     *
-     * @return список доступных видов
-     */
+    /** Возвращает виды, которые разрешено класть в колоду задания. */
     private List<Species> availableTaskSpecies() {
         return config.spawnTiles.entrySet().stream()
                 .filter(entry -> entry.getValue() != null && entry.getValue() > 0)
                 .map(java.util.Map.Entry::getKey)
                 .sorted()
                 .toList();
-    }
-
-    /** Обязательный слот задания штаба. */
-    private record TaskSlot(Predicate<Species> filter) {
     }
 }

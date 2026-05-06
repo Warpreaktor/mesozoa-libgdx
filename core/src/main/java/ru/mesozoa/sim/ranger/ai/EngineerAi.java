@@ -103,11 +103,7 @@ public class EngineerAi {
      * @return план с оценкой, причиной и целью или пустой результат
      */
     private Optional<EngineerPlanCandidate> bestEngineerPlan(PlayerState player) {
-        if (isPlayerTaskComplete(player)) {
-            return Optional.empty();
-        }
-
-        Optional<Dinosaur> capturedWithoutRoad = nearestCapturedNeededDinosaurWithoutDriverAccess(player);
+        Optional<Dinosaur> capturedWithoutRoad = nearestValuableDinosaurWithoutDriverAccess(player);
         if (capturedWithoutRoad.isPresent()) {
             Dinosaur dinosaur = capturedWithoutRoad.get();
             if (canExecuteInfrastructurePlan(player, dinosaur.position)) {
@@ -387,13 +383,13 @@ public class EngineerAi {
      * @return true, если есть TRAP/TRACKING-цели или динозавр в ловушке без вывоза
      */
     private boolean hasRemainingRoadRelevantGoal(PlayerState player) {
-        if (nearestCapturedNeededDinosaurWithoutDriverAccess(player).isPresent()) {
+        if (nearestValuableDinosaurWithoutDriverAccess(player).isPresent()) {
             return true;
         }
 
-        return player.task.stream()
-                .filter(species -> !player.captured.contains(species))
-                .anyMatch(species -> Dinosaur.captureMethodOf(species) != CaptureMethod.HUNT);
+        return simulation.dinosaurs.stream()
+                .filter(d -> simulation.isWorthCapturing(player, d))
+                .anyMatch(d -> d.captureMethod != CaptureMethod.HUNT);
     }
 
     /**
@@ -441,12 +437,14 @@ public class EngineerAi {
      * @param player игрок, для которого ищется задача вывоза
      * @return ближайший динозавр в ловушке без водительского маршрута
      */
-    private Optional<Dinosaur> nearestCapturedNeededDinosaurWithoutDriverAccess(PlayerState player) {
+    private Optional<Dinosaur> nearestValuableDinosaurWithoutDriverAccess(PlayerState player) {
         return simulation.dinosaurs.stream()
-                .filter(dinosaur -> simulation.isTrappedByPlayer(dinosaur, player))
-                .filter(dinosaur -> player.needs(dinosaur.species))
-                .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
-                .min(Comparator.comparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)));
+                .filter(simulation::isAwaitingPickup)
+                .filter(dinosaur -> !simulation.canDriverExtractTrappedDinosaur(player, dinosaur))
+                .min(Comparator
+                        .comparingInt((Dinosaur dinosaur) -> player.needs(dinosaur.species) ? 0 : 1)
+                        .thenComparing(Comparator.comparingInt((Dinosaur dinosaur) -> simulation.capturePointsForPlayer(player, dinosaur)).reversed())
+                        .thenComparingInt(dinosaur -> player.engineerRanger.position().chebyshev(dinosaur.position)));
     }
 
     /**
@@ -457,7 +455,7 @@ public class EngineerAi {
     private Optional<Dinosaur> nearestNeededTrapTarget(PlayerState player) {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .filter(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream()
                         .anyMatch(point -> isUsableTrapPoint(player, point)))
@@ -481,7 +479,7 @@ public class EngineerAi {
         return simulation.dinosaurs.stream()
                 .filter(dinosaur -> dinosaur.id == player.activeTracking.dinosaurId)
                 .filter(dinosaur -> !dinosaur.captured && !dinosaur.trapped && !dinosaur.removed)
-                .filter(dinosaur -> player.needs(dinosaur.species))
+                .filter(dinosaur -> simulation.isWorthCapturing(player, dinosaur))
                 .filter(dinosaur -> dinosaur.captureMethod == CaptureMethod.TRACKING)
                 .filter(dinosaur -> !simulation.map.hasDriverPath(simulation.map.base, dinosaur.position))
                 .findFirst();
@@ -572,10 +570,21 @@ public class EngineerAi {
         EnumSet<Biome> result = EnumSet.noneOf(Biome.class);
 
         for (Species species : player.task) {
-            if (player.captured.contains(species)) continue;
+            if (!player.needs(species)) continue;
             if (Dinosaur.captureMethodOf(species) == CaptureMethod.HUNT) continue;
             result.add(Dinosaur.spawnBiomeOf(species));
             result.addAll(Dinosaur.bioTrailOf(species));
+        }
+
+        if (result.isEmpty()) {
+            simulation.dinosaurs.stream()
+                    .filter(d -> simulation.isWorthCapturing(player, d))
+                    .filter(d -> d.captureMethod != CaptureMethod.HUNT)
+                    .map(d -> d.species)
+                    .forEach(species -> {
+                        result.add(Dinosaur.spawnBiomeOf(species));
+                        result.addAll(Dinosaur.bioTrailOf(species));
+                    });
         }
 
         return result;
@@ -595,7 +604,7 @@ public class EngineerAi {
 
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
                 .min(Comparator.comparingInt(d -> d.position.chebyshev(from)));
     }
@@ -658,7 +667,7 @@ public class EngineerAi {
 
         simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .forEach(dinosaur -> result.addAll(simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur)));
 
@@ -691,7 +700,7 @@ public class EngineerAi {
     private Optional<Point> bestTrapAmbushPoint(PlayerState player, Point from) {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRAP)
                 .flatMap(dinosaur -> simulation.dinosaurAi.trapAmbushCandidatesFor(dinosaur).stream())
                 .filter(point -> isUsableTrapPoint(player, point))

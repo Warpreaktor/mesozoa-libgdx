@@ -126,13 +126,6 @@ public final class HunterAi {
             );
         }
 
-        if (remainingHunterSpecies.isEmpty()) {
-            return new AiScore(
-                    SCORE_IMPOSSIBLE,
-                    "в задании не осталось целей для охотника"
-            );
-        }
-
         Optional<Dinosaur> trackingTarget = bestTrackingTarget(player);
         Optional<HuntPlan> huntPlan = bestHuntPlan(player);
 
@@ -250,12 +243,13 @@ public final class HunterAi {
         int distance = hunterPathDistance(hunterPosition, plan.baitPosition());
         int turns = simulation.dinosaurAi.estimateDinosaurTurnsTo(plan.dinosaur(), plan.baitPosition());
         double failurePenalty = huntFailurePenalty(player, plan.dinosaur());
+        double valueBonus = captureValueBonus(player, plan.dinosaur());
         double preparationPenalty = huntPreparationOpportunityPenalty(plan.dinosaur(), turns);
         String preparationText = huntPreparationOpportunityText(plan.dinosaur(), turns);
 
         if (hunterPosition.equals(plan.baitPosition())) {
             return new AiScore(
-                    SCORE_HUNT_AMBUSH_READY - failurePenalty - preparationPenalty,
+                    SCORE_HUNT_AMBUSH_READY + valueBonus - failurePenalty - preparationPenalty,
                     "охотник на клетке засады для " + plan.dinosaur().displayName
                             + ", ожидаемый приход через " + turnsText(turns)
                             + preparationText
@@ -265,7 +259,7 @@ public final class HunterAi {
 
         if (distance != UNREACHABLE_DISTANCE && distance <= HUNTER_ACTION_POINTS) {
             return new AiScore(
-                    SCORE_HUNT_AMBUSH_REACHABLE_NOW - failurePenalty - preparationPenalty,
+                    SCORE_HUNT_AMBUSH_REACHABLE_NOW + valueBonus - failurePenalty - preparationPenalty,
                     "охотник может занять клетку засады для " + plan.dinosaur().displayName
                             + " за текущую активацию; расстояние: " + distance
                             + ", ожидаемый приход через " + turnsText(turns)
@@ -276,13 +270,13 @@ public final class HunterAi {
 
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
-                    25.0 - failurePenalty,
+                    25.0 + valueBonus - failurePenalty,
                     "клетка засады видна, но путь охотника не найден: " + plan.dinosaur().displayName
                             + failurePenaltyText(failurePenalty)
             );
         }
 
-        double score = 75.0 - Math.min(35.0, distance * 4.0) - failurePenalty - preparationPenalty;
+        double score = 75.0 + valueBonus - Math.min(35.0, distance * 4.0) - failurePenalty - preparationPenalty;
         return new AiScore(
                 score,
                 "охотник идёт к клетке засады для " + plan.dinosaur().displayName
@@ -299,10 +293,11 @@ public final class HunterAi {
         int distance = trackingPathDistance(hunterPosition, dinosaur.position);
         double agilityBonus = Math.max(0, 5 - dinosaur.agility) * 2.5;
         double failurePenalty = player.failedTrackingChains(dinosaur.id) * FAILED_TRACKING_CHAIN_PENALTY;
+        double valueBonus = captureValueBonus(player, dinosaur);
 
         if (hunterPosition.equals(dinosaur.position)) {
             return new AiScore(
-                    SCORE_TRACKING_READY + agilityBonus - failurePenalty,
+                    SCORE_TRACKING_READY + agilityBonus + valueBonus - failurePenalty,
                     "охотник стоит на клетке цели выслеживания: " + dinosaur.displayName
                             + "; ловкость " + dinosaur.agility
                             + failurePenaltyText(failurePenalty)
@@ -311,7 +306,7 @@ public final class HunterAi {
 
         if (distance != UNREACHABLE_DISTANCE && distance <= HUNTER_ACTION_POINTS) {
             return new AiScore(
-                    SCORE_TRACKING_REACHABLE_NOW + agilityBonus - failurePenalty,
+                    SCORE_TRACKING_REACHABLE_NOW + agilityBonus + valueBonus - failurePenalty,
                     "охотник может дойти до цели выслеживания за текущую активацию: "
                             + dinosaur.displayName
                             + ", расстояние по следовому пути: " + distance
@@ -321,14 +316,14 @@ public final class HunterAi {
 
         if (distance == UNREACHABLE_DISTANCE) {
             return new AiScore(
-                    25.0 - failurePenalty,
+                    25.0 + valueBonus - failurePenalty,
                     "цель выслеживания видна, но даже следовой путь до неё не найден: "
                             + dinosaur.displayName
                             + failurePenaltyText(failurePenalty)
             );
         }
 
-        double score = 72.0 + agilityBonus - Math.min(36.0, distance * 4.0) - failurePenalty;
+        double score = 72.0 + agilityBonus + valueBonus - Math.min(36.0, distance * 4.0) - failurePenalty;
         return new AiScore(
                 score,
                 "видимая цель выслеживания: "
@@ -462,7 +457,7 @@ public final class HunterAi {
         EnumSet<Species> result = EnumSet.noneOf(Species.class);
 
         for (Species species : player.task) {
-            if (!player.captured.contains(species) && isHunterCaptureMethod(Dinosaur.captureMethodOf(species))) {
+            if (player.needs(species) && isHunterCaptureMethod(Dinosaur.captureMethodOf(species))) {
                 result.add(species);
             }
         }
@@ -474,7 +469,7 @@ public final class HunterAi {
     public Optional<Dinosaur> bestTrackingTarget(PlayerState player) {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.TRACKING)
                 .max(Comparator.comparingDouble(dinosaur -> scoreTrackingTarget(player, dinosaur).value()));
     }
@@ -483,7 +478,7 @@ public final class HunterAi {
     public Optional<HuntPlan> bestHuntPlan(PlayerState player) {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.HUNT)
                 .map(dinosaur -> bestHuntAmbushPointFor(player, dinosaur)
                         .map(point -> new HuntPlan(dinosaur, point)))
@@ -545,7 +540,7 @@ public final class HunterAi {
     private java.util.stream.Stream<Dinosaur> visibleNeededHuntTargets(PlayerState player) {
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> d.captureMethod == CaptureMethod.HUNT);
     }
 
@@ -565,7 +560,7 @@ public final class HunterAi {
         List<CaptureMethod> allowedMethods = List.of(methods);
         return simulation.dinosaurs.stream()
                 .filter(d -> !d.captured && !d.trapped && !d.removed)
-                .filter(d -> player.needs(d.species))
+                .filter(d -> simulation.isWorthCapturing(player, d))
                 .filter(d -> allowedMethods.contains(d.captureMethod))
                 .min(Comparator.comparingInt(d -> normalizedPathDistance(from, d.position, d.captureMethod)));
     }
@@ -686,6 +681,13 @@ public final class HunterAi {
         return "; ожидаемая подготовка ≈"
                 + String.format(java.util.Locale.ROOT, "%.1f", expectedPreparationByArrival(turnsUntilArrival))
                 + ", цель " + desiredHuntPreparation(dinosaur.species);
+    }
+
+    /**
+     * Даёт небольшой бонус AI за более дорогую добычу и за незакрытую карту задания.
+     */
+    private double captureValueBonus(PlayerState player, Dinosaur dinosaur) {
+        return simulation.capturePointsForPlayer(player, dinosaur) * 4.0;
     }
 
     private String failurePenaltyText(double failurePenalty) {
